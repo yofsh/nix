@@ -1,0 +1,67 @@
+#!/usr/bin/env bash
+# ha - Control Home Assistant entities
+# Usage: ha <action> <entity_id>
+#   actions: toggle, up, down, scene
+
+HA_URL="http://192.168.8.30:8123"
+HA_TOKEN=$(cat /run/secrets/ha-token)
+STEP=25  # brightness step (0-255 scale, ~10%)
+NOTIFY_ID=99200
+ICON=~/nix/dotfiles/icons/ha.png
+
+ACTION=$1
+ENTITY=$2
+DOMAIN=${ENTITY%%.*}
+
+api() { curl -s -H "Authorization: Bearer $HA_TOKEN" -H "Content-Type: application/json" "$@"; }
+
+notify() { dunstify -r $NOTIFY_ID -t 2000 -u low -i "$ICON" "$@"; }
+
+case $ACTION in
+  up|down)
+    state=$(api "$HA_URL/api/states/$ENTITY")
+    current=$(echo "$state" | jq '.attributes.brightness // 0' | cut -d. -f1)
+    name=$(echo "$state" | jq -r '.attributes.friendly_name // "'$ENTITY'"')
+
+    if [ "$ACTION" = "up" ]; then
+      new=$((current + STEP))
+      [ $new -gt 255 ] && new=255
+    else
+      new=$((current - STEP))
+      [ $new -lt 0 ] && new=0
+    fi
+
+    pct=$((new * 100 / 255))
+
+    if [ $new -eq 0 ]; then
+      api -X POST -d "{\"entity_id\":\"$ENTITY\"}" "$HA_URL/api/services/light/turn_off" >/dev/null &
+    else
+      api -X POST -d "{\"entity_id\":\"$ENTITY\",\"brightness\":$new}" "$HA_URL/api/services/light/turn_on" >/dev/null &
+    fi
+
+    notify -h "int:value:$pct" "$name" "$pct%"
+    ;;
+
+  toggle)
+    state=$(api "$HA_URL/api/states/$ENTITY")
+    current=$(echo "$state" | jq -r '.state')
+    name=$(echo "$state" | jq -r '.attributes.friendly_name // "'$ENTITY'"')
+    brightness=$(echo "$state" | jq '.attributes.brightness // 0' | cut -d. -f1)
+
+    api -X POST -d "{\"entity_id\":\"$ENTITY\"}" "$HA_URL/api/services/$DOMAIN/toggle" >/dev/null &
+
+    if [ "$current" = "on" ]; then
+      notify -h "int:value:0" "$name" "OFF"
+    else
+      pct=$((brightness * 100 / 255))
+      [ $pct -eq 0 ] && pct=100
+      notify -h "int:value:$pct" "$name" "ON · $pct%"
+    fi
+    ;;
+
+  scene)
+    api -X POST -d "{\"entity_id\":\"$ENTITY\"}" "$HA_URL/api/services/scene/turn_on" >/dev/null &
+    scene_name=$(echo "$ENTITY" | sed 's/scene\.//' | tr '_' ' ')
+    notify "$scene_name"
+    ;;
+esac

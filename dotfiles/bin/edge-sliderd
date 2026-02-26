@@ -1,0 +1,326 @@
+#!/usr/bin/env python3
+"""
+Edge Slider Daemon for HP OmniBook Ultra Flip Haptic Touchpad
+
+Monitors the Synaptics SYNA3580 haptic touchpad for finger slides along the
+left and right edges and emits events over a Unix socket.
+
+Events (one per line):
+  left:down / left:up / left:slide:up / left:slide:down
+  right:down / right:up / right:slide:up / right:slide:down
+
+Consumers connect to $XDG_RUNTIME_DIR/edge-sliderd.sock and read lines.
+
+Requires: python-evdev
+Usage:
+  edge-sliderd              # run daemon
+  edge-sliderd -v           # verbose logging
+  edge-sliderd --socket /tmp/test.sock  # custom socket path
+"""
+
+import argparse
+import asyncio
+import logging
+import os
+import signal
+import sys
+
+import evdev
+from evdev import ecodes
+
+log = logging.getLogger("edge-sliderd")
+
+# ── Touchpad geometry ────────────────────────────────────────────────────────
+# ABS_MT_POSITION_X range: 0–1615  (from evtest / libinput)
+# ABS_MT_POSITION_Y range: 0–1199
+X_MIN, X_MAX = 0, 1615
+Y_MIN, Y_MAX = 0, 1199
+
+# Edge zones: leftmost and rightmost ~8%
+EDGE_THRESHOLD_LEFT = 130     # X < 130 → left edge
+EDGE_THRESHOLD_RIGHT = 1486   # X > 1486 → right edge
+
+# Y-units per step (~3.3 mm on the physical pad)
+STEP_THRESHOLD = 40
+
+RECONNECT_DELAY = 3  # seconds between device reconnect attempts
+
+# ── Device discovery ─────────────────────────────────────────────────────────
+
+def find_touchpad():
+    """Find the SYNA3580 evdev input device."""
+    for path in evdev.list_devices():
+        dev = evdev.InputDevice(path)
+        if "SYNA3580" in dev.name:
+            return dev
+    return None
+
+
+# ── Slot tracker ─────────────────────────────────────────────────────────────
+
+class SlotState:
+    """Per-slot multitouch tracking state."""
+    __slots__ = ("tracking_id", "x", "y", "zone", "last_step_y", "active")
+
+    def __init__(self):
+        self.reset()
+
+    def reset(self):
+        self.tracking_id = -1
+        self.x = None
+        self.y = None
+        self.zone = None       # "left", "right", or None
+        self.last_step_y = None
+        self.active = False    # True once touch is confirmed in an edge zone
+
+
+def classify_zone(x):
+    """Return 'left', 'right', or None based on X position."""
+    if x is not None and x <= EDGE_THRESHOLD_LEFT:
+        return "left"
+    if x is not None and x >= EDGE_THRESHOLD_RIGHT:
+        return "right"
+    return None
+
+
+# ── Main daemon ──────────────────────────────────────────────────────────────
+
+class EdgeSliderDaemon:
+    def __init__(self, socket_path):
+        self.socket_path = socket_path
+        self.slots = {}          # slot_id → SlotState
+        self.current_slot = 0
+        self.active_edge_count = 0  # how many slots are active in edge zones
+        self._clients: set[asyncio.StreamWriter] = set()
+        self._server = None
+
+    def _get_slot(self, slot_id):
+        if slot_id not in self.slots:
+            self.slots[slot_id] = SlotState()
+        return self.slots[slot_id]
+
+    async def _handle_client(self, reader, writer):
+        """Accept a new socket client."""
+        self._clients.add(writer)
+        addr = writer.get_extra_info("peername") or "unix"
+        log.info("Client connected (%s), total: %d", addr, len(self._clients))
+        try:
+            # Keep connection open until client disconnects
+            await reader.read()
+        except (ConnectionError, asyncio.CancelledError):
+            pass
+        finally:
+            self._clients.discard(writer)
+            try:
+                writer.close()
+                await writer.wait_closed()
+            except Exception:
+                pass
+            log.info("Client disconnected, total: %d", len(self._clients))
+
+    async def _broadcast(self, event):
+        """Send event line to all connected clients, removing dead ones."""
+        if not self._clients:
+            return
+        data = (event + "\n").encode()
+        dead = []
+        for writer in self._clients:
+            try:
+                writer.write(data)
+                await writer.drain()
+            except Exception:
+                dead.append(writer)
+        for writer in dead:
+            self._clients.discard(writer)
+            try:
+                writer.close()
+            except Exception:
+                pass
+
+    def _handle_slot_update(self, slot):
+        """Returns list of event strings to broadcast."""
+        events = []
+
+        if slot.x is None or slot.y is None:
+            return events  # incomplete position data
+
+        zone = classify_zone(slot.x)
+
+        # Touch just started (has position but not yet classified)
+        if not slot.active and slot.zone is None:
+            if zone is not None:
+                slot.zone = zone
+                slot.last_step_y = slot.y
+                slot.active = True
+                self.active_edge_count += 1
+                log.debug("Slot started in %s edge at (%d, %d)", zone, slot.x, slot.y)
+                events.append(f"{zone}:down")
+            else:
+                # Started in center — mark as non-edge, never activate
+                slot.zone = "center"
+            return events
+
+        # Already active in an edge zone
+        if slot.active:
+            # Check if finger drifted out of edge zone → cancel
+            if zone != slot.zone:
+                log.debug("Slot drifted out of %s edge → cancelled", slot.zone)
+                events.append(f"{slot.zone}:up")
+                slot.active = False
+                self.active_edge_count -= 1
+                return events
+
+            # Multi-finger suppression: only act if this is the only edge finger
+            if self.active_edge_count > 1:
+                return events
+
+            # Check for step threshold
+            dy = slot.y - slot.last_step_y
+            if abs(dy) >= STEP_THRESHOLD:
+                steps = int(dy / STEP_THRESHOLD)
+                slot.last_step_y += steps * STEP_THRESHOLD
+                # Y increases downward on touchpad, so positive dy = finger moving down
+                # direction: +1 = finger moving up (Y decreasing), -1 = finger moving down
+                direction = -1 if steps > 0 else 1
+                dir_str = "up" if direction > 0 else "down"
+                for _ in range(abs(steps)):
+                    events.append(f"{slot.zone}:slide:{dir_str}")
+
+        return events
+
+    async def _process_events(self, device):
+        """Main event loop reading MT Protocol B events."""
+        log.info("Listening on %s (%s)", device.path, device.name)
+        log.info("Left edge: X < %d | Right edge: X > %d | Step: %d Y-units",
+                 EDGE_THRESHOLD_LEFT, EDGE_THRESHOLD_RIGHT, STEP_THRESHOLD)
+
+        async for event in device.async_read_loop():
+            if event.type == ecodes.EV_ABS:
+                if event.code == ecodes.ABS_MT_SLOT:
+                    self.current_slot = event.value
+
+                elif event.code == ecodes.ABS_MT_TRACKING_ID:
+                    slot = self._get_slot(self.current_slot)
+                    if event.value == -1:
+                        # Finger lifted
+                        if slot.active:
+                            self.active_edge_count -= 1
+                            await self._broadcast(f"{slot.zone}:up")
+                        slot.reset()
+                    else:
+                        slot.reset()
+                        slot.tracking_id = event.value
+
+                elif event.code == ecodes.ABS_MT_POSITION_X:
+                    slot = self._get_slot(self.current_slot)
+                    slot.x = event.value
+
+                elif event.code == ecodes.ABS_MT_POSITION_Y:
+                    slot = self._get_slot(self.current_slot)
+                    slot.y = event.value
+
+            elif event.type == ecodes.EV_SYN and event.code == ecodes.SYN_REPORT:
+                # Process all updated slots on sync
+                for slot_id, slot in self.slots.items():
+                    if slot.tracking_id == -1:
+                        continue
+                    for ev in self._handle_slot_update(slot):
+                        log.info("Event: %s", ev)
+                        await self._broadcast(ev)
+
+    async def _device_loop(self):
+        """Run event processing with automatic reconnection."""
+        while True:
+            device = find_touchpad()
+            if device is None:
+                log.warning("SYNA3580 touchpad not found, retrying in %ds...", RECONNECT_DELAY)
+                await asyncio.sleep(RECONNECT_DELAY)
+                continue
+
+            log.info("Found touchpad: %s (%s)", device.path, device.name)
+            try:
+                await self._process_events(device)
+            except OSError as e:
+                log.warning("Device error: %s — reconnecting in %ds...", e, RECONNECT_DELAY)
+                # Reset slot state on reconnect
+                self.slots.clear()
+                self.current_slot = 0
+                self.active_edge_count = 0
+                await asyncio.sleep(RECONNECT_DELAY)
+            finally:
+                try:
+                    device.close()
+                except Exception:
+                    pass
+
+    async def run(self):
+        """Start socket server and device loop."""
+        # Clean up stale socket
+        if os.path.exists(self.socket_path):
+            os.unlink(self.socket_path)
+
+        self._server = await asyncio.start_unix_server(
+            self._handle_client, path=self.socket_path
+        )
+        log.info("Socket server listening on %s", self.socket_path)
+
+        # Handle signals for clean shutdown
+        loop = asyncio.get_running_loop()
+        for sig in (signal.SIGINT, signal.SIGTERM):
+            loop.add_signal_handler(sig, lambda: asyncio.create_task(self._shutdown()))
+
+        try:
+            await self._device_loop()
+        except asyncio.CancelledError:
+            pass
+        finally:
+            await self._cleanup()
+
+    async def _shutdown(self):
+        """Graceful shutdown."""
+        log.info("Shutting down...")
+        for task in asyncio.all_tasks():
+            if task is not asyncio.current_task():
+                task.cancel()
+
+    async def _cleanup(self):
+        """Clean up socket and clients."""
+        if self._server:
+            self._server.close()
+            await self._server.wait_closed()
+        for writer in list(self._clients):
+            try:
+                writer.close()
+            except Exception:
+                pass
+        self._clients.clear()
+        if os.path.exists(self.socket_path):
+            os.unlink(self.socket_path)
+        log.info("Shutdown complete")
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Edge slider daemon for SYNA3580 haptic touchpad")
+    parser.add_argument("-v", "--verbose", action="store_true",
+                        help="Enable debug logging")
+
+    default_socket = os.path.join(
+        os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}"),
+        "edge-sliderd.sock",
+    )
+    parser.add_argument("--socket", default=default_socket,
+                        help=f"Unix socket path (default: {default_socket})")
+    args = parser.parse_args()
+
+    logging.basicConfig(
+        level=logging.DEBUG if args.verbose else logging.INFO,
+        format="%(asctime)s %(levelname)s %(message)s",
+        datefmt="%H:%M:%S",
+    )
+
+    daemon = EdgeSliderDaemon(socket_path=args.socket)
+    asyncio.run(daemon.run())
+
+
+if __name__ == "__main__":
+    main()

@@ -1,0 +1,144 @@
+#!/usr/bin/env bash
+# Performance Check Script - Compact system performance overview
+
+set -e
+
+# Colors
+R='\033[0;31m' G='\033[0;32m' Y='\033[0;33m' B='\033[0;34m' C='\033[0;36m' W='\033[1;37m' N='\033[0m'
+
+header() { echo -e "\n${W}═══ $1 ═══${N}"; }
+
+# CPU Info
+header "CPU"
+model=$(grep -m1 "model name" /proc/cpuinfo | cut -d: -f2 | xargs)
+cores=$(nproc)
+echo -e "${C}Model:${N} $model (${cores} cores)"
+
+# Governor & Driver
+gov=$(cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor 2>/dev/null || echo "N/A")
+drv=$(cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_driver 2>/dev/null || echo "N/A")
+echo -e "${C}Governor:${N} $gov  ${C}Driver:${N} $drv"
+
+# Frequency table
+echo -e "${C}Frequencies (MHz):${N}"
+printf "  ${W}%-6s %8s %8s %8s${N}\n" "Core" "Current" "Min" "Max"
+for cpu in /sys/devices/system/cpu/cpu[0-9]*/cpufreq; do
+    id=$(basename $(dirname $cpu) | sed 's/cpu//')
+    cur=$(cat $cpu/scaling_cur_freq 2>/dev/null | awk '{printf "%.0f", $1/1000}')
+    min=$(cat $cpu/scaling_min_freq 2>/dev/null | awk '{printf "%.0f", $1/1000}')
+    max=$(cat $cpu/scaling_max_freq 2>/dev/null | awk '{printf "%.0f", $1/1000}')
+    hwmax=$(cat $cpu/cpuinfo_max_freq 2>/dev/null | awk '{printf "%.0f", $1/1000}')
+
+    # Color max red if capped below hardware max
+    if [[ "$max" -lt "$hwmax" ]]; then
+        maxc="${R}${max}!${N}"
+    else
+        maxc="${G}${max}${N}"
+    fi
+    printf "  %-6s %8s %8s %8b\n" "CPU$id" "$cur" "$min" "$maxc"
+done
+
+# EPP (Energy Performance Preference)
+epp=$(cat /sys/devices/system/cpu/cpu0/cpufreq/energy_performance_preference 2>/dev/null || echo "N/A")
+echo -e "${C}Energy Perf:${N} $epp"
+
+# Turbo
+turbo_file="/sys/devices/system/cpu/intel_pstate/no_turbo"
+if [[ -f "$turbo_file" ]]; then
+    turbo=$(cat $turbo_file)
+    [[ "$turbo" == "0" ]] && echo -e "${C}Turbo:${N} ${G}enabled${N}" || echo -e "${C}Turbo:${N} ${R}disabled${N}"
+fi
+
+# Power Profile
+header "POWER"
+if command -v powerprofilesctl &>/dev/null; then
+    profile=$(powerprofilesctl get 2>/dev/null || echo "N/A")
+    echo -e "${C}Profile:${N} $profile"
+fi
+
+# AC/Battery
+if [[ -d /sys/class/power_supply/AC* ]] || [[ -d /sys/class/power_supply/ADP* ]]; then
+    for ac in /sys/class/power_supply/{AC,ADP}*; do
+        [[ -f "$ac/online" ]] && {
+            online=$(cat "$ac/online")
+            [[ "$online" == "1" ]] && echo -e "${C}AC:${N} ${G}connected${N}" || echo -e "${C}AC:${N} ${Y}disconnected${N}"
+            break
+        }
+    done
+fi
+
+for bat in /sys/class/power_supply/BAT*; do
+    [[ -d "$bat" ]] && {
+        cap=$(cat "$bat/capacity" 2>/dev/null || echo "?")
+        status=$(cat "$bat/status" 2>/dev/null || echo "?")
+        echo -e "${C}Battery:${N} ${cap}% ($status)"
+    }
+done
+
+# Thermal
+header "THERMAL"
+if command -v sensors &>/dev/null; then
+    sensors 2>/dev/null | grep -E "^(Package|Core|CPU|Tctl|edge|junction)" | head -6 | while read line; do
+        echo "  $line"
+    done
+else
+    for tz in /sys/class/thermal/thermal_zone*/; do
+        type=$(cat "${tz}type" 2>/dev/null)
+        temp=$(cat "${tz}temp" 2>/dev/null | awk '{printf "%.1f", $1/1000}')
+        [[ -n "$temp" && "$temp" != "0.0" ]] && printf "  %-20s %s°C\n" "$type" "$temp"
+    done | head -6
+fi
+
+# GPU
+header "GPU"
+gpu=$(lspci 2>/dev/null | grep -i "vga\|3d\|display" | head -1 | cut -d: -f3 | xargs)
+echo -e "${C}GPU:${N} $gpu"
+
+# Intel GPU freq
+if [[ -d /sys/class/drm/card0/gt ]]; then
+    for gt in /sys/class/drm/card0/gt/gt*; do
+        cur=$(cat "$gt/rps_cur_freq_mhz" 2>/dev/null || echo "?")
+        max=$(cat "$gt/rps_max_freq_mhz" 2>/dev/null || echo "?")
+        echo -e "${C}GPU Freq:${N} ${cur} / ${max} MHz"
+    done
+elif [[ -f /sys/class/drm/card0/gt_cur_freq_mhz ]]; then
+    cur=$(cat /sys/class/drm/card0/gt_cur_freq_mhz 2>/dev/null)
+    max=$(cat /sys/class/drm/card0/gt_max_freq_mhz 2>/dev/null)
+    echo -e "${C}GPU Freq:${N} ${cur} / ${max} MHz"
+fi
+
+# VA-API
+if command -v vainfo &>/dev/null; then
+    vadrv=$(vainfo 2>&1 | grep -i "driver" | head -1 | xargs || echo "N/A")
+    echo -e "${C}VA-API:${N} $vadrv"
+else
+    echo -e "${C}VA-API:${N} ${Y}vainfo not installed${N}"
+fi
+
+# Memory
+header "MEMORY"
+read total used free <<< $(free -m | awk '/^Mem:/ {print $2, $3, $7}')
+pct=$((used * 100 / total))
+echo -e "${C}RAM:${N} ${used}M / ${total}M (${pct}% used, ${free}M available)"
+
+# Swap
+swap=$(free -m | awk '/^Swap:/ {print $2}')
+if [[ "$swap" -gt 0 ]]; then
+    swapused=$(free -m | awk '/^Swap:/ {print $3}')
+    echo -e "${C}Swap:${N} ${swapused}M / ${swap}M"
+else
+    echo -e "${C}Swap:${N} ${Y}none${N}"
+fi
+
+# Load
+header "LOAD"
+load=$(cat /proc/loadavg | cut -d' ' -f1-3)
+echo -e "${C}Load avg:${N} $load"
+
+# Top CPU processes
+echo -e "${C}Top CPU:${N}"
+ps -eo pid,pcpu,comm --sort=-pcpu | head -4 | tail -3 | while read pid cpu comm; do
+    printf "  %5s %5s%% %s\n" "$pid" "$cpu" "$comm"
+done
+
+echo ""

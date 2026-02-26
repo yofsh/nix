@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+# Toggle PiP-like mode on active window: pin, float, no_focus, resize to corner
+# Second press restores the window to its previous state
+
+WIN=$(hyprctl activewindow -j)
+ADDR=$(echo "$WIN" | jq -r '.address')
+PINNED=$(echo "$WIN" | jq -r '.pinned')
+FLOATING=$(echo "$WIN" | jq -r '.floating')
+MONITOR=$(echo "$WIN" | jq -r '.monitor')
+
+if [ "$PINNED" = "true" ]; then
+    # Restore
+    hyprctl --batch "\
+        dispatch pin;\
+        setprop address:$ADDR no_focus 0;\
+        setprop address:$ADDR opacity 1.0"
+    [ "$FLOATING" = "true" ] && hyprctl dispatch togglefloating
+    notify-send -t 1500 "PiP off"
+else
+    # Get monitor dimensions for positioning
+    MON_W=$(hyprctl monitors -j | jq -r ".[] | select(.name==\"$MONITOR\") | .width / .scale | floor")
+    MON_H=$(hyprctl monitors -j | jq -r ".[] | select(.name==\"$MONITOR\") | .height / .scale | floor")
+    PIP_W=800
+    PIP_H=450
+    POS_X=$((MON_W - PIP_W - 20))
+    POS_Y=20
+
+    [ "$FLOATING" = "false" ] && hyprctl dispatch togglefloating
+    hyprctl --batch "\
+        dispatch pin;\
+        dispatch resizeactive exact $PIP_W $PIP_H;\
+        dispatch movewindowpixel exact $POS_X $POS_Y,address:$ADDR;\
+        setprop address:$ADDR no_focus 1;\
+        setprop address:$ADDR opacity 0.85"
+    notify-send -t 1500 "PiP on (pinned, no focus)"
+fi

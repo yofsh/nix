@@ -1,0 +1,7 @@
+result
+*.key
+*.pem
+.env
+CLAUDE.md
+installer/__pycache__/
+hardware-configuration.nix

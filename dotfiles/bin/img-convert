@@ -1,0 +1,49 @@
+#!/usr/bin/env bash
+# Convert images to JPEG, scale to max 2K, strip EXIF
+# Usage: img-convert <name> <file>...
+
+set -euo pipefail
+
+name="${1:?Usage: img-convert <name> <file>...}"
+shift
+
+if [ $# -eq 0 ]; then
+	echo "No files specified" >&2
+	exit 1
+fi
+
+total=$#
+dir="$(dirname "$1")"
+outdir="$dir/$name"
+mkdir -p "$outdir"
+
+echo "Converting $total image(s) → $outdir/"
+echo "Output: ${name}_001.jpg, ${name}_002.jpg, ..."
+echo
+
+count=0
+for f in "$@"; do
+	count=$((count + 1))
+	out="$outdir/${name}_$(printf '%03d' $count).jpg"
+	echo "[$count/$total] $(basename "$f") → $(basename "$out")"
+	magick "$f" -resize '2560x2560>' -strip -quality 90 "$out"
+done
+
+echo
+echo "Done. $count image(s) saved to $outdir/"
+
+printf "\nDelete original files? [y/N] "
+read -r answer
+if [[ "$answer" =~ ^[Yy]$ ]]; then
+	if command -v trash-put &>/dev/null; then
+		del="trash-put"
+	else
+		del="rm"
+	fi
+	for f in "$@"; do
+		$del "$f"
+		echo "Deleted $(basename "$f")"
+	done
+fi
+
+notify-send "img-convert" "Converted $count image(s) to $outdir"

@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+# Voice transcription dispatcher
+# Usage: voice <mode> [start|stop|toggle]
+#   modes: dictate, claude, stream
+
+MODE="$1"
+shift
+
+VOICE_DIR="$(dirname "$(realpath "$0")")/voice.d"
+
+case "$MODE" in
+  dictate) . "$VOICE_DIR/dictate.sh" ;;
+  claude)  . "$VOICE_DIR/claude.sh" ;;
+  stream)  . "$VOICE_DIR/stream.sh" ;;
+  *)
+    echo "Usage: voice <mode> [start|stop|toggle]"
+    echo "Modes: dictate, claude, stream"
+    exit 1
+    ;;
+esac

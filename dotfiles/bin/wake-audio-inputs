@@ -1,0 +1,38 @@
+#!/usr/bin/env bash
+# Wake all audio input sources and keep them active for VU meters
+# Also activates OBSBOT video to enable its microphone
+
+set -e
+
+cleanup() {
+    echo "Stopping background processes..."
+    jobs -p | xargs -r kill 2>/dev/null
+    exit 0
+}
+trap cleanup SIGINT SIGTERM
+
+echo "=== Disabling suspend timeout for capture nodes ==="
+pw-metadata -n settings 0 suspend.playback-node.timeout 0
+pw-metadata -n settings 0 suspend.capture-node.timeout 0
+
+echo -e "\n=== Starting OBSBOT video stream (enables mic) ==="
+# Keep video streaming to /dev/null to activate OBSBOT mic
+ffmpeg -f v4l2 -video_size 320x240 -framerate 5 -i /dev/video0 -f null - 2>/dev/null &
+OBSBOT_PID=$!
+sleep 0.5
+
+echo -e "\n=== Waking all input sources ==="
+for src in $(pactl list sources short | grep input | awk '{print $1}'); do
+    echo "Waking source $src..."
+    timeout 0.2 pw-cat --record --target="$src" - >/dev/null 2>&1 &
+done
+sleep 0.3
+
+echo -e "\n=== Current source states ==="
+pactl list sources short | grep input
+
+echo -e "\n=== All inputs awake. Press Ctrl+C to stop ==="
+echo "(OBSBOT video running in background to keep mic active)"
+
+# Keep running
+wait $OBSBOT_PID

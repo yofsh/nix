@@ -1,0 +1,124 @@
+#!/usr/bin/env zsh
+
+# title → role mapping
+typeset -A title_to_role=(
+  ["YouTube Music — Mozilla Firefox"]="music"
+  ["Home Overview – Home Assistant — Mozilla Firefox"]="ha"
+  ["Extension: (Bitwarden Password Manager) - Bitwarden — Mozilla Firefox"]="bw"
+  ["Open WebUI — Mozilla Firefox"]="gpt"
+)
+
+# role → managed window address
+typeset -A managed=()
+
+# role → setup function
+setup_music()  { pseudo_resize "$1" "1740" "1368"; move_workspace "$1" "music" }
+setup_ha()     { floating "$1"; resize "$1" "1740" "95%"; center "$1"; move_workspace "$1" "ha"; center "$1" }
+setup_bw()     { floating "$1"; resize "$1" "400" "600"; center "$1" }
+setup_gpt()    { floating "$1"; resize "$1" "1740" "95%"; center "$1"; move_workspace "$1" "gpt"; center "$1" }
+
+run() {
+  local label="$1"; shift
+  local result
+  result=$("$@" 2>&1)
+  if [[ "$result" == "ok" ]]; then
+    echo "  ✅ $label"
+  else
+    echo "  ❌ $label — $result"
+  fi
+}
+
+floating()       { run "float" hyprctl dispatch setfloating "$1" }
+move_workspace() { run "move → $2" hyprctl dispatch movetoworkspacesilent "special:$2,$1" }
+resize()         { run "resize ${2}x${3}" hyprctl dispatch resizewindowpixel "exact $2 $3,$1" }
+center()         { run "center" hyprctl dispatch centerwindow "$1" }
+
+is_pseudo() {
+  local addr="${1#address:}"
+  hyprctl clients -j | jq -r --arg a "$addr" '.[] | select(.address == $a) | .pseudo' 2>/dev/null
+}
+
+pseudo() {
+  local window="$1" state="${2:-on}"
+  local current
+  current=$(is_pseudo "$window")
+  if [[ "$state" == "on" && "$current" == "true" ]] || \
+     [[ "$state" == "off" && "$current" == "false" ]]; then
+    echo "  ⏭️  pseudo already $state"
+    return
+  fi
+  run "pseudo $state" hyprctl dispatch pseudo "$window"
+}
+
+pseudo_resize() {
+  local window="$1" w="$2" h="$3"
+  run "float" hyprctl dispatch setfloating "$window"
+  run "resize ${w}x${h}" hyprctl dispatch resizewindowpixel "exact $w $h,$window"
+  run "tile" hyprctl dispatch settiled "$window"
+  pseudo "$window" on
+}
+
+# check if a managed window still exists
+window_exists() {
+  local addr="${1#address:}"
+  hyprctl clients -j | jq -e --arg a "$addr" '.[] | select(.address == $a)' &>/dev/null
+}
+
+# clean up stale managed entries
+cleanup_managed() {
+  for role addr in "${(@kv)managed}"; do
+    if ! window_exists "$addr"; then
+      echo "🧹 [$role] window $addr gone, unmanaging"
+      unset "managed[$role]"
+    fi
+  done
+}
+
+handle_window() {
+  IFS='>' read -r event rest <<< "$1"
+
+  # handle window close — remove from managed
+  if [[ "$event" == "closewindow" ]]; then
+    local closed="address:0x${rest:1}"
+    for role addr in "${(@kv)managed}"; do
+      if [[ "$addr" == "$closed" ]]; then
+        echo "🚪 [$role] closed ($closed)"
+        unset "managed[$role]"
+        return
+      fi
+    done
+    return
+  fi
+
+  [[ "$event" != "windowtitlev2" ]] && return
+
+  IFS=',' read -r address title <<< "$rest"
+  local window="address:0x${address:1}"
+
+  local role="${title_to_role[$title]}"
+  [[ -z "$role" ]] && return
+
+  # already managed by this address — nothing to do
+  if [[ "${managed[$role]}" == "$window" ]]; then
+    return
+  fi
+
+  # another window already manages this role — skip
+  if [[ -n "${managed[$role]}" ]]; then
+    if window_exists "${managed[$role]}"; then
+      echo "⏭️  [$role] already managed by ${managed[$role]}, skipping $window"
+      return
+    fi
+    # stale entry, clean up
+    unset "managed[$role]"
+  fi
+
+  echo "🆕 [$role] claiming $window"
+  managed[$role]="$window"
+  setup_${role} "$window"
+  echo ""
+}
+
+socat - "UNIX-CONNECT:$XDG_RUNTIME_DIR/hypr/$HYPRLAND_INSTANCE_SIGNATURE/.socket2.sock" | while read -r line; do
+  handle_window "$line"
+done

@@ -1,0 +1,70 @@
+#!/bin/sh
+
+DEVICE=$1
+
+select_camera() {
+	# List cameras with their names from sysfs (deduplicated by name)
+	for dev in /sys/class/video4linux/video*; do
+		[ -e "$dev/name" ] || continue
+		devpath="/dev/$(basename "$dev")"
+		name=$(cat "$dev/name")
+		echo "$devpath: $name"
+	done | awk -F': ' '!seen[$2]++' | fzf --prompt="Select camera: " | cut -d: -f1
+}
+
+select_audio_source() {
+	pactl list sources short | awk '{print $1": "$2}' | fzf --prompt="Select audio input: " | cut -d: -f1
+}
+
+check_mic() {
+	SOURCE=$(select_audio_source)
+	[ -z "$SOURCE" ] && echo "No source selected" && return
+
+	LOOPBACK_LOADED=$(pactl list modules short | grep "module-loopback.*source=$SOURCE")
+	if [ "$LOOPBACK_LOADED" ]; then
+		pactl unload-module module-loopback
+		echo "Loopback module unloaded"
+	else
+		pactl load-module module-loopback source="$SOURCE"
+		echo "Loopback module loaded for source $SOURCE"
+	fi
+}
+
+get_best_resolution() {
+	# Get best MJPEG resolution (highest pixel count)
+	v4l2-ctl -d "$1" --list-formats-ext 2>/dev/null | \
+		grep -A1 "MJPEG" | grep -oE "[0-9]+x[0-9]+" | \
+		awk -F'x' '{print $1*$2, $0}' | sort -rn | head -1 | awk '{print $2}'
+}
+
+check_cam() {
+	CAMERA=$(select_camera)
+	[ -z "$CAMERA" ] && echo "No camera selected" && return
+
+	SIZE=$(get_best_resolution "$CAMERA")
+	[ -z "$SIZE" ] && SIZE=1920x1080
+
+	echo "Using resolution: $SIZE"
+	mpv \
+		--title='Camera Check' \
+		--profile=low-latency \
+		--untimed \
+		--demuxer-lavf-o=video_size=$SIZE,input_format=mjpeg \
+		--display-tags-clr \
+		--msg-level=cplayer=error \
+		"av://v4l2:$CAMERA"
+}
+
+case $DEVICE in
+"mic")
+	check_mic
+	;;
+"cam")
+	check_cam
+	;;
+*)
+	check_mic
+	check_cam
+	check_mic
+	;;
+esac

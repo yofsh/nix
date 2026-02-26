@@ -1,0 +1,136 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# ── Constants and Self-Reference ─────────────────────────────────────────────
+YTS_SELF="$(readlink -f "$0")"
+YTS_LIB_DIR="$(dirname "$YTS_SELF")/yts.d"
+
+# ── Default Config ───────────────────────────────────────────────────────────
+YTS_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/yts"
+YTS_JOBS_DIR="$YTS_DIR/_jobs"
+YTS_PROCESSING_FILE="$YTS_DIR/_processing.json"
+YTS_LANG=ru
+YTS_YOUTUBE_API_KEY=
+YTS_FETCH_COMMENTS=false
+YTS_MAX_COMMENTS=20
+YTS_AUTO_OPEN=false
+YTS_SUB_LANGS=en,ru,uk
+YTS_CONFIG_FILE="${HOME}/.config/yts/config"
+
+# ── Load User Config ────────────────────────────────────────────────────────
+[[ -f "$YTS_CONFIG_FILE" ]] && source "$YTS_CONFIG_FILE"
+
+# Re-derive dependent paths after config load (user may have changed YTS_DIR)
+YTS_JOBS_DIR="$YTS_DIR/_jobs"
+YTS_PROCESSING_FILE="$YTS_DIR/_processing.json"
+
+# ── Source Libraries (order matters) ─────────────────────────────────────────
+source "$YTS_LIB_DIR/helpers.sh"
+source "$YTS_LIB_DIR/ui.sh"
+source "$YTS_LIB_DIR/worker.sh"
+
+# ── Help ─────────────────────────────────────────────────────────────────────
+cmd_help() {
+  cat <<'EOF'
+yts - YouTube Summary Manager
+
+Usage: yts <command> [args]
+
+Commands:
+  summarize, s [URL]    Summarize a YouTube video (background)
+  list, l               Browse summaries (fzf)
+  ask, a [VIDEO_ID]     Ask follow-up questions about a video
+  transcript, tr [VID]  View raw transcript
+  comments, cm [VID]    View/fetch YouTube comments
+  status, st            Show active processing jobs
+  retry, r [VID]        Retry a failed job
+  delete, rm [VID]      Delete summary files (--all for everything)
+  config [edit]         Show/edit configuration
+  help                  Show this help
+
+Keybindings (in list view):
+  ENTER     View summary
+  Ctrl-C    Copy summary to clipboard
+  Ctrl-Y    Copy YouTube URL
+  Ctrl-D    Delete summary
+  Ctrl-T    View transcript
+  Ctrl-A    Ask follow-up (new terminal)
+  Ctrl-R    Retry failed job
+
+Config: ~/.config/yts/config
+Summaries: ~/Documents/video_summaries/
+EOF
+}
+
+# ── Built-in Tests ───────────────────────────────────────────────────────────
+cmd_test() {
+  local pass=0 fail=0
+
+  _assert() {
+    local desc="$1" expected="$2" got="$3"
+    if [[ "$expected" == "$got" ]]; then
+      echo "  PASS: $desc"
+      pass=$((pass + 1))
+    else
+      echo "  FAIL: $desc (expected '$expected', got '$got')"
+      fail=$((fail + 1))
+    fi
+  }
+
+  echo "Running URL extraction tests..."
+
+  _assert "standard watch URL" "dQw4w9WgXcQ" "$(extract_video_id 'https://www.youtube.com/watch?v=dQw4w9WgXcQ')"
+  _assert "watch URL with params" "dQw4w9WgXcQ" "$(extract_video_id 'https://www.youtube.com/watch?v=dQw4w9WgXcQ&t=120')"
+  _assert "short URL" "dQw4w9WgXcQ" "$(extract_video_id 'https://youtu.be/dQw4w9WgXcQ')"
+  _assert "embed URL" "dQw4w9WgXcQ" "$(extract_video_id 'https://www.youtube.com/embed/dQw4w9WgXcQ')"
+  _assert "shorts URL" "dQw4w9WgXcQ" "$(extract_video_id 'https://www.youtube.com/shorts/dQw4w9WgXcQ')"
+  _assert "no www" "dQw4w9WgXcQ" "$(extract_video_id 'https://youtube.com/watch?v=dQw4w9WgXcQ')"
+  _assert "no https" "dQw4w9WgXcQ" "$(extract_video_id 'youtube.com/watch?v=dQw4w9WgXcQ')"
+  _assert "http" "dQw4w9WgXcQ" "$(extract_video_id 'http://youtube.com/watch?v=dQw4w9WgXcQ')"
+  _assert "v URL" "dQw4w9WgXcQ" "$(extract_video_id 'https://www.youtube.com/v/dQw4w9WgXcQ')"
+  _assert "invalid URL returns empty" "" "$(extract_video_id 'https://example.com/video')"
+  _assert "random string returns empty" "" "$(extract_video_id 'not a url at all')"
+
+  echo ""
+  echo "Running sanitize_filename tests..."
+
+  _assert "basic title" "Hello_World" "$(sanitize_filename 'Hello World')"
+  _assert "special chars removed" "My_Video_Title" "$(sanitize_filename 'My <Video> "Title"')"
+  _assert "multiple spaces" "a_b_c" "$(sanitize_filename 'a   b   c')"
+
+  local long_result
+  long_result="$(sanitize_filename "$(printf '%0.sa' {1..120})")"
+  _assert "truncation to 80 chars" "80" "${#long_result}"
+
+  echo ""
+  echo "Results: $pass passed, $fail failed"
+  [[ $fail -eq 0 ]] && return 0 || return 1
+}
+
+# ── Subcommand Dispatch ──────────────────────────────────────────────────────
+cmd="${1:-}"
+shift 2>/dev/null || true
+
+# Worker runs in background - needs its own error handling
+[[ "$cmd" == "_worker" ]] && set +e
+
+case "$cmd" in
+  summarize|s)   cmd_summarize "$@" ;;
+  list|l|"")     cmd_list "$@" ;;      # default command
+  ask|a)         cmd_ask "$@" ;;
+  transcript|tr) cmd_transcript "$@" ;;
+  comments|cm)   cmd_comments "$@" ;;
+  status|st)     cmd_status "$@" ;;
+  retry|r)       cmd_retry "$@" ;;
+  delete|rm)     cmd_delete "$@" ;;
+  config)        cmd_config "$@" ;;
+  help|--help|-h) cmd_help ;;
+  _worker)       cmd_worker "$@" ;;     # internal
+  _test)         cmd_test ;;            # internal
+  _entries)      _build_entry_list ;;   # internal: for fzf reload
+  *)
+    echo "Unknown command: $cmd"
+    echo "Run 'yts help' for usage"
+    exit 1
+    ;;
+esac

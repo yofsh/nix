@@ -1,0 +1,118 @@
+#!/usr/bin/env bash
+# Mode-aware edge-slider consumer.
+# Maps edge-sliderd events to actions based on the active Hyprland submap.
+# Requires: socat, pactl, brightnessctl
+
+EDGE_SOCKET="${XDG_RUNTIME_DIR}/edge-sliderd.sock"
+HYPR_SOCKET="${XDG_RUNTIME_DIR}/hypr/${HYPRLAND_INSTANCE_SIGNATURE}/.socket2.sock"
+SUBMAP_FILE="${XDG_RUNTIME_DIR}/edge-slider-submap"
+
+# --- Handlers (one per submap) ---
+
+handle_default() {
+    local event=$1
+    case "$event" in
+        left:slide:up)    pactl set-sink-volume @DEFAULT_SINK@ +2% ;;
+        left:slide:down)  pactl set-sink-volume @DEFAULT_SINK@ -2% ;;
+        right:slide:up)   brightnessctl set +2% ;;
+        right:slide:down) brightnessctl set 2%- ;;
+    esac
+}
+
+handle_resize() {
+    local event=$1
+    echo "[resize] $event"
+}
+
+handle_translate() {
+    local event=$1
+    echo "[translate] $event"
+}
+
+handle_master_layout() {
+    local event=$1
+    echo "[master_layout] $event"
+}
+
+handle_power() {
+    local event=$1
+    echo "[power] $event"
+}
+
+handle_bedroom() {
+    local event=$1
+    case "$event" in
+        left:slide:up)    ha up light.power_light ;;
+        left:slide:down)  ha down light.power_light ;;
+        right:slide:up)   ha up light.wled_monitor ;;
+        right:slide:down) ha down light.wled_monitor ;;
+    esac
+}
+
+# --- Dispatch ---
+
+dispatch() {
+    local event=$1
+    local submap
+    submap=$(cat "$SUBMAP_FILE" 2>/dev/null || echo "default")
+
+    case "$submap" in
+        default)
+            handle_default "$event" ;;
+        resize)
+            handle_resize "$event" ;;
+        Translate)
+            handle_translate "$event" ;;
+        "Master Layout")
+            handle_master_layout "$event" ;;
+        Power)
+            handle_power "$event" ;;
+        Bedroom)
+            handle_bedroom "$event" ;;
+        *)
+            handle_default "$event" ;;
+    esac
+}
+
+# --- Submap watcher (background) ---
+
+watch_submap() {
+    while true; do
+        socat -u UNIX-CONNECT:"$HYPR_SOCKET" STDOUT 2>/dev/null | while IFS= read -r line; do
+            if [[ "$line" == submap\>\>* ]]; then
+                local name="${line#submap>>}"
+                if [[ -z "$name" ]]; then
+                    echo "default" > "$SUBMAP_FILE"
+                else
+                    echo "$name" > "$SUBMAP_FILE"
+                fi
+            fi
+        done
+        # Hyprland disconnected — reset to default and retry
+        echo "default" > "$SUBMAP_FILE"
+        sleep 2
+    done
+}
+
+# --- Cleanup ---
+
+cleanup() {
+    rm -f "$SUBMAP_FILE"
+    kill "$WATCHER_PID" 2>/dev/null
+    wait "$WATCHER_PID" 2>/dev/null
+}
+trap cleanup EXIT
+
+# --- Main ---
+
+echo "default" > "$SUBMAP_FILE"
+
+watch_submap &
+WATCHER_PID=$!
+
+while true; do
+    socat -u UNIX-CONNECT:"$EDGE_SOCKET" STDOUT 2>/dev/null | while IFS= read -r event; do
+        dispatch "$event"
+    done
+    sleep 2
+done

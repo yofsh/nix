@@ -1,0 +1,285 @@
+#!/bin/sh
+ID=3333
+UNSPLASH_ACCESS_KEY=$(cat /run/secrets/unsplash-key 2>/dev/null)
+if [ -z "$UNSPLASH_ACCESS_KEY" ]; then
+	echo "Error: Unsplash API key not found at /run/secrets/unsplash-key" >&2
+	exit 1
+fi
+WALLPAPER_DIR="$HOME/pics/wallpapers"
+HISTORY="/tmp/wallpaper_history"
+POS="/tmp/wallpaper_pos"
+
+SILENT=0
+if [ "$1" = "-s" ]; then
+	SILENT=1
+	shift
+fi
+
+mkdir -p "$WALLPAPER_DIR"
+
+# Get the biggest monitor resolution
+eval $(hyprctl monitors -j | jq -r 'max_by(.width * .height) | "WIDTH=\(.width) H=\(.height)"')
+
+# Ensure swww daemon is running
+pgrep -x swww-daemon >/dev/null || swww-daemon 2>/dev/null &
+
+# Notification helper: notify <urgency> <icon> <title> [body]
+notify() {
+	local urgency="$1"
+	local icon="$2"
+	local title="$3"
+	local body="$4"
+
+	[ "$SILENT" -eq 1 ] && return
+	dunstify -u "$urgency" -i "$icon" -r "$ID" "[Wallpaper] $title" "$body"
+	echo -e "[Wallpaper] [$title] $body" >&2
+}
+
+get_pos() { cat "$POS" 2>/dev/null || echo 0; }
+get_len() { wc -l < "$HISTORY" 2>/dev/null || echo 0; }
+
+# Build info string for a local image file
+local_info() {
+	local f="$1"
+	local res=$(identify -ping -format '%wx%h' "$f" 2>/dev/null)
+	local size=$(du -h "$f" | cut -f1)
+	local info=""
+	[ -n "$res" ] && info="📐 $res"
+	[ -n "$size" ] && info="${info:+$info\n}📦 $size"
+	echo -e "$info"
+}
+
+_apply() {
+	swww img "$1" --resize crop --transition-type any --transition-duration 0.4 --transition-fps 240
+}
+
+set_wallpaper() {
+	_apply "$1"
+	local pos=$(get_pos) len=$(get_len)
+	if [ "$pos" -gt 0 ] && [ "$pos" -lt "$len" ]; then
+		head -n "$pos" "$HISTORY" > "${HISTORY}.tmp" && mv "${HISTORY}.tmp" "$HISTORY"
+	fi
+	echo "$1" >> "$HISTORY"
+	wc -l < "$HISTORY" | tr -d ' ' > "$POS"
+}
+
+# Download a single image from Unsplash
+download_one() {
+	local query="$1"
+	local dest="$2"
+
+	local headers_file="/tmp/wallpaper_headers_$$"
+	local url="https://api.unsplash.com/photos/random?client_id=${UNSPLASH_ACCESS_KEY}&orientation=landscape"
+	if [ -n "$query" ]; then
+		local encoded_query=$(printf '%s' "$query" | jq -sRr @uri)
+		url="${url}&query=${encoded_query}"
+	fi
+	response=$(curl -s -D "$headers_file" "$url")
+	local http_status=$(head -1 "$headers_file" 2>/dev/null | grep -oP '\d{3}')
+	rate_remaining=$(grep -i 'x-ratelimit-remaining' "$headers_file" 2>/dev/null | grep -oP '\d+')
+	rm -f "$headers_file"
+
+	if [ "$http_status" != "200" ]; then
+		local err_msg="HTTP $http_status"
+		[ -n "$rate_remaining" ] && [ "$rate_remaining" -eq 0 ] 2>/dev/null && err_msg="$err_msg (rate limit exceeded)"
+		local api_errors=$(echo "$response" | jq -r '.errors[]? // empty' 2>/dev/null)
+		[ -n "$api_errors" ] && err_msg="$err_msg: $api_errors"
+		DL_ERROR="$err_msg"
+		return 1
+	fi
+
+	URL=$(echo "$response" | jq -r ".urls.raw" 2>/dev/null)
+
+	if [ "$URL" = "null" ] || [ -z "$URL" ]; then
+		DL_ERROR="No image URL in response"
+		return 1
+	fi
+
+	# Extract metadata
+	IMG_WIDTH=$(echo "$response" | jq -r ".width")
+	IMG_HEIGHT=$(echo "$response" | jq -r ".height")
+	IMG_AUTHOR=$(echo "$response" | jq -r ".user.name")
+	IMG_DESC=$(echo "$response" | jq -r ".description // .alt_description // empty" | head -c 50)
+
+	curl -s -L -o "$dest" "${URL}&w=${WIDTH}"
+
+	# Verify it's an image
+	if ! file "$dest" | grep -q "image"; then
+		rm -f "$dest"
+		DL_ERROR="Downloaded file is not a valid image"
+		return 1
+	fi
+
+	# Get file size
+	FILE_SIZE=$(du -h "$dest" | cut -f1)
+
+	# Build info string
+	IMG_INFO="📐 ${IMG_WIDTH}x${IMG_HEIGHT}
+📦 ${FILE_SIZE}
+👤 ${IMG_AUTHOR}"
+	[ -n "$IMG_DESC" ] && IMG_INFO="${IMG_INFO}
+📝 ${IMG_DESC}"
+}
+
+
+# Direct download (for URLs)
+download_wp() {
+	local tmp="/tmp/wallpaper_$(date +%s%N).jpg"
+	notify low folder-download "Wallpaper" "Downloading..."
+
+	curl -s -L -o "$tmp" "$1"
+
+	if ! file "$tmp" | grep -q "image"; then
+		notify critical dialog-error "Wallpaper" "Download failed"
+		return 1
+	fi
+
+	set_wallpaper "$tmp"
+	notify low preferences-desktop-wallpaper "Wallpaper set!" "$tmp"
+}
+
+# Main
+input_string=$1
+url_pattern="^(http|https|ftp)://[a-zA-Z0-9.-]+\.[a-zA-Z]{2,4}(/\S*)?$"
+
+if [[ $input_string =~ $url_pattern ]]; then
+	download_wp "$1"
+	exit 0
+fi
+
+case "$1" in
+"next")
+	pos=$(get_pos)
+	len=$(get_len)
+	if [ "$pos" -lt "$len" ]; then
+		new_pos=$((pos + 1))
+		wal=$(sed -n "${new_pos}p" "$HISTORY")
+		echo "$new_pos" > "$POS"
+		_apply "$wal"
+		notify low preferences-desktop-wallpaper "$(basename "$wal")" "$(local_info "$wal")"
+	else
+		wal=$(find "$WALLPAPER_DIR" -type f \( -name "*.jpg" -o -name "*.png" -o -name "*.webp" \) | shuf -n 1)
+		if [ -n "$wal" ]; then
+			set_wallpaper "$wal"
+			notify low preferences-desktop-wallpaper "$(basename "$wal")" "$(local_info "$wal")"
+		fi
+	fi
+	;;
+"prev")
+	pos=$(get_pos)
+	if [ "$pos" -gt 1 ]; then
+		new_pos=$((pos - 1))
+		wal=$(sed -n "${new_pos}p" "$HISTORY")
+		echo "$new_pos" > "$POS"
+		_apply "$wal"
+		notify low preferences-desktop-wallpaper "$(basename "$wal")" "$(local_info "$wal")"
+	else
+		notify low preferences-desktop-wallpaper "Wallpaper" "No previous wallpaper"
+	fi
+	;;
+"random")
+	wal=$(find "$WALLPAPER_DIR" -type f \( -name "*.jpg" -o -name "*.png" -o -name "*.webp" \) | shuf -n 1)
+	if [ -n "$wal" ]; then
+		set_wallpaper "$wal"
+		notify low preferences-desktop-wallpaper "$(basename "$wal")" "$(local_info "$wal")"
+	else
+		notify critical dialog-error "Wallpaper" "No wallpapers found in $WALLPAPER_DIR"
+	fi
+	;;
+"delete")
+	pos=$(get_pos)
+	len=$(get_len)
+	if [ "$pos" -le 0 ] || [ "$len" -le 0 ]; then
+		notify low dialog-warning "Wallpaper" "No wallpaper to delete"
+		exit 0
+	fi
+	wal=$(sed -n "${pos}p" "$HISTORY")
+	if [ ! -f "$wal" ]; then
+		notify low dialog-warning "Wallpaper" "File not found"
+		exit 1
+	fi
+	name=$(basename "$wal")
+	# Remove from history
+	sed -i "${pos}d" "$HISTORY"
+	len=$((len - 1))
+	# Move to next or previous
+	if [ "$len" -gt 0 ]; then
+		[ "$pos" -gt "$len" ] && pos=$len
+		echo "$pos" > "$POS"
+		next_wal=$(sed -n "${pos}p" "$HISTORY")
+		_apply "$next_wal"
+	else
+		echo 0 > "$POS"
+	fi
+	rm -f "$wal"
+	notify low user-trash "Deleted" "$name"
+	;;
+"auto")
+	# Auto-rotate wallpapers (daemon mode)
+	pgrep -x swww-daemon >/dev/null || swww-daemon 2>/dev/null &
+	sleep 1
+	echo "Starting autowallpaper rotation"
+	while true; do
+		wallpaper -s next
+		sleep "${2:-900}"
+	done
+	;;
+"set")
+	# Set wallpaper from a local file, with macOS support
+	image="$2"
+	[ -z "$image" ] && { echo "Usage: wallpaper set <file>"; exit 1; }
+	[ -e "$image" ] && file --mime-type "$image" | grep -qE 'image/(jpeg|jpg|png|gif|bmp|webp|tiff)' || { echo "Not an image"; exit 1; }
+	# Get absolute path
+	case "$image" in
+		/*) ;;
+		*) image="$(pwd)/$image" ;;
+	esac
+	if [ "$(uname)" = "Darwin" ]; then
+		osascript -e "tell application \"System Events\" to tell every desktop to set picture to \"$image\""
+	else
+		set_wallpaper "$image"
+	fi
+	notify low preferences-desktop-wallpaper "Wallpaper set!" "$(basename "$image")"
+	;;
+"image")
+	download_wp "$2"
+	;;
+"status")
+	# Show wallpaper directory status
+	count=$(find "$WALLPAPER_DIR" -type f \( -name "*.jpg" -o -name "*.png" -o -name "*.webp" \) 2>/dev/null | wc -l)
+	echo "Wallpapers in $WALLPAPER_DIR: $count"
+	;;
+*)
+	# Download new wallpaper
+	query="$1"
+	MAX_RETRIES=5
+
+	if [ -n "$query" ]; then
+		notify low folder-download "Wallpaper" "Downloading '$query'..."
+	else
+		notify low folder-download "Wallpaper" "Downloading random..."
+	fi
+
+	for i in $(seq 1 $MAX_RETRIES); do
+		dest="$WALLPAPER_DIR/${query:-random}_$(date +%s%N).jpg"
+
+		if download_one "$query" "$dest"; then
+			if [ "$IMG_WIDTH" -ge "$WIDTH" ]; then
+				set_wallpaper "$dest"
+				title="Wallpaper set!"
+				[ -n "$rate_remaining" ] && title="Wallpaper set! 🔑$rate_remaining"
+				notify low preferences-desktop-wallpaper "$title" "$IMG_INFO"
+				exit 0
+			else
+				notify low folder-download "Wallpaper" "Too small (${IMG_WIDTH}x${IMG_HEIGHT}), retry $i/$MAX_RETRIES..."
+				rm -f "$dest"
+			fi
+		else
+			notify critical dialog-error "Wallpaper failed" "$DL_ERROR"
+			exit 1
+		fi
+	done
+
+	notify critical dialog-error "Wallpaper failed" "No image found >= ${WIDTH}px wide after $MAX_RETRIES tries"
+	;;
+esac

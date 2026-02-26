@@ -1,0 +1,91 @@
+[global]
+    frame_width = 0
+    frame_color = "#11111144"
+    background = "#22222211"
+    foreground = "#eeeeee"
+    progress_bar_height=5
+    font = DejaVu Sans 10
+    markup = full
+    format = "<b>%s</b>  %p  <span fgcolor="dim gray">%a</span> \n%b"
+    sort = yes
+    indicate_hidden = yes
+    alignment = left
+    show_age_threshold = 60
+    word_wrap = yes #
+    ignore_newline = no
+    icon_theme = Papirus
+    enable_recursive_icon_lookup = true
+    width = 400
+    height = 500
+    offset = 10x10
+    shrink = no
+    idle_threshold = 120
+    progress_bar_max_width = 400
+    monitor = 0
+    follow = mouse
+    sticky_history = yes
+    history_length = 50
+    show_indicators = yes
+    line_height = 0
+    separator_height = 6
+    padding = 5
+    horizontal_padding = 5
+    separator_color = "#FFFFFF00"
+    dmenu = vicinae dmenu
+    browser = firefox
+    min_icon_size=48
+    max_icon_size=48
+    icon_position=left
+    mouse_left_click = do_action
+    mouse_middle_click = do_action, close_current
+    mouse_right_click = close_all
+    origin=top-right
+    vertical_alignment=top
+
+[default]
+   background = "#15151522"
+   foreground = "#eeeeee"
+   msg_urgency = normal
+
+[low]
+   background = "#222222bb"
+   foreground = "#cccccc"
+   msg_urgency = low
+   history_ignore = yes
+
+[urgency_critical]
+    foreground = "#ffffff"
+    background = "#46171777"
+    format = "<b>%s</b>  %p <span fgcolor='#cccccc'>%a</span> \n%b"
+
+[telegram]
+   appname = Telegram Desktop
+   background = "#001b2977"
+
+[brave-telegram]
+   appname = Brave
+   body = "*web.telegram.org*"
+   format = "<b>%s</b>  %p  \n%b"
+   background = "#001b2977"
+
+[notify-send]
+    appname = notify-send
+    format = "<b>%s</b>  %p  \n%b"
+
+[dunstify]
+    appname = dunstify
+    format = "<b>%s</b>  %p  \n%b"
+
+[firefox-slack-private]
+    summary = New message *
+    background = "#0652dd77"
+    format = "<b>%s</b>  %p  \n%b"
+    new_icon = slack
+
+[translation]
+    summary = Translation
+    format = "<b>%b</b>"
+    background = "#15151511"
+    foreground = "#ffffff"
+    timeout=20000
+    new_icon = none

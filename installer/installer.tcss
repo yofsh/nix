@@ -1,0 +1,161 @@
+/* NixOS Flake Installer — Textual CSS */
+
+/* ── Global ── */
+
+Screen {
+    background: $surface;
+}
+
+/* ── Preflight Screen ── */
+
+PreflightScreen {
+    align: center middle;
+}
+
+#preflight-panel {
+    width: 64;
+    max-height: 24;
+    border: thick $primary;
+    padding: 1 2;
+}
+
+#preflight-panel #title {
+    text-align: center;
+    text-style: bold;
+    margin-bottom: 1;
+}
+
+#preflight-checks {
+    height: auto;
+    margin-bottom: 1;
+}
+
+#preflight-hint {
+    height: 1;
+    text-align: center;
+}
+
+/* ── Wizard Screen ── */
+
+#wizard-body {
+    layout: horizontal;
+    height: 1fr;
+}
+
+#wizard-sidebar {
+    width: 30;
+    border-right: thick $primary;
+    padding: 1;
+    height: 100%;
+}
+
+#wizard-sidebar #sidebar-title {
+    text-style: bold;
+    margin-bottom: 1;
+}
+
+#wizard-content {
+    width: 1fr;
+    padding: 1 2;
+    height: 100%;
+}
+
+#wizard-content #content-title {
+    text-style: bold;
+    margin-bottom: 1;
+}
+
+#wizard-content OptionList {
+    height: 1fr;
+}
+
+#wizard-content DataTable {
+    height: 1fr;
+}
+
+#password-container {
+    height: auto;
+}
+
+#password-container Input {
+    margin-bottom: 1;
+}
+
+#password-validation {
+    height: auto;
+    margin-top: 1;
+}
+
+#confirm-summary {
+    height: auto;
+}
+
+/* ── Install Screen ── */
+
+InstallScreen {
+    layout: horizontal;
+}
+
+#install-sidebar {
+    width: 32;
+    border-right: thick $primary;
+    padding: 1;
+    height: 100%;
+}
+
+#install-sidebar #sidebar-title {
+    text-style: bold;
+    margin-bottom: 1;
+}
+
+#install-steps {
+    height: auto;
+}
+
+#install-log-container {
+    width: 1fr;
+    height: 100%;
+    padding: 0 1;
+}
+
+#install-log-container #log-title {
+    text-style: bold;
+    dock: top;
+    height: 1;
+    margin-bottom: 1;
+}
+
+#install-log {
+    height: 1fr;
+    border: round $primary;
+}
+
+/* ── Completion Screen ── */
+
+CompletionScreen {
+    align: center middle;
+}
+
+#completion-panel {
+    width: 64;
+    max-height: 20;
+    border: thick $success;
+    padding: 1 2;
+}
+
+#completion-panel #title {
+    text-align: center;
+    text-style: bold;
+    color: $success;
+    margin-bottom: 1;
+}
+
+#completion-steps {
+    height: auto;
+    margin-bottom: 1;
+}
+
+#completion-hint {
+    height: 1;
+    text-align: center;
+}

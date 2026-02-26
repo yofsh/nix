@@ -1,0 +1,80 @@
+#!/bin/sh
+# Control AirPods via LibrePods D-Bus interface
+
+# Find librepods D-Bus destination
+get_dest() {
+  busctl --user list 2>/dev/null | grep StatusNotifierItem | grep librepods | awk '{print $1}'
+}
+
+DEST=$(get_dest)
+
+if [ -z "$DEST" ]; then
+  echo "LibrePods not running"
+  exit 1
+fi
+
+send_event() {
+  id=$1
+  dbus-send --session --print-reply --dest="$DEST" /MenuBar com.canonical.dbusmenu.AboutToShow int32:"$id" >/dev/null 2>&1
+  sleep 0.1
+  dbus-send --session --print-reply --dest="$DEST" /MenuBar com.canonical.dbusmenu.Event int32:"$id" string:"clicked" variant:int32:0 uint32:"$(date +%s)" >/dev/null 2>&1
+}
+
+get_status() {
+  dbus-send --session --print-reply --dest="$DEST" /MenuBar com.canonical.dbusmenu.GetLayout int32:0 int32:-1 array:string: 2>&1
+}
+
+get_battery() {
+  dbus-send --session --print-reply --dest="$DEST" /StatusNotifierItem org.freedesktop.DBus.Properties.Get string:"org.kde.StatusNotifierItem" string:"ToolTip" 2>&1 | grep -oE "L: [0-9-]+%? R: [0-9-]+%? C: [0-9-]+%?"
+}
+
+case "$1" in
+  off|window|w)
+    send_event 1
+    echo "Opened window (use GUI for Off mode)"
+    ;;
+  anc|nc)
+    send_event 2
+    echo "Switched to Noise Cancellation"
+    ;;
+  transparency|tr)
+    send_event 3
+    echo "Switched to Transparency"
+    ;;
+  adaptive|ad)
+    send_event 4
+    echo "Switched to Adaptive"
+    ;;
+  conversation|cd)
+    send_event 6
+    echo "Toggled Conversation Detection"
+    ;;
+  battery|b)
+    get_battery
+    ;;
+  status|s)
+    echo "Battery: $(get_battery)"
+    echo ""
+    status=$(get_status)
+    for mode in "Noise Cancellation" "Transparency" "Adaptive" "Conversation Detection"; do
+      state=$(echo "$status" | grep -A5 "\"$mode\"" | grep "int32 1" | head -1)
+      if [ -n "$state" ]; then
+        echo "● $mode"
+      else
+        echo "○ $mode"
+      fi
+    done
+    ;;
+  *)
+    echo "Usage: airpods <command>"
+    echo ""
+    echo "Commands:"
+    echo "  anc, nc          - Noise Cancellation"
+    echo "  transparency, tr - Transparency mode"
+    echo "  adaptive, ad     - Adaptive mode"
+    echo "  off, window, w   - Open GUI (Off mode only in GUI)"
+    echo "  conversation, cd - Toggle Conversation Detection"
+    echo "  battery, b       - Show battery levels"
+    echo "  status, s        - Show battery and current mode"
+    ;;
+esac

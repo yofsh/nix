@@ -1,0 +1,50 @@
+sanitize tridactyllocal tridactylsync
+
+command openmpv js tri.native.run(`notify-send "Opening ${window.location.href.split('&')[0]}"`);tri.native.run(`mpv ${window.location.href.split('&')[0]} `).then(console.log)
+bind V openmpv
+
+command yts js tri.native.run(`yts summarize "${window.location.href}"`); 
+bind S yts
+
+
+bind EE js tri.excmds.source(); tri.excmds.fillcmdline_tmp(1000, "Config reloaded!!3!"); 
+bind yg composite js "git clone " + document.location.href.replace(/https?:\/\//,"git@").replace("/",":").replace(/$/,".git") | clipboard yank
+
+bind ` fillcmdline_notrail
+unbind <C-f>
+
+bind gd tabdetach
+bind gD winmerge
+
+unbind <C-d>
+unbind <C-e>
+
+alias works js tri.excmds.fillcmdline_tmp(3000, "It works")
+alias wallpaper js -p tri.excmds.shellescape(JS_ARG).then(url => tri.excmds.exclaim_quiet('wallpaper ' + url))
+
+alias unsplashdownloadhint hint -pipe a[data-test="non-sponsored-photo-download-button"] href
+
+bindurl ^https://unsplash.com/ q composite unsplashdownloadhint | wallpaper
+bind e scrollpage -0.5
+bind d scrollpage 0.5
+
+unbind $
+unbind x
+bind x tabclose
+
+bing n findnext 
+bing N findnext -f --reverse
+
+autocmd DocLoad .* js -s ~/nix/dotfiles/firefox/customvideohotkeys.js
+
+setpref browser.pocket.enabled false
+setpref extensions.pocket.enabled false
+setpref extensions.screenshots.disabled true
+setpref toolkit.legacyUserProfileCustomizations.stylesheets true
+setpref browser.tabs.closeWindowWithLastTab false
+
+set smoothscroll false
+set newtabfocus page
+set historyresults 30
+
+set editorcmd nvim

@@ -1,0 +1,525 @@
+#!/usr/bin/env python3
+"""Parse Hyprland config keybindings and output structured JSON."""
+
+import argparse
+import json
+import os
+import re
+import sys
+
+# Canonical modifier order
+MOD_ORDER = {"SUPER": 0, "CTRL": 1, "ALT": 2, "SHIFT": 3}
+
+# Known command -> friendly name mappings
+COMMAND_NAMES = {
+    "firefox": "Firefox",
+    "google-chrome-stable": "Google Chrome",
+    "obsidian": "Obsidian",
+    "pactl": "PulseAudio control",
+    "wpctl": "WirePlumber control",
+    "playerctl": "Media player control",
+    "dunstctl": "Dunst notification control",
+    "light": "Screen brightness",
+    "hyprlock": "Lock screen",
+    "wofi": "App launcher (wofi)",
+    "vicinae": "App launcher (vicinae)",
+    "htop": "System monitor (htop)",
+    "btop": "System monitor (btop)",
+    "glances": "System monitor (glances)",
+    "systemctl": "Systemd control",
+    "shutdown": "Shutdown",
+    "reboot": "Reboot",
+    "xdg-open": "Open URL",
+    "wl-paste": "Clipboard paste",
+    "foot": "Terminal (foot)",
+    "nvim": "Neovim",
+    "gping": "Graphical ping",
+    "nmcli": "Network manager",
+    "curl": "Fetch URL",
+    "journalctl": "System journal",
+    "killall": "Kill process",
+    "powerprofilesctl": "Power profile control",
+}
+
+# XF86 key friendly names
+XF86_NAMES = {
+    "XF86AudioRaiseVolume": "Volume Up",
+    "XF86AudioLowerVolume": "Volume Down",
+    "XF86AudioMute": "Mute Audio",
+    "XF86AudioMicMute": "Mute Microphone",
+    "XF86MonBrightnessUp": "Brightness Up",
+    "XF86MonBrightnessDown": "Brightness Down",
+    "XF86AudioPlay": "Media Play",
+    "XF86AudioPause": "Media Pause",
+    "XF86AudioNext": "Media Next",
+    "XF86AudioPrev": "Media Previous",
+}
+
+# Direction labels
+DIRECTIONS = {"l": "left", "r": "right", "u": "up", "d": "down"}
+
+# Layout message descriptions
+LAYOUT_MSGS = {
+    "rollnext": "Roll next",
+    "rollprev": "Roll previous",
+    "swapnext": "Swap with next",
+    "swapprev": "Swap with previous",
+    "togglesplit": "Toggle split",
+    "swapsplit": "Swap split",
+    "orientationbottom": "Orientation bottom",
+    "orientationtop": "Orientation top",
+    "orientationleft": "Orientation left",
+    "orientationright": "Orientation right",
+    "orientationcenter": "Orientation center",
+    "orientationnext": "Orientation next",
+    "orientationprev": "Orientation previous",
+}
+
+
+# Friendly key names for display
+KEY_NAMES = {
+    "RETURN": "Enter",
+    "escape": "Esc",
+    "grave": "`",
+    "minus": "-",
+    "plus": "+",
+    "equal": "=",
+    "bracketleft": "[",
+    "bracketright": "]",
+    "period": ".",
+    "comma": ",",
+    "TAB": "Tab",
+    "mouse:272": "LMB",
+    "mouse:273": "RMB",
+    "mouse_down": "Scroll Down",
+    "mouse_up": "Scroll Up",
+    "left": "\u2190",
+    "right": "\u2192",
+    "up": "\u2191",
+    "down": "\u2193",
+    **XF86_NAMES,
+}
+
+
+# Nerd Font modifier icons
+MOD_ICONS = {
+    "SUPER": "\U000f0633",   # 󰘳 nf-md-apple_keyboard_command
+    "CTRL":  "\U000f0634",   # 󰘴 nf-md-apple_keyboard_control
+    "ALT":   "\U000f0635",   # 󰘵 nf-md-apple_keyboard_option
+    "SHIFT": "\U000f0636",   # 󰘶 nf-md-apple_keyboard_shift
+}
+
+
+def format_pretty(mods, key, description):
+    """Format a human-readable 'Mods + Key: Description' string."""
+    display_key = KEY_NAMES.get(key, key.upper())
+    parts = [MOD_ICONS.get(m, m) for m in mods.split()] if mods else []
+    parts.append(display_key)
+    combo = " ".join(parts)
+    return f"{combo} \u2014 {description}"
+
+
+def strip_inline_comment(text):
+    """Strip inline comment from args, returning (clean_args, comment_or_None).
+
+    Respects quoted strings — only splits on ' #' outside quotes.
+    """
+    in_single = False
+    in_double = False
+    for i, c in enumerate(text):
+        if c == "'" and not in_double:
+            in_single = not in_single
+        elif c == '"' and not in_single:
+            in_double = not in_double
+        elif c == '#' and not in_single and not in_double:
+            # Check for space before # (standard inline comment)
+            if i > 0 and text[i - 1] == ' ':
+                args = text[:i - 1].rstrip()
+                comment = text[i + 1:].strip()
+                return args, comment if comment else None
+    return text, None
+
+
+def normalize_mods(mods_str):
+    """Normalize modifier string to canonical form."""
+    if not mods_str or not mods_str.strip():
+        return ""
+    # Replace separators with spaces, uppercase
+    normalized = mods_str.strip().upper().replace("+", " ").replace("_", " ")
+    parts = normalized.split()
+    # Sort by canonical order, unknowns go last
+    parts.sort(key=lambda m: MOD_ORDER.get(m, 99))
+    return " ".join(parts)
+
+
+def resolve_vars(text, variables):
+    """Replace $var references with their values."""
+    def replacer(match):
+        name = match.group(1)
+        return variables.get(name, match.group(0))
+    return re.sub(r'\$(\w+)', replacer, text)
+
+
+def extract_exec_command(args):
+    """Extract the base command from an exec args string."""
+    cmd = args.strip()
+    # Strip inline rules like [float; size ...]
+    cmd = re.sub(r'^\[.*?\]\s*', '', cmd)
+    # Strip env var prefixes like MAX_THINKING_TOKENS=0 or CLAUDE_EXTRA_ARGS="--model sonnet"
+    while re.match(r'^[A-Z_]+=', cmd):
+        cmd = re.sub(r'^[A-Z_]+="[^"]*"\s*', '', cmd)
+        cmd = re.sub(r"^[A-Z_]+='[^']*'\s*", '', cmd)
+        cmd = re.sub(r'^[A-Z_]+=\S+\s+', '', cmd)
+    return cmd
+
+
+def describe_exec(args, special_workspaces):
+    """Generate description for exec dispatcher."""
+    cmd = extract_exec_command(args)
+    if not cmd:
+        return "Execute command"
+
+    # Get base command (first word, without path)
+    base = cmd.split()[0]
+    base = os.path.basename(base)
+    rest = cmd[len(cmd.split()[0]):].strip()
+
+    # Check for known commands
+    if base in COMMAND_NAMES:
+        name = COMMAND_NAMES[base]
+        if rest:
+            return f"{name}: {rest}"
+        return name
+
+    # .sh scripts
+    if base.endswith(".sh"):
+        script_name = base[:-3]
+        if rest:
+            return f"Run {script_name}: {rest}"
+        return f"Run {script_name}"
+
+    # Fallback: use base command
+    if rest:
+        return f"Run {base}: {rest}"
+    return f"Run {base}"
+
+
+def auto_describe(dispatcher, args, special_workspaces, key=""):
+    """Generate a human-readable description from dispatcher and args."""
+    d = dispatcher.strip().lower() if dispatcher else ""
+    a = args.strip() if args else ""
+
+    if d == "exec":
+        return describe_exec(a, special_workspaces)
+
+    if d == "workspace":
+        if a.startswith("e+") or a.startswith("e-"):
+            return f"Switch to workspace (relative): {a}"
+        return f"Switch to workspace {a}"
+
+    if d == "movetoworkspace":
+        if a == "special":
+            return "Move window to special workspace"
+        return f"Move window to workspace {a}"
+
+    if d == "movetoworkspacesilent":
+        if a == "special":
+            return "Move window silently to special workspace"
+        return f"Move window silently to workspace {a}"
+
+    if d == "togglespecialworkspace":
+        app = special_workspaces.get(a, "")
+        if app:
+            return f"Toggle special workspace: {a} ({app})"
+        if a:
+            return f"Toggle special workspace: {a}"
+        return "Toggle special workspace"
+
+    if d == "movefocus":
+        direction = DIRECTIONS.get(a, a)
+        return f"Focus {direction}"
+
+    if d == "movewindow":
+        if not a:
+            return "Move window (mouse)"
+        direction = DIRECTIONS.get(a, a)
+        return f"Move window {direction}"
+
+    if d == "resizewindow":
+        return "Resize window (mouse)"
+
+    if d == "resizeactive":
+        return f"Resize active window: {a}"
+
+    if d == "killactive":
+        return "Kill active window"
+
+    if d == "togglefloating":
+        return "Toggle floating"
+
+    if d == "fullscreen":
+        return "Toggle fullscreen"
+
+    if d == "pseudo":
+        return "Toggle pseudo-tiling"
+
+    if d == "pin":
+        return "Pin window"
+
+    if d == "cyclenext":
+        if a == "prev":
+            return "Cycle to previous window"
+        return "Cycle to next window"
+
+    if d == "exit":
+        return "Exit Hyprland"
+
+    if d == "layoutmsg":
+        msg = LAYOUT_MSGS.get(a, a)
+        return f"Layout: {msg}"
+
+    if d == "submap":
+        return f"Enter submap: {a}"
+
+    # Plugin dispatchers like hyprexpo:expo
+    if ":" in d:
+        plugin, action = d.split(":", 1)
+        if a:
+            return f"{plugin}: {action} {a}"
+        return f"{plugin}: {action}"
+
+    # Fallback
+    if a:
+        return f"{d} {a}"
+    return d
+
+
+def parse_config(config_path):
+    """Parse hyprland config and extract keybindings."""
+    with open(config_path, 'r') as f:
+        lines = f.readlines()
+
+    variables = {}
+    special_workspaces = {}
+    current_submap = None
+    pending_comments = []
+    submap_activators = {}  # resolved submap name -> {mods, key}
+
+    global_binds = []
+    submaps = {}  # name -> {"binds": [], "label": str, "activator": {}}
+
+    for line in lines:
+        line = line.rstrip()
+        stripped = line.strip()
+
+        # Skip empty lines — clear pending comments
+        if not stripped:
+            pending_comments = []
+            continue
+
+        # Variable definition: $name = value
+        var_match = re.match(r'^\$(\w[\w-]*)\s*=\s*(.*)', stripped)
+        if var_match:
+            variables[var_match.group(1)] = var_match.group(2).strip()
+            continue
+
+        # Special workspace definition
+        sw_match = re.match(r'^workspace\s*=\s*special:(\w+)\s*,.*on-created-empty:\s*(.*)', stripped)
+        if sw_match:
+            ws_name = sw_match.group(1)
+            cmd = sw_match.group(2).strip()
+            # Extract app name from the command
+            cmd_clean = re.sub(r'^\[.*?\]\s*', '', cmd)  # strip inline rules
+            cmd_clean = re.sub(r'^\$\w+\s*', '', cmd_clean)  # strip $term
+            # Resolve variables in cmd
+            cmd_resolved = resolve_vars(cmd, variables)
+            cmd_resolved_clean = re.sub(r'^\[.*?\]\s*', '', cmd_resolved)
+            base_parts = cmd_resolved_clean.split()
+            if base_parts:
+                # Try to find the actual application launched
+                # First check if there's a URL anywhere — that identifies the app
+                full_cmd = " ".join(base_parts)
+                url_match = re.search(r"https?://(?:www\.)?([^/'\">\s]+)", full_cmd)
+                app = None
+                if url_match:
+                    app = url_match.group(1)
+                else:
+                    skip_words = {'foot', 'sh', 'zsh', 'bash', 'setsid', 'exec'}
+                    in_shell_cmd = False
+                    i = 0
+                    while i < len(base_parts):
+                        p = base_parts[i]
+                        if p == '-c':
+                            # Everything after -c is a shell command string, skip it
+                            in_shell_cmd = True
+                            i += 1
+                            continue
+                        if in_shell_cmd:
+                            i += 1
+                            continue
+                        if p in skip_words or p.startswith('-'):
+                            if p == '-e' and i + 1 < len(base_parts):
+                                # -e arg is the actual command to run
+                                next_p = base_parts[i + 1].strip("'\"")
+                                if next_p and not next_p.startswith('-'):
+                                    app = os.path.basename(next_p)
+                                    break
+                            if p in ('--title',) and i + 1 < len(base_parts):
+                                i += 2
+                                continue
+                            i += 1
+                            continue
+                        if p.startswith("'") or p.startswith('"'):
+                            inner = p.strip("'\"")
+                            app = os.path.basename(inner)
+                            break
+                        if '/' not in p:
+                            app = os.path.basename(p)
+                            break
+                        i += 1
+                # Fallback: if no app found, use the terminal or first command
+                if not app:
+                    first = os.path.basename(base_parts[0])
+                    # If the first command is a terminal emulator, label it as such
+                    terminals = {'foot', 'kitty', 'alacritty', 'wezterm', 'konsole', 'gnome-terminal'}
+                    app = "terminal" if first in terminals else first
+                special_workspaces[ws_name] = app
+            continue
+
+        # Comment line
+        if stripped.startswith('#'):
+            comment_text = stripped.lstrip('#').strip()
+            # Skip commented-out binds and FIXMEs
+            if re.match(r'^(bind|FIXME)', comment_text):
+                pending_comments = []
+                continue
+            if comment_text:
+                pending_comments.append(comment_text)
+            continue
+
+        # Submap transition
+        submap_match = re.match(r'^submap\s*=\s*(.*)', stripped)
+        if submap_match:
+            target = resolve_vars(submap_match.group(1).strip(), variables)
+            if target == "reset":
+                current_submap = None
+            else:
+                current_submap = target
+                if current_submap not in submaps:
+                    # Find the variable name that maps to this value for the label
+                    label = target
+                    submaps[current_submap] = {
+                        "binds": [],
+                        "label": label,
+                        "activator": submap_activators.get(target, None)
+                    }
+            pending_comments = []
+            continue
+
+        # Bind line
+        bind_match = re.match(r'^(bind[elmt]*)\s*=\s*(.*)', stripped)
+        if bind_match:
+            bind_type = bind_match.group(1)
+            rest = bind_match.group(2).strip()
+
+            # Strip trailing semicolons
+            rest = rest.rstrip(';').strip()
+
+            # Resolve variables
+            rest = resolve_vars(rest, variables)
+
+            # Split: mods, key, dispatcher, args (max 4 parts)
+            parts = rest.split(',', 3)
+            if len(parts) < 3:
+                pending_comments = []
+                continue
+
+            mods = normalize_mods(parts[0])
+            key = parts[1].strip()
+            dispatcher = parts[2].strip()
+            args = parts[3].strip() if len(parts) > 3 else ""
+
+            # Strip inline comment from args
+            args, inline_comment = strip_inline_comment(args)
+
+            # Skip submap reset binds
+            if dispatcher.lower() == "submap" and args.strip().lower() == "reset":
+                pending_comments = []
+                continue
+
+            # Submap activator bind (global context)
+            if dispatcher.lower() == "submap" and current_submap is None:
+                resolved_target = args.strip()
+                submap_activators[resolved_target] = {"mods": mods, "key": key}
+                # Update existing submap entry if already created
+                if resolved_target in submaps:
+                    submaps[resolved_target]["activator"] = {"mods": mods, "key": key}
+                pending_comments = []
+                continue
+
+            # Build description: pending comments > inline comment > auto-generate
+            if pending_comments:
+                description = " ".join(pending_comments)
+            elif inline_comment:
+                description = inline_comment
+            else:
+                description = auto_describe(dispatcher, args, special_workspaces, key)
+
+            entry = {
+                "mods": mods,
+                "key": key,
+                "dispatcher": dispatcher,
+                "args": args,
+                "description": description,
+                "pretty": format_pretty(mods, key, description),
+                "type": bind_type,
+            }
+
+            if current_submap is None:
+                global_binds.append(entry)
+            else:
+                if current_submap in submaps:
+                    submaps[current_submap]["binds"].append(entry)
+
+            pending_comments = []
+            continue
+
+        # Any other line — clear pending comments
+        pending_comments = []
+
+    # Build output
+    submaps_list = []
+    for name, data in submaps.items():
+        submap_entry = {
+            "name": name,
+            "label": data["label"],
+        }
+        if data["activator"]:
+            submap_entry["activator"] = data["activator"]
+        submap_entry["binds"] = data["binds"]
+        submaps_list.append(submap_entry)
+
+    return {"global": global_binds, "submaps": submaps_list}
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Parse Hyprland keybindings to JSON")
+    parser.add_argument("config", nargs="?",
+                        default=os.path.expanduser("~/.config/hypr/hyprland.conf"),
+                        help="Path to hyprland.conf")
+    parser.add_argument("--pretty", "-p", action="store_true",
+                        help="Pretty-print JSON output")
+    args = parser.parse_args()
+
+    if not os.path.isfile(args.config):
+        print(f"Error: config file not found: {args.config}", file=sys.stderr)
+        sys.exit(1)
+
+    result = parse_config(args.config)
+
+    indent = 2 if args.pretty else None
+    print(json.dumps(result, indent=indent, ensure_ascii=False))
+
+
+if __name__ == "__main__":
+    main()

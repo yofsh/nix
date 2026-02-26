@@ -1,0 +1,12 @@
+keys:
+  - &users:
+    - &ta age1csagu4v8k6nsk0zc7k6vtl27fzt54xtx6wc9makd4mhvgl9sauzqxk79t3
+  - &hosts:
+    - &athena age1cvyzp4ks8ymctc7gpelrfmg9wnpj9mv2cupw54wpvnanlvs9vqsqvjcqkz
+
+creation_rules:
+  - path_regex: secrets.yaml$
+    key_groups:
+    - age:
+      - *ta
+      - *athena

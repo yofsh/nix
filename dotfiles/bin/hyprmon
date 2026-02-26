@@ -1,0 +1,198 @@
+#!/usr/bin/env bash
+
+# Colors
+RESET='\033[0m'
+BOLD='\033[1m'
+DIM='\033[2m'
+
+# Foreground colors
+RED='\033[38;5;203m'
+GREEN='\033[38;5;114m'
+YELLOW='\033[38;5;221m'
+BLUE='\033[38;5;111m'
+MAGENTA='\033[38;5;183m'
+CYAN='\033[38;5;116m'
+WHITE='\033[38;5;252m'
+ORANGE='\033[38;5;215m'
+PINK='\033[38;5;218m'
+GRAY='\033[38;5;245m'
+
+# Icons
+ICON_MONITOR="󰍹"
+ICON_RES="󰹑"
+ICON_REFRESH="󰓦"
+ICON_POS="󰆾"
+ICON_SCALE="󰩨"
+ICON_WORKSPACE="󰖯"
+ICON_CHECK="󰄬"
+ICON_CROSS="󰅖"
+ICON_FOCUSED="󰈈"
+ICON_UNFOCUSED="󰈉"
+ICON_MAKE="󰏗"
+ICON_SIZE="󰇛"
+
+print_separator() {
+    echo -e "${DIM}${GRAY}─────────────────────────────────────────────────────${RESET}"
+}
+
+print_header() {
+    echo
+    echo -e "${BOLD}${CYAN}  ${ICON_MONITOR}  Hyprland Monitors${RESET}"
+    print_separator
+}
+
+format_bool() {
+    if [[ "$1" == "yes" || "$1" == "1" || "$1" == "true" ]]; then
+        echo -e "${GREEN}${ICON_CHECK} yes${RESET}"
+    else
+        echo -e "${DIM}${GRAY}${ICON_CROSS} no${RESET}"
+    fi
+}
+
+# Parse and display monitor info
+parse_monitors() {
+    local current_monitor=""
+    local monitor_id=""
+    local resolution=""
+    local refresh=""
+    local position=""
+    local description=""
+    local make=""
+    local model=""
+    local physical_size=""
+    local scale=""
+    local focused=""
+    local dpms=""
+    local vrr=""
+    local workspace=""
+    local modes=""
+    local transform=""
+    local format=""
+
+    while IFS= read -r line; do
+        # New monitor block
+        if [[ "$line" =~ ^Monitor\ ([A-Za-z0-9-]+)\ \(ID\ ([0-9]+)\): ]]; then
+            # Print previous monitor if exists
+            if [[ -n "$current_monitor" ]]; then
+                print_monitor
+            fi
+
+            current_monitor="${BASH_REMATCH[1]}"
+            monitor_id="${BASH_REMATCH[2]}"
+            # Reset values
+            resolution="" refresh="" position="" description="" make="" model=""
+            physical_size="" scale="" focused="" dpms="" vrr="" workspace="" modes=""
+            transform="" format=""
+
+        # Resolution and position line
+        elif [[ "$line" =~ ^[[:space:]]+([0-9]+x[0-9]+)@([0-9.]+)\ at\ ([0-9]+x[0-9]+) ]]; then
+            resolution="${BASH_REMATCH[1]}"
+            refresh="${BASH_REMATCH[2]}"
+            position="${BASH_REMATCH[3]}"
+
+        # Other fields
+        elif [[ "$line" =~ ^[[:space:]]+description:\ (.+) ]]; then
+            description="${BASH_REMATCH[1]}"
+        elif [[ "$line" =~ ^[[:space:]]+make:\ (.+) ]]; then
+            make="${BASH_REMATCH[1]}"
+        elif [[ "$line" =~ ^[[:space:]]+model:\ (.+) ]]; then
+            model="${BASH_REMATCH[1]}"
+        elif [[ "$line" =~ ^[[:space:]]+physical\ size\ \(mm\):\ (.+) ]]; then
+            physical_size="${BASH_REMATCH[1]}"
+        elif [[ "$line" =~ ^[[:space:]]+scale:\ (.+) ]]; then
+            scale="${BASH_REMATCH[1]}"
+        elif [[ "$line" =~ ^[[:space:]]+transform:\ (.+) ]]; then
+            transform="${BASH_REMATCH[1]}"
+        elif [[ "$line" =~ ^[[:space:]]+focused:\ (.+) ]]; then
+            focused="${BASH_REMATCH[1]}"
+        elif [[ "$line" =~ ^[[:space:]]+dpmsStatus:\ (.+) ]]; then
+            dpms="${BASH_REMATCH[1]}"
+        elif [[ "$line" =~ ^[[:space:]]+vrr:\ (.+) ]]; then
+            vrr="${BASH_REMATCH[1]}"
+        elif [[ "$line" =~ ^[[:space:]]+active\ workspace:\ ([0-9]+) ]]; then
+            workspace="${BASH_REMATCH[1]}"
+        elif [[ "$line" =~ ^[[:space:]]+currentFormat:\ (.+) ]]; then
+            format="${BASH_REMATCH[1]}"
+        elif [[ "$line" =~ ^[[:space:]]+availableModes:\ (.+) ]]; then
+            modes="${BASH_REMATCH[1]}"
+        fi
+    done
+
+    # Print last monitor
+    if [[ -n "$current_monitor" ]]; then
+        print_monitor
+    fi
+}
+
+print_monitor() {
+    echo
+
+    # Monitor name with focus indicator
+    local focus_icon
+    if [[ "$focused" == "yes" ]]; then
+        focus_icon="${GREEN}${ICON_FOCUSED}${RESET}"
+        echo -e "  ${focus_icon} ${BOLD}${YELLOW}${current_monitor}${RESET} ${DIM}${GRAY}(ID: ${monitor_id})${RESET}"
+    else
+        focus_icon="${DIM}${GRAY}${ICON_UNFOCUSED}${RESET}"
+        echo -e "  ${focus_icon} ${BOLD}${WHITE}${current_monitor}${RESET} ${DIM}${GRAY}(ID: ${monitor_id})${RESET}"
+    fi
+
+    # Description/Model
+    if [[ -n "$make" && -n "$model" ]]; then
+        echo -e "     ${DIM}${ICON_MAKE}${RESET} ${GRAY}${make} ${WHITE}${model}${RESET}"
+    fi
+
+    echo
+
+    # Resolution and refresh rate
+    echo -e "     ${BLUE}${ICON_RES}${RESET}  ${BOLD}${WHITE}${resolution}${RESET} ${DIM}@${RESET} ${CYAN}${refresh}Hz${RESET}"
+
+    # Position
+    echo -e "     ${MAGENTA}${ICON_POS}${RESET}  Position: ${WHITE}${position}${RESET}"
+
+    # Scale
+    echo -e "     ${ORANGE}${ICON_SCALE}${RESET}  Scale: ${WHITE}${scale}${RESET}"
+
+    # Physical size
+    if [[ -n "$physical_size" ]]; then
+        echo -e "     ${PINK}${ICON_SIZE}${RESET}  Physical: ${WHITE}${physical_size}mm${RESET}"
+    fi
+
+    # Workspace
+    echo -e "     ${GREEN}${ICON_WORKSPACE}${RESET}  Workspace: ${BOLD}${GREEN}${workspace}${RESET}"
+
+    echo
+
+    # Status row
+    echo -ne "     "
+    echo -ne "${DIM}DPMS:${RESET} $(format_bool "$dpms")  "
+    echo -ne "${DIM}VRR:${RESET} $(format_bool "$vrr")  "
+    echo -ne "${DIM}Format:${RESET} ${WHITE}${format}${RESET}"
+    echo
+
+    # Available modes (show top 5)
+    if [[ -n "$modes" ]]; then
+        echo
+        echo -e "     ${DIM}${GRAY}Available modes:${RESET}"
+        local mode_array=($modes)
+        local count=0
+        local mode_line="     "
+        for mode in "${mode_array[@]}"; do
+            if [[ $count -lt 6 ]]; then
+                mode_line+="${DIM}${GRAY}${mode}${RESET} "
+                ((count++))
+            fi
+        done
+        if [[ ${#mode_array[@]} -gt 6 ]]; then
+            mode_line+="${DIM}${GRAY}(+$((${#mode_array[@]} - 6)) more)${RESET}"
+        fi
+        echo -e "$mode_line"
+    fi
+
+    print_separator
+}
+
+# Main
+print_header
+hyprctl monitors 2>/dev/null | parse_monitors
+echo

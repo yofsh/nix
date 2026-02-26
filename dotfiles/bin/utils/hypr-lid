@@ -1,0 +1,21 @@
+#!/bin/sh
+
+# Usage: hypr-lid [on|off]
+# on = lid closed, off = lid opened
+
+case "$1" in
+    on)
+        # Lid closed - disable internal if external connected
+        external_count=$(hyprctl monitors -j | jq 'length')
+        if [ "$external_count" -gt 1 ]; then
+            hyprctl keyword monitor "eDP-1,disable"
+        fi
+        ;;
+    off)
+        # Lid opened - re-enable internal monitor
+        hyprctl keyword monitor "eDP-1,2880x1800@120,375x1440,1.6666,bitdepth,10,cm,hdr"
+        ;;
+    *)
+        echo "Usage: hypr-lid [on|off]"
+        ;;
+esac

@@ -1,0 +1,553 @@
+#!/usr/bin/env python3
+"""SSH into OpenWrt router and display all connected clients."""
+
+import os
+import re
+import subprocess
+import sys
+import unicodedata
+from concurrent.futures import ThreadPoolExecutor, as_completed
+
+
+# ── ANSI colors ──────────────────────────────────────────────────────────────
+class C:
+    RST = "\033[0m"
+    BOLD = "\033[1m"
+    DIM = "\033[2m"
+    RED = "\033[91m"
+    GREEN = "\033[92m"
+    YELLOW = "\033[93m"
+    BLUE = "\033[94m"
+    MAGENTA = "\033[95m"
+    CYAN = "\033[96m"
+    WHITE = "\033[97m"
+    GRAY = "\033[90m"
+    BG_GRAY = "\033[48;5;236m"
+
+
+_ANSI_RE = re.compile(r"\033\[[^m]*m")
+
+
+def dw(s: str) -> int:
+    """Display width: strip ANSI, count wide chars as 2."""
+    stripped = _ANSI_RE.sub("", s)
+    w = 0
+    for ch in stripped:
+        if unicodedata.east_asian_width(ch) in ("W", "F"):
+            w += 2
+        else:
+            w += 1
+    return w
+
+
+def pad(s: str, width: int) -> str:
+    """Pad string with spaces to reach target display width."""
+    return s + " " * max(0, width - dw(s))
+
+
+# ── Signal bar ───────────────────────────────────────────────────────────────
+def signal_bar(dbm: int) -> str:
+    if dbm >= -50:
+        bars, color, emoji = "████", C.GREEN, "🟢"
+    elif dbm >= -60:
+        bars, color, emoji = "███░", C.GREEN, "🟢"
+    elif dbm >= -70:
+        bars, color, emoji = "██░░", C.YELLOW, "🟡"
+    elif dbm >= -80:
+        bars, color, emoji = "█░░░", C.RED, "🟠"
+    else:
+        bars, color, emoji = "░░░░", C.RED, "🔴"
+    return f"{emoji} {color}{bars}{C.RST} {C.DIM}{dbm}dBm{C.RST}"
+
+
+# ── OUI vendor lookup ────────────────────────────────────────────────────────
+def load_oui_db() -> dict[str, str]:
+    oui = {}
+    db_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "oui.db")
+    if not os.path.exists(db_path):
+        return oui
+    with open(db_path) as f:
+        for line in f:
+            parts = line.strip().split("\t", 1)
+            if len(parts) == 2:
+                oui[parts[0]] = parts[1]
+    return oui
+
+
+def oui_lookup(mac: str, oui_db: dict[str, str]) -> str:
+    prefix = mac.replace(":", "")[:6].lower()
+    if prefix in oui_db:
+        return oui_db[prefix]
+    first_byte = int(prefix[:2], 16)
+    if first_byte & 0x02:
+        global_byte = first_byte & ~0x02
+        global_prefix = f"{global_byte:02x}{prefix[2:]}"
+        if global_prefix in oui_db:
+            return oui_db[global_prefix]
+    return ""
+
+
+# ── Connection icons ─────────────────────────────────────────────────────────
+def conn_icon(band: str) -> str:
+    if "6" in band:
+        return "🟣"
+    if "5" in band:
+        return "🔵"
+    if "2.4" in band:
+        return "🟤"
+    return "🔌"
+
+
+def conn_color(band: str) -> str:
+    if "6" in band:
+        return C.MAGENTA
+    if "5" in band:
+        return C.BLUE
+    if "2.4" in band:
+        return C.YELLOW
+    return C.GREEN
+
+
+# ── Router IP ────────────────────────────────────────────────────────────────
+def default_gateway() -> str:
+    try:
+        result = subprocess.run(
+            ["ip", "route"], capture_output=True, text=True, check=True,
+        )
+        for line in result.stdout.splitlines():
+            if line.startswith("default"):
+                return line.split()[2]
+    except (subprocess.CalledProcessError, FileNotFoundError, IndexError):
+        pass
+    return "192.168.1.1"
+
+
+# ── SSH data collection ──────────────────────────────────────────────────────
+REMOTE_SCRIPT = r"""
+cat /tmp/dhcp.leases 2>/dev/null
+echo "---SEPARATOR---"
+
+for iface in $(iwinfo 2>/dev/null | grep "ESSID" | awk "{print \$1}"); do
+    info=$(iwinfo "$iface" info 2>/dev/null)
+    essid=$(echo "$info" | sed -n "s/.*ESSID: \"\([^\"]*\)\".*/\1/p")
+    [ -z "$essid" ] && continue
+    freq=$(echo "$info" | sed -n "s/.*(\\([0-9.]* GHz\\)).*/\\1/p" | tr -d " ")
+    { iwinfo "$iface" assoclist 2>/dev/null; echo "FLUSH"; } | {
+        cur_mac="" cur_sig="" cur_mld=""
+        while IFS= read -r aline; do
+            new_mac=$(echo "$aline" | awk "/^[0-9A-Fa-f][0-9A-Fa-f]:/{print \$1}")
+            if [ -n "$new_mac" ] || [ "$aline" = "FLUSH" ]; then
+                [ -n "$cur_mac" ] && echo "WIFI|${cur_mac}|${essid}|${freq}|${cur_sig}|${iface}|${cur_mld}"
+                cur_mac="$new_mac"
+                cur_sig=$(echo "$aline" | awk "{print \$2}")
+                cur_mld=""
+            fi
+            mld=$(echo "$aline" | sed -n "s/.*mld addr: *\([0-9A-Fa-f:]\{17\}\).*/\1/p")
+            [ -n "$mld" ] && cur_mld="$mld"
+        done
+    }
+done
+echo "---SEPARATOR---"
+
+ip neigh show dev br-lan 2>/dev/null
+echo "---SEPARATOR---"
+
+brctl showstp br-lan 2>/dev/null
+echo "---SEPARATOR---"
+
+brctl showmacs br-lan 2>/dev/null
+echo "---SEPARATOR---"
+
+uptime
+"""
+
+
+def fetch_data(router: str) -> str:
+    print(f"  {C.DIM}Connecting to {C.WHITE}{router}{C.RST}{C.DIM}...{C.RST}")
+    try:
+        result = subprocess.run(
+            [
+                "ssh",
+                "-o", "ConnectTimeout=5",
+                "-o", "StrictHostKeyChecking=accept-new",
+                "-o", "BatchMode=yes",
+                f"root@{router}",
+                REMOTE_SCRIPT,
+            ],
+            capture_output=True, text=True, check=True,
+        )
+        return result.stdout.replace("\r", "")
+    except subprocess.CalledProcessError:
+        print(f"  {C.RED}Failed to connect to {router}{C.RST}")
+        print(f"  {C.DIM}Make sure SSH is enabled and key auth is configured{C.RST}")
+        sys.exit(1)
+
+
+# ── Parsing ──────────────────────────────────────────────────────────────────
+def parse_sections(data: str) -> tuple[str, str, str, str, str, str]:
+    parts = data.split("---SEPARATOR---")
+    dhcp = parts[0].strip() if len(parts) > 0 else ""
+    wifi = parts[1].strip() if len(parts) > 1 else ""
+    arp = parts[2].strip() if len(parts) > 2 else ""
+    stp = parts[3].strip() if len(parts) > 3 else ""
+    macs = parts[4].strip() if len(parts) > 4 else ""
+    uptime = parts[5].strip() if len(parts) > 5 else ""
+    if uptime:
+        uptime = uptime.splitlines()[-1].strip()
+    return dhcp, wifi, arp, stp, macs, uptime
+
+
+def parse_brctl(stp_text: str, macs_text: str) -> dict[str, str]:
+    """Parse brctl showstp + showmacs to get MAC -> interface name mapping.
+
+    showstp gives port number -> interface name:
+        eth1.1 (1)
+        wlan0 (2)
+    showmacs gives MAC -> port number:
+        1  aa:bb:cc:dd:ee:ff  no  7.13
+    """
+    # Build port number -> interface name map from STP
+    port_iface: dict[int, str] = {}
+    for line in stp_text.splitlines():
+        m = re.match(r"^(\S+)\s+\((\d+)\)", line)
+        if m:
+            port_iface[int(m.group(2))] = m.group(1)
+
+    # Build MAC -> interface name from showmacs
+    mac_port: dict[str, str] = {}
+    for line in macs_text.splitlines():
+        parts = line.split()
+        if len(parts) < 4:
+            continue
+        try:
+            port_no = int(parts[0])
+        except ValueError:
+            continue
+        mac = parts[1].lower()
+        is_local = parts[2]
+        if is_local == "yes":
+            continue
+        iface = port_iface.get(port_no, f"port{port_no}")
+        # Skip mld0 — MLD snooping interface, not a real physical port
+        if iface.startswith("mld"):
+            continue
+        mac_port[mac] = iface
+
+    return mac_port
+
+
+def is_wifi_port(port: str) -> bool:
+    """Check if a bridge port name is a wireless interface."""
+    return bool(re.match(r"(phy|wlan|ath|ra)", port))
+
+
+def parse_data(
+    dhcp_text: str, wifi_text: str, arp_text: str, bridge_ports: dict[str, str],
+) -> list[dict]:
+    clients: dict[str, dict] = {}
+    EMPTY = {"ip": "", "host": "", "essid": "", "band": "", "signal": "", "iface": ""}
+
+    # DHCP leases
+    for line in dhcp_text.splitlines():
+        if not line.strip():
+            continue
+        parts = line.split()
+        if len(parts) < 4:
+            continue
+        mac = parts[1].lower()
+        if ":" not in mac:
+            continue
+        ip = parts[2]
+        host = parts[3] if parts[3] != "*" else ""
+        clients.setdefault(mac, {**EMPTY})
+        clients[mac]["ip"] = ip
+        if host:
+            clients[mac]["host"] = host
+
+    # WiFi associations: WIFI|mac|essid|freq|signal|iface|mld_addr
+    mld_map: dict[str, str] = {}  # link_mac -> mld_mac
+    for line in wifi_text.splitlines():
+        if not line.startswith("WIFI|"):
+            continue
+        fields = line.split("|")
+        if len(fields) < 5:
+            continue
+        mac = fields[1].lower()
+        essid = fields[2]
+        freq = fields[3]
+        signal = fields[4]
+        iface = fields[5] if len(fields) > 5 else ""
+        mld_addr = fields[6].lower().strip() if len(fields) > 6 else ""
+
+        # If MLO: store WiFi data under the MLD (device) address instead
+        target_mac = mac
+        if mld_addr and mld_addr != mac:
+            mld_map[mac] = mld_addr
+            target_mac = mld_addr
+
+        clients.setdefault(target_mac, {**EMPTY})
+        clients[target_mac]["essid"] = essid
+        clients[target_mac]["iface"] = iface
+        if signal:
+            clients[target_mac]["signal"] = signal
+
+        if freq:
+            freq_num = freq.replace("GHz", "").strip()
+            try:
+                freq_val = float(freq_num)
+                if freq_val >= 6:
+                    clients[target_mac]["band"] = "6 GHz"
+                elif freq_val >= 5:
+                    clients[target_mac]["band"] = "5 GHz"
+                else:
+                    clients[target_mac]["band"] = "2.4 GHz"
+            except ValueError:
+                pass
+
+    # ARP/neighbor table
+    arp_re = re.compile(r"^(\d+\.\d+\.\d+\.\d+)\s.*lladdr\s+([0-9a-fA-F:]{17})")
+    for line in arp_text.splitlines():
+        m = arp_re.match(line)
+        if m:
+            ip, mac = m.group(1), m.group(2).lower()
+            clients.setdefault(mac, {**EMPTY})
+            if not clients[mac]["ip"]:
+                clients[mac]["ip"] = ip
+
+    # Remove orphan link MAC entries created before MLO merge
+    for link_mac in mld_map:
+        if link_mac in clients and not clients[link_mac]["essid"]:
+            del clients[link_mac]
+
+    # Build list, using bridge ports as secondary WiFi detection
+    result = []
+    for mac, info in clients.items():
+        port = bridge_ports.get(mac, "")
+        is_wifi = bool(info["essid"])
+
+        # FDB-based WiFi detection: if iwinfo missed it but bridge port is wireless
+        if not is_wifi and port and is_wifi_port(port):
+            is_wifi = True
+
+        if is_wifi:
+            conn = f"WiFi {info['band']}" if info["band"] else "WiFi"
+        else:
+            conn = "Ethernet"
+
+        result.append({
+            "mac": mac,
+            "ip": info["ip"] or "—",
+            "host": info["host"],
+            "conn": conn,
+            "band": info["band"],
+            "essid": info["essid"],
+            "signal": info["signal"],
+            "port": port,
+        })
+    return result
+
+
+# ── IP sort key ──────────────────────────────────────────────────────────────
+def ip_sort_key(client: dict) -> tuple:
+    ip = client["ip"]
+    if ip == "—":
+        return (1, 0, 0, 0, 0)
+    try:
+        parts = [int(p) for p in ip.split(".")]
+        return (0, *parts)
+    except ValueError:
+        return (1, 0, 0, 0, 0)
+
+
+# ── Ping ─────────────────────────────────────────────────────────────────────
+def ping_host(ip: str) -> str | None:
+    """Ping a host 4 times, return avg RTT in ms or None if unreachable."""
+    if ip == "—":
+        return None
+    try:
+        result = subprocess.run(
+            ["ping", "-c", "4", "-W", "3", "-i", "0.2", ip],
+            capture_output=True, text=True, timeout=14,
+        )
+        # Parse avg from summary: rtt min/avg/max/mdev = .../1.234/...
+        m = re.search(r"= [\d.]+/([\d.]+)/", result.stdout)
+        if m:
+            return m.group(1)
+    except (subprocess.TimeoutExpired, subprocess.CalledProcessError):
+        pass
+    return None
+
+
+def ping_all(clients: list[dict]) -> dict[str, str | None]:
+    """Ping all clients in parallel, return IP -> RTT map."""
+    ips = {c["ip"] for c in clients if c["ip"] != "—"}
+    results: dict[str, str | None] = {}
+    print(f"  {C.DIM}Pinging {len(ips)} hosts...{C.RST}")
+    with ThreadPoolExecutor(max_workers=32) as pool:
+        futures = {pool.submit(ping_host, ip): ip for ip in ips}
+        for future in as_completed(futures):
+            results[futures[future]] = future.result()
+    return results
+
+
+def ping_display(rtt: str | None) -> str:
+    """Format ping RTT with color."""
+    if rtt is None:
+        return f"{C.DIM}timeout{C.RST}"
+    ms = float(rtt)
+    if ms < 5:
+        color = C.GREEN
+    elif ms < 50:
+        color = C.YELLOW
+    else:
+        color = C.RED
+    # Show integer if whole number, otherwise 1 decimal
+    label = f"{ms:.0f}" if ms == int(ms) else f"{ms:.1f}"
+    return f"{color}{label}ms{C.RST}"
+
+
+# ── Display ──────────────────────────────────────────────────────────────────
+def display(
+    clients: list[dict], router: str, uptime_line: str,
+    oui_db: dict[str, str], ping_results: dict[str, str | None] | None = None,
+):
+    clients.sort(key=ip_sort_key)
+
+    wifi_count = sum(1 for c in clients if c["conn"] != "Ethernet")
+    eth_count = sum(1 for c in clients if c["conn"] == "Ethernet")
+    total = len(clients)
+
+    # Column widths
+    W_HOST = 20
+    W_IP = 16
+    W_MAC = 19
+    W_CONN = 16
+    W_PORT = 13
+    W_SSID = 8
+    W_SIG = 18
+    W_PING = 10 if ping_results is not None else 0
+    W_VENDOR = 20
+    W_TOTAL = W_HOST + W_IP + W_MAC + W_CONN + W_PORT + W_SSID + W_SIG + W_PING + W_VENDOR
+
+    print()
+    print(
+        f"  {C.BOLD}{C.CYAN}🖧 Router Clients{C.RST}  "
+        f"{C.DIM}─  {total} clients ({wifi_count} WiFi, {eth_count} Ethernet)  ─  {router}{C.RST}"
+    )
+    if uptime_line:
+        print(f"  {C.DIM}{uptime_line}{C.RST}")
+    print()
+
+    # Header
+    hdr = (
+        f"{pad('Hostname', W_HOST)}"
+        f"{pad('IP', W_IP)}"
+        f"{pad('MAC', W_MAC)}"
+        f"{pad('Connection', W_CONN)}"
+        f"{pad('Port', W_PORT)}"
+        f"{pad('SSID', W_SSID)}"
+        f"{pad('Signal', W_SIG)}"
+        + (f"{pad('Ping', W_PING)}" if ping_results is not None else "")
+        + f"Vendor"
+    )
+    print(f"  {C.BOLD}{C.WHITE}{hdr}{C.RST}")
+    print(f"  {C.DIM}{'─' * W_TOTAL}{C.RST}")
+
+    # Rows
+    for idx, client in enumerate(clients):
+        bg = C.BG_GRAY if idx % 2 == 0 else ""
+
+        # Hostname
+        if client["host"]:
+            col_host = pad(f"{C.WHITE}{client['host']}{C.RST}", W_HOST)
+        else:
+            col_host = pad(f"{C.DIM}—{C.RST}", W_HOST)
+
+        # IP
+        col_ip = pad(client["ip"], W_IP)
+
+        # MAC
+        col_mac = pad(client["mac"], W_MAC)
+
+        # Connection with icon and color
+        band = client["band"]
+        if client["conn"] == "Ethernet":
+            icon = "🔌"
+            col_conn = pad(f"{icon} {C.GREEN}Ethernet{C.RST}", W_CONN)
+        else:
+            icon = conn_icon(band)
+            color = conn_color(band)
+            label = f"WiFi {band}" if band else "WiFi"
+            col_conn = pad(f"{icon} {color}{label}{C.RST}", W_CONN)
+
+        # Port (bridge port name)
+        port = client.get("port", "")
+        if port:
+            col_port = pad(f"{C.DIM}{port}{C.RST}", W_PORT)
+        else:
+            col_port = pad(f"{C.DIM}—{C.RST}", W_PORT)
+
+        # SSID
+        col_ssid = pad(client["essid"][:6] if client["essid"] else "", W_SSID)
+
+        # Signal
+        if client["signal"]:
+            try:
+                dbm = int(client["signal"])
+                col_sig = pad(signal_bar(dbm), W_SIG)
+            except ValueError:
+                col_sig = pad(f"{C.DIM}—{C.RST}", W_SIG)
+        else:
+            col_sig = pad(f"{C.DIM}—{C.RST}", W_SIG)
+
+        # Ping
+        if ping_results is not None:
+            rtt = ping_results.get(client["ip"]) if client["ip"] != "—" else None
+            col_ping = pad(ping_display(rtt), W_PING)
+        else:
+            col_ping = ""
+
+        # Vendor
+        vendor = oui_lookup(client["mac"], oui_db) if oui_db else ""
+        vendor = vendor[:W_VENDOR - 2] if vendor else "—"
+
+        print(
+            f"  {bg}"
+            f"{col_host}"
+            f"{col_ip}"
+            f"{col_mac}"
+            f"{col_conn}"
+            f"{col_port}"
+            f"{col_ssid}"
+            f"{col_sig}"
+            f"{col_ping}"
+            f"{C.DIM}{vendor}{C.RST}"
+            f"{C.RST}"
+        )
+
+    print(f"  {C.DIM}{'─' * W_TOTAL}{C.RST}")
+    print()
+
+
+# ── Main ─────────────────────────────────────────────────────────────────────
+def main():
+    args = [a for a in sys.argv[1:] if not a.startswith("-")]
+    flags = {a for a in sys.argv[1:] if a.startswith("-")}
+    do_ping = bool(flags & {"-p", "--ping"})
+
+    if args:
+        router = args[0]
+    else:
+        router = os.environ.get("ROUTER_IP", "") or default_gateway()
+
+    data = fetch_data(router)
+    dhcp_text, wifi_text, arp_text, stp_text, macs_text, uptime_line = parse_sections(data)
+    bridge_ports = parse_brctl(stp_text, macs_text)
+    clients = parse_data(dhcp_text, wifi_text, arp_text, bridge_ports)
+    oui_db = load_oui_db()
+    ping_results = ping_all(clients) if do_ping else None
+    display(clients, router, uptime_line, oui_db, ping_results)
+
+
+if __name__ == "__main__":
+    main()

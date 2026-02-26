@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+# Adjust monitor scale up or down
+# Usage: scale-screen <monitor> [+|-]
+
+MONITOR="${1:-eDP-1}"
+DIR="${2:-+}"
+STEP=0.1
+
+# Get current scale
+CURRENT=$(hyprctl monitors -j | jq -r ".[] | select(.name == \"$MONITOR\") | .scale")
+
+if [ -z "$CURRENT" ] || [ "$CURRENT" = "null" ]; then
+  notify-send -u critical "scale-screen" "Monitor $MONITOR not found"
+  exit 1
+fi
+
+if [ "$DIR" = "+" ]; then
+  NEW=$(echo "$CURRENT + $STEP" | bc)
+elif [ "$DIR" = "-" ]; then
+  NEW=$(echo "$CURRENT - $STEP" | bc)
+else
+  NEW="$DIR"
+fi
+
+# Clamp to reasonable range
+TOO_LOW=$(echo "$NEW < 0.5" | bc)
+TOO_HIGH=$(echo "$NEW > 3.0" | bc)
+[ "$TOO_LOW" = "1" ] && NEW=0.5
+[ "$TOO_HIGH" = "1" ] && NEW=3.0
+
+hyprctl keyword monitor "$MONITOR,preferred,auto,$NEW"
+notify-send -r 10050 -t 1500 -u low "Scale" "$MONITOR → $NEW"
