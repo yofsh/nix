@@ -148,6 +148,7 @@ def install_nixos(host: str, dry_run: bool) -> Iterator[str]:
             "nixos-install",
             "--flake", f"{SCRIPT_DIR}#{host}",
             "--no-root-passwd",
+            "--accept-flake-config",
             "--option", "keep-outputs", "false",
         ],
         dry_run=dry_run,

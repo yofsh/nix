@@ -20,6 +20,19 @@ in
 
   nixpkgs.hostPlatform = "x86_64-linux";
 
+  # Trust flake-configured substituters (cachix, CUDA cache) during nixos-install
+  nix.settings = {
+    trusted-substituters = [
+      "https://vicinae.cachix.org"
+      "https://cuda-maintainers.cachix.org"
+    ];
+    trusted-public-keys = [
+      "vicinae.cachix.org-1:1kDrfienkGHPYbkpNj1mWTr7Fm1+zcenzgTizIcI3oc="
+      "cuda-maintainers.cachix.org-1:0dq3bujKpuEPMCX6U4WylrUDZ9JyUG0VpVZa7CNfq5E="
+    ];
+    accept-flake-config = true;
+  };
+
   # Bake repo snapshot into the ISO for offline use
   system.activationScripts.seedRepos = ''
     if [[ ! -d /home/fobos/nix ]]; then
