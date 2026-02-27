@@ -4,7 +4,7 @@ in
 {
   disko.devices = {
     disk = {
-      disk1 = {
+      main = {
         device = "REPLACE_ME_1";
         type = "disk";
         content = {
@@ -14,7 +14,8 @@ in
             swap = common.swapPartition "32G";
             root = {
               size = "100%";
-              # Data striped (raid0), metadata mirrored (raid1) across both disks
+              # Data striped (raid0), metadata mirrored (raid1) across both disks.
+              # The second disk is passed as a raw device — no partition table needed.
               content = common.btrfsSubvolumes // {
                 extraArgs = [
                   "-f"
@@ -22,22 +23,9 @@ in
                   "raid0"
                   "-m"
                   "raid1"
-                  "REPLACE_ME_2_PART"
+                  "REPLACE_ME_2"
                 ];
               };
-            };
-          };
-        };
-      };
-      disk2 = {
-        device = "REPLACE_ME_2";
-        type = "disk";
-        content = {
-          type = "gpt";
-          partitions = {
-            # No content — included in disk1's mkfs.btrfs
-            data = {
-              size = "100%";
             };
           };
         };

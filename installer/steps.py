@@ -20,14 +20,6 @@ DISKO_DIR = SCRIPT_DIR / "disko"
 DISKO_PLACEHOLDER = "REPLACE_ME"
 DISKO_PLACEHOLDER_1 = "REPLACE_ME_1"
 DISKO_PLACEHOLDER_2 = "REPLACE_ME_2"
-DISKO_PLACEHOLDER_2_PART = "REPLACE_ME_2_PART"
-
-
-def _partition_path(device: str, part_num: int = 1) -> str:
-    """Compute partition device path (e.g., /dev/sda -> /dev/sda1, /dev/nvme0n1 -> /dev/nvme0n1p1)."""
-    if "nvme" in device or "mmcblk" in device or "loop" in device:
-        return f"{device}p{part_num}"
-    return f"{device}{part_num}"
 
 
 def cleanup_previous(dry_run: bool, log_fn: LogFn | None = None) -> None:
@@ -67,8 +59,6 @@ def prepare_disko_config(cfg: InstallConfig) -> Path:
         source = DISKO_DIR / "dual.nix"
         content = source.read_text()
         content = content.replace(DISKO_PLACEHOLDER_1, cfg.disk.device)
-        # Replace _2_PART before _2 to avoid partial match
-        content = content.replace(DISKO_PLACEHOLDER_2_PART, _partition_path(cfg.disk2.device))
         content = content.replace(DISKO_PLACEHOLDER_2, cfg.disk2.device)
     else:
         source = DISKO_DIR / ("luks.nix" if cfg.encrypted else "default.nix")
