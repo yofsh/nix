@@ -97,8 +97,8 @@ def run_disko(cfg: InstallConfig, dry_run: bool, log_fn: LogFn | None = None) ->
         if result.stdout and log_fn:
             log_fn(result.stdout.strip())
 
-    # Temp swap for large installs
-    if not dry_run:
+    # Temp swap for large installs (skip on btrfs RAID — swapfiles not supported)
+    if not dry_run and not cfg.dual_disk:
         run_cmd(["dd", "if=/dev/zero", "of=/mnt/swapfile", "bs=1M", "count=8192", "status=progress"], log_fn=log_fn)
         run_cmd(["chmod", "600", "/mnt/swapfile"], log_fn=log_fn)
         run_cmd(["mkswap", "/mnt/swapfile"], log_fn=log_fn)
@@ -106,7 +106,10 @@ def run_disko(cfg: InstallConfig, dry_run: bool, log_fn: LogFn | None = None) ->
         cleanup.register("swapoff", ["swapoff", "/mnt/swapfile"])
         cleanup.register("remove swapfile", ["rm", "-f", "/mnt/swapfile"])
     elif log_fn:
-        log_fn("dry-run: create 8G swap")
+        if cfg.dual_disk:
+            log_fn("Skipping temp swapfile (not supported on btrfs RAID)")
+        else:
+            log_fn("dry-run: create 8G swap")
 
     # Expand tmpfs
     run_cmd(
