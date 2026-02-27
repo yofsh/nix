@@ -9,7 +9,7 @@ from textual.screen import Screen
 from textual.widgets import Static
 
 from ..models import InstallConfig
-from ..runner import run_cmd
+from ..runner import LOG_FILE, run_cmd
 
 
 class CompletionScreen(Screen[None]):
@@ -46,7 +46,15 @@ class CompletionScreen(Screen[None]):
             steps.append("On first login, home-manager will apply dotfiles automatically")
             lines = "\n".join(f"  {i}. {s}" for i, s in enumerate(steps, 1))
         else:
+            tail = ""
+            try:
+                all_lines = LOG_FILE.read_text().splitlines()
+                tail = "\n".join(all_lines[-30:])
+            except Exception:
+                pass
             lines = "  Check the log output for details.\n  You may re-run the installer."
+            if tail:
+                lines += f"\n\n[red]Last log lines:[/red]\n[dim]{tail}[/dim]"
 
         self.query_one("#completion-steps", Static).update(lines)
 
