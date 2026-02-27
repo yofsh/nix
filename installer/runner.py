@@ -33,7 +33,7 @@ def run_cmd(
     cmd: list[str],
     *,
     check: bool = True,
-    capture: bool = False,
+    capture: bool = True,
     env: dict | None = None,
     dry_run: bool = False,
     dry_label: str | None = None,
@@ -54,10 +54,16 @@ def run_cmd(
     )
     if result.stdout:
         log(result.stdout)
+        if log_fn:
+            for line in result.stdout.strip().splitlines():
+                log_fn(line)
     if result.stderr:
         log(result.stderr)
+        if log_fn:
+            for line in result.stderr.strip().splitlines():
+                log_fn(f"[red]{line}[/red]")
     if check and result.returncode != 0:
-        raise CommandError(cmd, result.returncode, result.stderr.strip()[:500])
+        raise CommandError(cmd, result.returncode, (result.stderr or "").strip()[:500])
     return result
 
 
