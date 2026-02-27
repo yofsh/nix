@@ -135,6 +135,8 @@ def generate_hardware_config(host: str, dry_run: bool, log_fn: LogFn | None = No
         hw_dst = host_dir / "hardware-configuration.nix"
         hw_dst.write_text(hw_src.read_text())
         run_cmd(["rm", "-rf", str(tmp)], check=False, log_fn=log_fn)
+        # Force-add to git so the flake evaluation can find it (it's in .gitignore)
+        run_cmd(["git", "-C", str(SCRIPT_DIR), "add", "--force", str(hw_dst)], log_fn=log_fn)
         if log_fn:
             log_fn(f"Generated {hw_dst}")
 
