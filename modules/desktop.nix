@@ -178,7 +178,7 @@
     enable = true;
     wayland.enable = true;
   };
-  programs.silent-sddm.enable = true;
+  programs.silentSDDM.enable = true;
 
   networking.wireless.iwd.enable = false;
   networking.networkmanager.wifi.backend = "wpa_supplicant";
