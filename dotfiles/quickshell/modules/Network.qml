@@ -266,11 +266,11 @@ Item {
     Process {
         id: infoProc
         command: ["bash", "-c", [
-            "SSID=$(nmcli -t -f active,ssid dev wifi | grep '^yes' | cut -d: -f2)",
+            "IFACE=$(ls /sys/class/net/ | grep -E '^wl' | head -1)",
             "IP=$(ip -4 -o addr show dev " + (root.activeIface || "lo") + " | awk '{print $4}' | cut -d/ -f1)",
+            "LINK=$(iw dev ${IFACE:-wlp0s20f3} link 2>/dev/null)",
+            "SSID=$(echo \"$LINK\" | grep -oP 'SSID: \\K.*')",
             "if [ -n \"$SSID\" ]; then",
-            "  IFACE=$(ls /sys/class/net/ | grep -E '^wl' | head -1)",
-            "  LINK=$(iw dev ${IFACE:-wlp0s20f3} link 2>/dev/null)",
             "  FREQ=$(echo \"$LINK\" | grep -oP 'freq: \\K\\d+')",
             "  if echo \"$LINK\" | grep -q 'EHT-'; then GEN='7'",
             "  elif echo \"$LINK\" | grep -q 'HE-'; then",
