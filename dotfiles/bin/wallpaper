@@ -51,6 +51,7 @@ local_info() {
 
 _apply() {
 	swww img "$1" --resize crop --transition-type any --transition-duration 0.4 --transition-fps 240
+	ln -sf "$1" "$HOME/.current-wallpaper"
 }
 
 set_wallpaper() {
@@ -218,10 +219,16 @@ case "$1" in
 	# Auto-rotate wallpapers (daemon mode)
 	pgrep -x swww-daemon >/dev/null || swww-daemon 2>/dev/null &
 	sleep 1
+	# Restore last wallpaper if available
+	if [ -L "$HOME/.current-wallpaper" ] && [ -f "$HOME/.current-wallpaper" ]; then
+		_apply "$(readlink -f "$HOME/.current-wallpaper")"
+	else
+		wallpaper -s next
+	fi
 	echo "Starting autowallpaper rotation"
 	while true; do
-		wallpaper -s next
 		sleep "${2:-900}"
+		wallpaper -s next
 	done
 	;;
 "set")

@@ -10,6 +10,12 @@ in {
       settings = {
         "toolkit.legacyUserProfileCustomizations.stylesheets" = true;
         "browser.aboutConfig.showWarning" = false;
+        "browser.sessionstore.restore_on_demand" = true;
+        "browser.sessionstore.restore_pinned_tabs_on_demand" = true;
+        "network.dns.disablePrefetch" = false;
+        "network.dns.disablePrefetchFromHTTPS" = false;
+        "network.http.speculative-parallel-limit" = 6;
+        "network.prefetch-next" = true;
       };
       isDefault = true;
       search = {

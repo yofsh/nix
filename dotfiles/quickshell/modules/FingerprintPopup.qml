@@ -33,6 +33,18 @@ PanelWindow {
         }
     }
 
+    // --- Sound playback ---
+    Process {
+        id: soundProc
+    }
+
+    readonly property string soundBase: "/run/current-system/sw/share/sounds/ocean/stereo/"
+
+    function playSound(file) {
+        soundProc.command = ["paplay", soundBase + file]
+        soundProc.startDetached()
+    }
+
     // --- Hyprlock check ---
     Process {
         id: hyprlockCheck
@@ -43,7 +55,7 @@ PanelWindow {
 
     function parseLine(line) {
         if (line.indexOf("member=VerifyFingerSelected") !== -1) {
-            hyprlockCheck.startDetached()
+            hyprlockCheck.running = true
             // Small delay to let pgrep finish before we check
             promptDelayTimer.start()
             return
@@ -54,7 +66,7 @@ PanelWindow {
         }
         if (awaitingResult && line.indexOf("string \"verify-") !== -1) {
             awaitingResult = false
-            hyprlockCheck.startDetached()
+            hyprlockCheck.running = true
             resultLine = line
             resultDelayTimer.start()
         }
@@ -99,15 +111,19 @@ PanelWindow {
             hideTimer.interval = 30000
             hideTimer.start()
             pulseAnim.start()
+            playSound("dialog-information.oga")
         } else if (state === "success") {
             hideTimer.interval = 2000
             hideTimer.start()
+            playSound("outcome-success.oga")
         } else if (state === "failure") {
             hideTimer.interval = 3000
             hideTimer.start()
+            // playSound("outcome-failure.oga")
         } else if (state === "timeout") {
             hideTimer.interval = 3000
             hideTimer.start()
+            // playSound("outcome-failure.oga")
         }
     }
 

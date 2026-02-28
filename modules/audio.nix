@@ -7,6 +7,7 @@
     wiremix
     pwvucontrol
     usbutils
+    kdePackages.ocean-sound-theme
   ];
 
   services.blueman.enable = true;

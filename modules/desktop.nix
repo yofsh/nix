@@ -174,11 +174,20 @@
   environment.sessionVariables.BROWSER = "firefox";
   environment.sessionVariables.EDITOR = "nvim";
 
-  services.displayManager.sddm = {
+  services.greetd = {
     enable = true;
-    wayland.enable = true;
+    restart = false;
+    settings = {
+      default_session = {
+        command = "uwsm start hyprland-uwsm.desktop";
+        user = "fobos";
+      };
+      initial_session = {
+        command = "uwsm start hyprland-uwsm.desktop";
+        user = "fobos";
+      };
+    };
   };
-  programs.silentSDDM.enable = true;
 
   networking.wireless.iwd.enable = false;
   networking.networkmanager.wifi.backend = "wpa_supplicant";

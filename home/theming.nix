@@ -13,6 +13,10 @@
       "org/gnome/desktop/interface" = {
         color-scheme = "prefer-dark";
       };
+      "org/gnome/desktop/sound" = {
+        theme-name = "ocean";
+        event-sounds = true;
+      };
     };
   };
 
