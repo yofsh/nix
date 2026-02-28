@@ -1,6 +1,7 @@
 { config, lib, pkgs, ... }:
 {
   networking.networkmanager.enable = true;
+  systemd.services.NetworkManager-wait-online.enable = false;
 
   networking.hosts = { "192.168.1.50" = [ "srv" ]; };
 
@@ -8,7 +9,7 @@
     enable = true;
     settings.Resolve = {
       DNSSEC = "allow-downgrade";
-      Domains = [ "~." ];
+      Domains = [ "~." "lan" ];
       FallbackDNS = [ "192.168.8.30" ];
       DNSOverTLS = "opportunistic";
     };

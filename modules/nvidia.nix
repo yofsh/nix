@@ -23,7 +23,6 @@
 
   # Docker with NVIDIA Container Toolkit (CDI)
   virtualisation.docker.enable = true;
-  virtualisation.docker.enableNvidia = true;
   hardware.nvidia-container-toolkit.enable = true;
   virtualisation.docker.daemon.settings = {
     features = {

@@ -295,24 +295,6 @@ source_if_exists() {
 
 export ZSH_AUTOSUGGEST_STRATEGY=(history completion)
 
-if [[ -z $DISPLAY && $TTY = /dev/tty1 ]]; then
-  export _JAVA_AWT_WM_NONREPARENTING=1
-  export QT_QPA_PLATFORM=wayland
-  export MOZ_ENABLE_WAYLAND=1
-  # export GDK_BACKEND="wayland,x11"
-
-  # unset WLR_NO_HARDWARE_CURSORS
-  # export OGL_DEDICATED_HW_STATE_PER_CONTEXT=ENABLE_ROBUST
-  # export AQ_DRM_DEVICES=/dev/dri/card2
-
-  # Wait for any DRM device to be ready (fixes crash on autologin)
-  for i in {1..50}; do
-    ls /dev/dri/card* &>/dev/null && break
-    sleep 0.1
-  done
-
-  start-hyprland &>/dev/null
-fi
 
 mvp_get() {
   SOCKET='/tmp/mpvsocket'

@@ -27,6 +27,10 @@
       url = "git+https://git.outfoxxed.me/quickshell/quickshell";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+    silent-sddm = {
+      url = "github:uiriansan/SilentSDDM";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
   outputs = { self, nixpkgs, home-manager, sops-nix, ... }@inputs:
@@ -43,6 +47,7 @@
         specialArgs = { inherit inputs; };
         modules = [
           ./hosts/iso/configuration.nix
+          inputs.silent-sddm.nixosModules.default
 
           home-manager.nixosModules.home-manager
           {
@@ -65,6 +70,7 @@
           inputs.mt7927.nixosModules.default
           sops-nix.nixosModules.sops
           ./hosts/ares/configuration.nix
+          inputs.silent-sddm.nixosModules.default
           { nixpkgs.overlays = [ inputs.quickshell.overlays.default ]; }
         ];
       };
@@ -75,6 +81,7 @@
         modules = [
           ./hosts/athena/configuration.nix
           sops-nix.nixosModules.sops
+          inputs.silent-sddm.nixosModules.default
           { nixpkgs.overlays = [ inputs.quickshell.overlays.default ]; }
         ];
       };

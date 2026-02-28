@@ -3,8 +3,8 @@ let username = "fobos";
 in {
   programs.firefox = {
     enable = true;
-    package =
-      pkgs.firefox.override { cfg = { enableTridactylNative = true; }; };
+    package = pkgs.firefox;
+    nativeMessagingHosts = [ pkgs.tridactyl-native ];
     profiles.${username} = {
       name = "${username}";
       settings = {

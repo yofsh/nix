@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+# Toggle dark/light mode via dconf (read by xdg-desktop-portal-gtk)
+
+set -euo pipefail
+
+echo "=== dark-mode-toggle ==="
+
+echo "Checking dconf is available: $(which dconf 2>&1 || echo 'NOT FOUND')"
+
+current=$(dconf read /org/gnome/desktop/interface/color-scheme 2>&1) || true
+echo "Current color-scheme: '$current'"
+
+if [[ "$current" == "'prefer-dark'" ]]; then
+  target_scheme="'prefer-light'"
+  target_gtk="adw-gtk3"
+else
+  target_scheme="'prefer-dark'"
+  target_gtk="adw-gtk3-dark"
+fi
+
+echo "Setting color-scheme to: $target_scheme"
+dconf write /org/gnome/desktop/interface/color-scheme "$target_scheme" 2>&1 && echo "  OK" || echo "  FAILED: $?"
+
+echo "Setting gtk-theme to: $target_gtk"
+dconf write /org/gnome/desktop/interface/gtk-theme "'$target_gtk'" 2>&1 && echo "  OK" || echo "  FAILED: $?"
+
+# Verify
+echo "--- Verify ---"
+echo "color-scheme: $(dconf read /org/gnome/desktop/interface/color-scheme)"
+echo "gtk-theme: $(dconf read /org/gnome/desktop/interface/gtk-theme)"
+
+# Check portal sees it
+echo "--- Portal check ---"
+dbus-send --session --print-reply \
+  --dest=org.freedesktop.portal.Desktop \
+  /org/freedesktop/portal/desktop \
+  org.freedesktop.portal.Settings.Read \
+  string:org.freedesktop.appearance \
+  string:color-scheme 2>&1 || echo "Portal query failed"
+
+echo "=== done ==="

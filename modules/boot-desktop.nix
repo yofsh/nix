@@ -7,8 +7,8 @@
   boot.plymouth.enable = true;
   boot.plymouth.theme = "bgrt";
   boot.initrd.systemd.enable = true;
-  boot.consoleLogLevel = 3;
-  boot.kernelParams = [ "quiet" "rd.udev.log_level=3" ];
+  boot.consoleLogLevel = 0;
+  boot.kernelParams = [ "quiet" "splash" "loglevel=0" "vt.global_cursor_default=0" ];
 
   # Graphics
   hardware.graphics = {

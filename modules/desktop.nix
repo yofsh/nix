@@ -167,13 +167,18 @@
 
   programs.dconf.enable = true;
   programs.hyprland.enable = true;
+  programs.hyprland.withUWSM = true;
   programs.hyprland.xwayland.enable = true;
 
   environment.sessionVariables.NIXOS_OZONE_WL = "1";
   environment.sessionVariables.BROWSER = "firefox";
   environment.sessionVariables.EDITOR = "nvim";
 
-  services.getty.autologinUser = lib.mkForce "fobos";
+  services.displayManager.sddm = {
+    enable = true;
+    wayland.enable = true;
+  };
+  programs.silent-sddm.enable = true;
 
   networking.wireless.iwd.enable = false;
   networking.networkmanager.wifi.backend = "wpa_supplicant";

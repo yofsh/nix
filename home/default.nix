@@ -2,11 +2,13 @@
 let
   link = config.lib.file.mkOutOfStoreSymlink;
   dotfiles = "${config.home.homeDirectory}/nix/dotfiles";
+  hostname = lib.strings.trim (builtins.readFile "/etc/hostname");
 in {
 
   home.stateVersion = "24.05";
 
-  imports = [ ./xdg.nix ./firefox.nix ./theming.nix ];
+  imports = [ ./xdg.nix ./firefox.nix ./theming.nix ]
+    ++ lib.optionals (hostname == "athena") [ ./touchpad.nix ./laptop.nix ];
 
   nixpkgs.config.allowUnfree = true;
 
@@ -73,51 +75,27 @@ in {
     "hypr".source = link "${dotfiles}/hypr";
     "wiremix".source = link "${dotfiles}/wiremix";
     "mpv/mpv.conf".source = link "${dotfiles}/mpv/mpv.conf";
+
+    # Source home-manager session vars into uwsm so sessionPath/sessionVariables
+    # are available to Hyprland and all graphical apps launched by it.
+    "uwsm/env".text = ''
+      source "$HOME/.nix-profile/etc/profile.d/hm-session-vars.sh"
+    '';
   };
 
   home.file = {
     ".zshrc".source = link "${dotfiles}/.zshrc";
   };
 
+  home.sessionPath = [
+    "${dotfiles}/bin"
+    "${dotfiles}/bin/utils"
+  ];
+
   home.sessionVariables = {
     EDITOR = "nvim";
+    VISUAL = "nvim";
     BROWSER = "firefox";
-  };
-
-  systemd.user.services.edge-sliderd = {
-    Unit = {
-      Description = "Touchpad edge gesture daemon";
-      After = [ "graphical-session.target" ];
-      PartOf = [ "graphical-session.target" ];
-    };
-    Service = {
-      Type = "simple";
-      ExecStart = "${dotfiles}/bin/edge-sliderd";
-      Restart = "on-failure";
-      RestartSec = 3;
-    };
-    Install = {
-      WantedBy = [ "graphical-session.target" ];
-    };
-  };
-
-  systemd.user.services.edge-slider-actions = {
-    Unit = {
-      Description = "Edge slider action consumer";
-      After = [ "edge-sliderd.service" "graphical-session.target" ];
-      PartOf = [ "graphical-session.target" ];
-      Requires = [ "edge-sliderd.service" ];
-    };
-    Service = {
-      Type = "simple";
-      ExecStart = "${dotfiles}/bin/edge-slider-actions";
-      LogRateLimitIntervalSec = 0;
-      Restart = "on-failure";
-      RestartSec = 3;
-    };
-    Install = {
-      WantedBy = [ "graphical-session.target" ];
-    };
   };
 
   systemd.user.targets.tray = {

@@ -133,5 +133,15 @@ in
       args = [ "stdout" "quiet" "${fprint-verify}" ];
     };
   };
+  security.pam.services.greetd = {
+    fprintAuth = false;
+    rules.auth.fprint-prefer-usb = {
+      enable = true;
+      order = 11400;
+      control = "sufficient";
+      modulePath = "${pkgs.pam}/lib/security/pam_exec.so";
+      args = [ "stdout" "quiet" "${fprint-verify}" ];
+    };
+  };
   # hyprlock uses its own D-Bus fingerprint integration (enable_fingerprint = true in hyprlock.conf)
 }
