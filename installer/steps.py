@@ -31,6 +31,7 @@ def cleanup_previous(dry_run: bool, log_fn: LogFn | None = None) -> None:
         ["rm", "-f", "/mnt/swapfile"],
         ["umount", "-R", "/mnt"],
         ["cryptsetup", "close", "crypted"],
+        ["cryptsetup", "close", "crypted2"],
     ):
         run_cmd(cmd, check=False, capture=True, dry_run=dry_run, dry_label=" ".join(cmd), log_fn=log_fn)
     if log_fn:
@@ -56,10 +57,15 @@ def prepare_disko_config(cfg: InstallConfig) -> Path:
     shutil.copy2(DISKO_DIR / "common.nix", tmp_dir / "common.nix")
 
     if cfg.dual_disk and cfg.disk2:
-        source = DISKO_DIR / "dual.nix"
-        content = source.read_text()
-        content = content.replace(DISKO_PLACEHOLDER_1, cfg.disk.device)
-        content = content.replace(DISKO_PLACEHOLDER_2, cfg.disk2.device)
+        if cfg.encrypted:
+            source = DISKO_DIR / "dual_luks.nix"
+            content = source.read_text()
+            content = content.replace(DISKO_PLACEHOLDER, cfg.disk.device)
+        else:
+            source = DISKO_DIR / "dual.nix"
+            content = source.read_text()
+            content = content.replace(DISKO_PLACEHOLDER_1, cfg.disk.device)
+            content = content.replace(DISKO_PLACEHOLDER_2, cfg.disk2.device)
     else:
         source = DISKO_DIR / ("luks.nix" if cfg.encrypted else "default.nix")
         content = source.read_text()
@@ -82,6 +88,22 @@ def run_disko(cfg: InstallConfig, dry_run: bool, log_fn: LogFn | None = None) ->
         secret.write_text(cfg.luks_password)
         secret.chmod(0o600)
         cleanup.register("remove secret key", ["rm", "-f", "/tmp/secret.key"])
+
+    # For dual-disk LUKS: set up LUKS on the second disk before disko runs
+    if cfg.dual_disk and cfg.encrypted and cfg.disk2:
+        disk2 = cfg.disk2.device
+        if log_fn:
+            log_fn(f"Setting up LUKS on second disk {disk2}...")
+        run_cmd(["wipefs", "-a", disk2], dry_run=dry_run, dry_label=f"wipefs {disk2}", log_fn=log_fn)
+        run_cmd(
+            ["cryptsetup", "luksFormat", "--batch-mode", "--key-file", "/tmp/secret.key", disk2],
+            dry_run=dry_run, dry_label=f"cryptsetup luksFormat {disk2}", log_fn=log_fn,
+        )
+        run_cmd(
+            ["cryptsetup", "open", "--type", "luks", "--key-file", "/tmp/secret.key", disk2, "crypted2"],
+            dry_run=dry_run, dry_label=f"cryptsetup open {disk2} crypted2", log_fn=log_fn,
+        )
+        cleanup.register("close crypted2", ["cryptsetup", "close", "crypted2"])
 
     disko_path = prepare_disko_config(cfg)
     cleanup.register("remove disko config", ["rm", "-rf", "/tmp/disko-install"])
