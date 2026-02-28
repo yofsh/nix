@@ -1,7 +1,7 @@
 { config, lib, pkgs, inputs, ... }:
 {
 
-  imports = [ ./audio.nix ./printing.nix ./boot-desktop.nix ];
+  imports = [ ./audio.nix ./printing.nix ./boot-desktop.nix ./gaming.nix ];
 
   environment.systemPackages = with pkgs; [
     (google-chrome.override {
@@ -60,6 +60,7 @@
     # hyprpaper
     swww
     brightnessctl
+    ddcutil
     xdg-desktop-portal-hyprland
     xdg-desktop-portal-gtk
     gsettings-desktop-schemas
@@ -106,6 +107,10 @@
 
   system.stateVersion = "24.05";
 
+  # DDC/CI for external monitor brightness control via I2C
+  boot.kernelModules = [ "i2c-dev" ];
+  hardware.i2c.enable = true;
+
   security.polkit.enable = true;
   services.fstrim.enable = true;
   security.rtkit.enable = true;
@@ -129,10 +134,6 @@
   # Software
   programs.noisetorch.enable = true;
   services.upower.enable = true;
-
-  programs.steam.enable = true;
-  programs.steam.gamescopeSession.enable = true;
-  programs.steam.remotePlay.openFirewall = true;
 
   programs.firefox.enable = true;
   programs.firefox.policies = {

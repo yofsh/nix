@@ -9,6 +9,7 @@
     ./../../modules/fingerprint.nix
     ./../../modules/security-keys.nix
     ./../../modules/intel-lunar-lake.nix
+    ./../../modules/syncthing.nix
   ];
   networking.hostName = "athena";
 

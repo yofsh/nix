@@ -14,10 +14,5 @@
   hardware.graphics = {
     enable = true;
     enable32Bit = true;
-    extraPackages = with pkgs; [
-      intel-media-driver  # VA-API driver (iHD) for hardware video decode/encode
-      vpl-gpu-rt          # Intel Quick Sync Video
-    ];
   };
-  environment.sessionVariables.LIBVA_DRIVER_NAME = "iHD";
 }

@@ -22,6 +22,7 @@
     claude-code.url = "github:sadjow/claude-code-nix";
     vicinae.url = "github:vicinaehq/vicinae";
     hyprland-preview-share-picker.url = "git+https://github.com/WhySoBad/hyprland-preview-share-picker?submodules=1";
+    mt7927.url = "github:cmspam/mt7927-nixos";
     quickshell = {
       url = "git+https://git.outfoxxed.me/quickshell/quickshell";
       inputs.nixpkgs.follows = "nixpkgs";
@@ -61,6 +62,8 @@
         inherit system;
         specialArgs = { inherit inputs; };
         modules = [
+          inputs.mt7927.nixosModules.default
+          sops-nix.nixosModules.sops
           ./hosts/ares/configuration.nix
           { nixpkgs.overlays = [ inputs.quickshell.overlays.default ]; }
         ];

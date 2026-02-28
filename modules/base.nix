@@ -79,7 +79,7 @@
   };
 
    services.openssh.enable = true;
-   services.tailscale.enable = true;
+   # services.tailscale.enable = true;
    services.sysstat.enable = true;
   users = {
     defaultUserShell = pkgs.zsh;
@@ -99,6 +99,7 @@
         "video"
         "nginx"
         "lpadmin"
+        "i2c"
       ];
       packages = with pkgs; [ ];
       openssh.authorizedKeys.keys = [
