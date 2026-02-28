@@ -15,6 +15,7 @@ Item {
     property string txRate: ""
     property bool hovered: false
     property bool pinned: false
+    property bool pingActive: false
     property bool expanded: hovered || pinned
     onPinnedChanged: if (pinned) infoProc.running = true
     property string netInfo: ""
@@ -253,6 +254,7 @@ Item {
     MouseArea {
         anchors.fill: parent
         hoverEnabled: true
+        onClicked: root.pingActive = !root.pingActive
         onEntered: {
             root.hovered = true;
             infoProc.running = true;

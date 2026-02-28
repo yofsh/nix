@@ -126,9 +126,9 @@ Scope {
                     Modules.Media {}
                     Modules.Backlight {}
                     Modules.Volume {}
-                    Modules.Network { pinned: root.networkPinned }
-                    // Modules.PingGw {}
-                    // Modules.Ping {}
+                    Modules.Network { id: networkModule; pinned: root.networkPinned }
+                    Modules.PingGw { active: networkModule.pingActive }
+                    Modules.Ping { active: networkModule.pingActive }
                     Modules.Cpu {}
                     Modules.Memory {}
                     Modules.Temperature {}

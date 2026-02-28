@@ -6,7 +6,7 @@ Item {
     id: root
     implicitWidth: visible ? batCol.implicitWidth + 4 : 0
     implicitHeight: parent ? parent.height : 24
-    visible: device && device.ready && !root.isFullyCharged
+    visible: device && device.ready && device.isPresent && !root.isFullyCharged
 
     property var device: UPower.displayDevice
     property bool hovered: mouseArea.containsMouse

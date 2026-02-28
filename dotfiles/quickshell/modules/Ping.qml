@@ -4,9 +4,16 @@ import "../helpers" as Helpers
 
 Item {
     id: root
-    implicitWidth: graphCanvas.width + pingColumn.width + 4
+    property real contentWidth: graphCanvas.width + pingColumn.width + 4
+    implicitWidth: root.active ? contentWidth : 0
     implicitHeight: parent ? parent.height : 30
+    clip: true
 
+    Behavior on implicitWidth {
+        NumberAnimation { duration: 200; easing.type: Easing.OutCubic }
+    }
+
+    property bool active: true
     property string target: "1.1.1.1"
     property int currentPing: -1  // -1 = no data yet, -2 = timeout
     property int maxPing: 0       // highest ping currently on graph
@@ -124,11 +131,20 @@ Item {
         }
     }
 
+    onActiveChanged: {
+        if (!active) {
+            history = [];
+            currentPing = -1;
+            maxPing = 0;
+            graphCanvas.requestPaint();
+        }
+    }
+
     Process {
         id: pingProc
         command: ["ping", "-Q", "0xB8", "-i", "1", root.target]
-        running: root.target !== ""
-        onRunningChanged: if (!running && root.target !== "") running = true
+        running: root.active && root.target !== ""
+        onRunningChanged: if (!running && root.active && root.target !== "") running = true
         stdout: SplitParser {
             onRead: data => root.parsePingLine(data)
         }
