@@ -1,5 +1,4 @@
 #!/bin/sh
-ID=3333
 UNSPLASH_ACCESS_KEY=$(cat /run/secrets/unsplash-key 2>/dev/null)
 if [ -z "$UNSPLASH_ACCESS_KEY" ]; then
 	echo "Error: Unsplash API key not found at /run/secrets/unsplash-key" >&2
@@ -31,7 +30,7 @@ notify() {
 	local body="$4"
 
 	[ "$SILENT" -eq 1 ] && return
-	dunstify -u "$urgency" -i "$icon" -r "$ID" "[Wallpaper] $title" "$body"
+	notify-send -u "$urgency" -i "$icon" -h "string:x-tag:wallpaper" "[Wallpaper] $title" "$body"
 	echo -e "[Wallpaper] [$title] $body" >&2
 }
 

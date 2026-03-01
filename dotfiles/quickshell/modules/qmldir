@@ -13,7 +13,7 @@ Backlight 1.0 Backlight.qml
 Network 1.0 Network.qml
 PowerProfile 1.0 PowerProfile.qml
 WfRecorder 1.0 WfRecorder.qml
-Dunst 1.0 Dunst.qml
+NotificationIcon 1.0 NotificationIcon.qml
 HeadsetBattery 1.0 HeadsetBattery.qml
 SysTray 1.0 SysTray.qml
 Ping 1.0 Ping.qml
@@ -21,3 +21,4 @@ PingGw 1.0 PingGw.qml
 Yts 1.0 Yts.qml
 BatteryPopup 1.0 BatteryPopup.qml
 AirPods 1.0 AirPods.qml
+NotificationPopup 1.0 NotificationPopup.qml

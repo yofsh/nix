@@ -9,7 +9,7 @@ MODEL="${WHISPER_MODEL:-ggml-small.en.bin}"
 VOICE_DIR="$(dirname "$(realpath "$0")")/voice.d"
 
 notify() {
-  notify-send -r "${NOTIFY_ID:-10020}" -t 3000 -i microphone-sensitivity-high "$1" "$2"
+  notify-send -h "string:x-tag:voice" -t 3000 -i microphone-sensitivity-high "$1" "$2"
 }
 
 start_recording() {

@@ -29,4 +29,4 @@ TOO_HIGH=$(echo "$NEW > 3.0" | bc)
 [ "$TOO_HIGH" = "1" ] && NEW=3.0
 
 hyprctl keyword monitor "$MONITOR,preferred,auto,$NEW"
-notify-send -r 10050 -t 1500 -u low "Scale" "$MONITOR → $NEW"
+notify-send -h "string:x-tag:scale-screen" -t 1500 -u low "Scale" "$MONITOR → $NEW"

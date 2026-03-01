@@ -14,7 +14,7 @@ notify_send() {
         if [[ "$OSTYPE" == "darwin"* ]]; then
             osascript -e "display notification \"$2\" with title \"$1\"" || true
         else
-            notify-send -r 1 -u low -i mintupload "$1" "$2"
+            notify-send -h "string:x-tag:upload" -u low -i mintupload "$1" "$2"
         fi
     fi
 }
@@ -24,7 +24,7 @@ notify_send_success() {
         if [[ "$OSTYPE" == "darwin"* ]]; then
             osascript -e "display notification \"$2\" with title \"$1\""
         else
-            notify-send -r 1 -u low -i $SUCCESS_ICON "$1" "$2"
+            notify-send -h "string:x-tag:upload" -u low -i $SUCCESS_ICON "$1" "$2"
         fi
     fi
 }

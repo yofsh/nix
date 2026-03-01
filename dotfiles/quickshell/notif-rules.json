@@ -1,0 +1,27 @@
+{
+  "rules": [
+    {
+      "match": { "appName": "/^(telegram|ayugram)( desktop)?$/i" },
+      "bg": "#1a5a9a33", "fg": "#7ecbf7"
+    },
+    {
+      "match": { "appName": "Brave", "body": "/web\\.telegram\\.org/" },
+      "bg": "#1a5a9a33", "fg": "#7ecbf7"
+    },
+    {
+      "match": { "summary": "/^New message/" },
+      "bg": "#2a4a9a33", "fg": "#8eaaff"
+    },
+    {
+      "match": { "summary": "Translation" },
+      "bg": "#2a2a2a33",
+      "timeout": 20000, "hideHeader": true, "hideActions": true,
+      "maxLines": 8, "boldBody": true, "bodySize": 12
+    }
+  ],
+  "defaults": {
+    "low":      { "bg": "#3a3a3a33", "fg": "#aaaaaa", "timeout": 5000 },
+    "normal":   { "bg": "#33333333", "fg": "#eeeeee", "timeout": 10000 },
+    "critical": { "bg": "#5a222233", "fg": "#ff6666", "timeout": 0 }
+  }
+}

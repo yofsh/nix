@@ -13,7 +13,7 @@ AUDIO_LEN="${AUDIO_LEN:-10000}"
 CAPTURE_ID="${CAPTURE_ID:--1}"
 
 notify() {
-  notify-send -r 10022 -t 3000 -i microphone-sensitivity-high "$1" "$2"
+  notify-send -h "string:x-tag:voice-stream" -t 3000 -i microphone-sensitivity-high "$1" "$2"
 }
 
 start_stream() {

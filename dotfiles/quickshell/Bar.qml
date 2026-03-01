@@ -1,3 +1,4 @@
+//@ pragma IconTheme Papirus
 import Quickshell
 import Quickshell.Io
 import Quickshell.Hyprland
@@ -138,7 +139,7 @@ Scope {
                     Modules.Clock {}
                     Modules.HeadsetBattery {}
                     Modules.Language {}
-                    Modules.Dunst {}
+                    Modules.NotificationIcon { count: notifPopup.activeCount; dnd: notifPopup.dnd; onDndChanged: notifPopup.dnd = dnd }
                     Modules.SysTray {}
                 }
             }
@@ -146,6 +147,7 @@ Scope {
             Modules.OsdPopup { screen: barWindow.screen; barHeight: barWindow.implicitHeight }
             Modules.FingerprintPopup { screen: barWindow.screen; barHeight: barWindow.implicitHeight }
             Modules.BatteryPopup { id: batteryPopup; screen: barWindow.screen; barHeight: barWindow.implicitHeight; popupOpen: batteryModule.popupOpen }
+            Modules.NotificationPopup { id: notifPopup; screen: barWindow.screen; barHeight: barWindow.implicitHeight }
 
             HyprlandFocusGrab {
                 windows: [barWindow, batteryPopup]

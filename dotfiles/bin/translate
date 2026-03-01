@@ -5,7 +5,7 @@ lang_pango=$(echo $lang | tr '[:lower:]' '[:upper:]')
 
 send_notification() {
   echo "$1 - $2"
-  notify-send -r "10015" -t 60000 -i google-translate -u low "$1" "$2" 
+  notify-send -h "string:x-tag:translate" -t 60000 -i google-translate -u low "$1" "$2"
 }
 
 translate_deepl() {
