@@ -1,22 +1,149 @@
-#!/bin/sh
-pkill dunst
-sleep 0.5
+#!/usr/bin/env bash
+# Test notification popup styles — pick groups with fzf
 
-dunstify -u low "Low priority" "Notification ext goes here"
-dunstify "Normal priority" "Notification text goes here"
-dunstify -u critical "Critical priority" "Notification text goes here"
+groups=(
+    "Urgency levels:Low, Normal, Critical"
+    "Progress bars:Low 5%, Normal 40%, Critical 90%"
+    "Icons:YouTube, Firefox"
+    "Telegram:Telegram Desktop, AyuGram Desktop, Brave web.telegram"
+    "Slack:New message from browser"
+    "Translation:Body-only, long timeout"
+    "Replacement:Animated progress 0→100%"
+    "Multi replace:3 parallel progress bars at different speeds"
+    "AI streaming:Word-by-word text streaming"
+    "Long content:Long title and multiline body"
+    "Markup:HTML markup (bold, italic, underline, links, colors)"
+    "All:Send everything"
+)
 
-dunstify -u low -h "int:value:5" "Low priority priority with progress"
-dunstify -h "int:value:40" "Normal priority with progress"
-dunstify -u critical -h "int:value:90" "Normal priority with progress"
+selected=$(printf '%s\n' "${groups[@]}" | cut -d: -f1 | fzf --multi --prompt="Pick notification groups: ")
+[[ -z "$selected" ]] && exit 0
 
-dunstify -i background "With background icon" "Notification ext goes here"
-dunstify -i youtube "Normal youtube icon" "Notification ext goes here"
+d=0.1
 
-dunstify -a "Telegram Desktop" "Telegram notificaiton" "With some text in here With some text in here With some text in here With some text in here With some text in here "
+send_urgency() {
+    notify-send -u low "Low priority" "Notification text goes here"
+    sleep $d
+    notify-send "Normal priority" "Notification text goes here"
+    sleep $d
+    notify-send -u critical "Critical priority" "Notification text goes here"
+}
 
-dunstify -a "Firefox" "New message from test" "With some text in here With some text in here With some text in here With some text in here With some text in here "
+send_progress() {
+    notify-send -u low -h "int:value:5" "Low with progress" "5% complete"
+    sleep $d
+    notify-send -h "int:value:40" "Normal with progress" "40% complete"
+    sleep $d
+    notify-send -u critical -h "int:value:90" "Critical with progress" "90% complete"
+}
 
-dunstify -u -low "Translation" "With some text in here With some text in here With some text in here With some text in here With some text in here "
+send_icons() {
+    notify-send -i youtube "With icon: youtube" "Notification text goes here"
+    sleep $d
+    notify-send -i firefox "With icon: firefox" "Notification text goes here"
+}
 
-dunstify "New message from User" "It's a Slack notification from browser."
+send_telegram() {
+    notify-send -a telegram "Telegram notification" "With some text in here With some text in here"
+    sleep $d
+    notify-send -a telegram "AyuGram notification" "With some text in here With some text in here"
+    sleep $d
+    notify-send -a Telegram "Brave web telegram" "Check web.telegram.org for messages"
+}
+
+send_slack() {
+    notify-send "New message from User" "It's a Slack notification from browser."
+}
+
+send_translation() {
+    notify-send "Translation" "Esto es una prueba de traducción con texto largo que debería mostrarse sin icono ni título"
+}
+
+send_replacement() {
+    notify-send -h "string:x-tag:test-dl" -h "int:value:0" "Downloading update" "0% complete"
+    for pct in 10 25 50 75 100; do
+        sleep 0.4
+        notify-send -h "string:x-tag:test-dl" -h "int:value:$pct" "Downloading update" "${pct}% complete"
+    done
+}
+
+send_multi_replace() {
+    notify-send -h "string:x-tag:test-kernel" -h "int:value:0" "Compiling kernel" "0%"
+    notify-send -h "string:x-tag:test-sync" -h "int:value:0" "Syncing files" "0%"
+    notify-send -h "string:x-tag:test-video" -h "int:value:0" "Encoding video" "0%"
+
+    # Fast (5% steps), medium (10% steps), slow (20% steps) — all run together
+    for pct in $(seq 5 5 100); do
+        sleep 0.15
+        notify-send -h "string:x-tag:test-kernel" -h "int:value:$pct" "Compiling kernel" "${pct}%"
+    done &
+
+    for pct in $(seq 10 10 100); do
+        sleep 0.35
+        notify-send -h "string:x-tag:test-sync" -h "int:value:$pct" "Syncing files" "${pct}%"
+    done &
+
+    for pct in 20 40 60 80 100; do
+        sleep 0.7
+        notify-send -h "string:x-tag:test-video" -h "int:value:$pct" "Encoding video" "${pct}%"
+    done &
+
+    wait
+}
+
+send_streaming() {
+    local words=("The" "quick" "brown" "fox" "jumps" "over" "the" "lazy" "dog." "Pack" "my" "box" "with" "five" "dozen" "liquor" "jugs." "How" "vexingly" "quick" "daft" "zebras" "jump." "The" "five" "boxing" "wizards" "jump" "quickly." "Sphinx" "of" "black" "quartz," "judge" "my" "vow." "Two" "driven" "jocks" "help" "fax" "my" "big" "quiz." "Waltz," "bad" "nymph," "for" "quick" "jigs" "vex." "Mr" "Jock," "TV" "quiz" "PhD," "bags" "few" "lynx." "Glib" "jocks" "quiz" "nymph" "to" "vex" "dwarf." "Jackdaws" "love" "my" "big" "sphinx" "of" "quartz.")
+    local body=""
+    for w in "${words[@]}"; do
+        body="${body:+$body }$w"
+        notify-send -h "string:x-tag:test-stream" "AI Response" "$body"
+        sleep 0.02
+    done
+}
+
+send_long() {
+    notify-send \
+        "This is a very long notification title that should be truncated by elide at some point" \
+        "Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur."
+}
+
+send_markup() {
+    notify-send "Markup test" \
+        "<b>bold text</b> and <i>italic text</i> and <u>underlined</u>"
+    sleep $d
+    notify-send "Markup test 2" \
+        'Mixed: <b>bold <i>bold-italic</i></b> normal <a href="https://example.com">link</a>'
+    sleep $d
+    notify-send "Markup test 3" \
+        'Color: <font color="#ff6666">red</font> <font color="#66ff66">green</font> <font color="#6666ff">blue</font>'
+}
+
+while IFS= read -r group; do
+    case "$group" in
+        "Urgency levels")  send_urgency ;;
+        "Progress bars")   send_progress ;;
+        "Icons")           send_icons ;;
+        "Telegram")        send_telegram ;;
+        "Slack")           send_slack ;;
+        "Translation")     send_translation ;;
+        "Replacement")     send_replacement ;;
+        "Multi replace")   send_multi_replace ;;
+        "AI streaming")    send_streaming ;;
+        "Long content")    send_long ;;
+        "Markup")          send_markup ;;
+        "All")
+            send_urgency; sleep $d
+            send_progress; sleep $d
+            send_icons; sleep $d
+            send_telegram; sleep $d
+            send_slack; sleep $d
+            send_translation; sleep $d
+            send_replacement; sleep $d
+            send_multi_replace; sleep $d
+            send_streaming; sleep $d
+            send_long; sleep $d
+            send_markup
+            ;;
+    esac
+    sleep $d
+done <<< "$selected"

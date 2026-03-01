@@ -67,7 +67,6 @@
     xdg-user-dirs
     xdg-utils
     wdisplays
-    dunst
     hyprsunset
 
     wl-clipboard

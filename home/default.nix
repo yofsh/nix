@@ -68,7 +68,6 @@ in {
     '';
 
     "foot/foot.ini".source = link "${dotfiles}/foot/foot.ini";
-    "dunst/dunstrc".source = link "${dotfiles}/dunst/dunstrc";
     "tridactyl/tridactylrc".source = link "${dotfiles}/firefox/tridactylrc";
     "nvim".source = link "${dotfiles}/nvim";
     "yazi".source = link "${dotfiles}/yazi";

@@ -18,7 +18,6 @@ COMMAND_NAMES = {
     "pactl": "PulseAudio control",
     "wpctl": "WirePlumber control",
     "playerctl": "Media player control",
-    "dunstctl": "Dunst notification control",
     "light": "Screen brightness",
     "hyprlock": "Lock screen",
     "wofi": "App launcher (wofi)",

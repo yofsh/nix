@@ -6,7 +6,6 @@
 HA_URL="http://192.168.8.30:8123"
 HA_TOKEN=$(cat /run/secrets/ha-token)
 STEP=25  # brightness step (0-255 scale, ~10%)
-NOTIFY_ID=99200
 ICON=~/nix/dotfiles/icons/ha.png
 
 ACTION=$1
@@ -15,7 +14,7 @@ DOMAIN=${ENTITY%%.*}
 
 api() { curl -s -H "Authorization: Bearer $HA_TOKEN" -H "Content-Type: application/json" "$@"; }
 
-notify() { dunstify -r $NOTIFY_ID -t 2000 -u low -i "$ICON" "$@"; }
+notify() { notify-send -h "string:x-tag:ha" -t 2000 -u low -i "$ICON" "$@"; }
 
 case $ACTION in
   up|down)
