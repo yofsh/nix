@@ -20,6 +20,28 @@
     };
   };
 
+  qt = {
+    enable = true;
+    platformTheme.name = "kde";
+    style.name = "breeze";
+  };
+
+  xdg.configFile."kdeglobals".text = ''
+    [General]
+    ColorScheme=BreezeDark
+
+    [Icons]
+    Theme=Papirus
+
+    [KDE]
+    LookAndFeelPackage=org.kde.breezedark.desktop
+  '';
+
+  home.packages = with pkgs; [
+    kdePackages.breeze
+    kdePackages.breeze-icons
+  ];
+
   gtk = {
     enable = true;
     theme = {

@@ -17,6 +17,7 @@ Item {
             model: SystemTray.items
 
             Item {
+                id: trayDelegate
                 required property var modelData
                 width: 14
                 height: 14
@@ -28,6 +29,14 @@ Item {
                     sourceSize.height: 14
                 }
 
+                QsMenuAnchor {
+                    id: menuAnchor
+                    menu: trayDelegate.modelData.menu
+                    anchor.item: trayDelegate
+                    anchor.edges: Edges.Bottom
+                    anchor.gravity: Edges.Bottom
+                }
+
                 MouseArea {
                     anchors.fill: parent
                     acceptedButtons: Qt.LeftButton | Qt.RightButton | Qt.MiddleButton
@@ -37,7 +46,9 @@ Item {
                         } else if (mouse.button === Qt.MiddleButton) {
                             modelData.secondaryActivate();
                         } else if (mouse.button === Qt.RightButton) {
-                            modelData.activate();
+                            if (modelData.hasMenu) {
+                                menuAnchor.open();
+                            }
                         }
                     }
                 }

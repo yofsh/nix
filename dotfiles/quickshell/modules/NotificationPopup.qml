@@ -13,6 +13,35 @@ PanelWindow {
     property int maxEntries: 40
     property int maxVisible: 20
 
+    // --- Theme: Colors ---
+    property color defaultBg: "#cc1a1a1a"
+    property color defaultFg: "#eeeeee"
+    property color dimText: Qt.rgba(1, 1, 1, 0.35)
+    property color mutedText: Qt.rgba(1, 1, 1, 0.5)
+    property color trackBg: Qt.rgba(1, 1, 1, 0.15)
+    property color timeoutBar: "white"
+    property real timeoutBarOpacity: 0.2
+
+    // --- Theme: Typography ---
+    property string fontFamily: "DejaVu Sans"
+    property int fontSizeTitle: 12
+    property int fontSizeBody: 11
+    property int fontSizeSmall: 10
+    property int fontSizeMeta: 14
+
+    // --- Theme: Layout ---
+    property int iconSize: 32
+    property int cardPadding: 8
+    property int cardRadius: 0
+    property int cardSpacing: 6
+    property int actionHeight: 22
+    property int actionRadius: 4
+
+    // --- Theme: Animation ---
+    property int animEnter: 200
+    property int animExit: 150
+    property int animSlideOffset: 20
+
     // Exposed for Bar.qml notification icon
     property int activeCount: visibleCount
     property bool dnd: false
@@ -135,10 +164,10 @@ PanelWindow {
                        : urgency === NotificationUrgency.Critical ? "critical" : "normal";
         var base = rulesConfig.defaults[urgencyKey] || {};
         var style = {
-            bg: base.bg || "#cc1a1a1a", fg: base.fg || "#eeeeee",
+            bg: base.bg || root.defaultBg, fg: base.fg || root.defaultFg,
             timeout: base.timeout !== undefined ? base.timeout : 10000,
             hideHeader: false, hideActions: false,
-            maxLines: 4, boldBody: false, bodySize: 11
+            maxLines: 4, boldBody: false, bodySize: root.fontSizeBody
         };
         var rules = rulesConfig.rules;
         for (var i = 0; i < rules.length; i++) {
@@ -251,8 +280,8 @@ PanelWindow {
                 dbg("[notif]   REPLACE i=" + i + " realId=" + existing.realId + " tag=" + existing.tag);
                 var wasHidden = existing.hidden;
                 var isDnd = root.dnd;
-                visibleModel.set(i, makeEntry(existing.nid, notif.id, notif, tag, existing.arrivedAt, isDnd));
                 notifRefs[existing.nid] = notif;
+                visibleModel.set(i, makeEntry(existing.nid, notif.id, notif, tag, existing.arrivedAt, isDnd));
                 connectNotifSignals(notif, existing.nid);
                 if (wasHidden && !isDnd) visibleCount++;
                 return;
@@ -275,8 +304,8 @@ PanelWindow {
         var nid = nextNid++;
         dbg("[notif]   NEW nid=" + nid + " id=" + notif.id + " tag=" + tag);
         var isDnd = root.dnd;
-        visibleModel.insert(0, makeEntry(nid, notif.id, notif, tag, Date.now(), isDnd));
         notifRefs[nid] = notif;
+        visibleModel.insert(0, makeEntry(nid, notif.id, notif, tag, Date.now(), isDnd));
         connectNotifSignals(notif, nid);
         if (!isDnd) visibleCount++;
     }
@@ -391,7 +420,7 @@ PanelWindow {
     Column {
         id: notifColumn
         width: parent.width
-        spacing: 6
+        spacing: root.cardSpacing
 
         Repeater {
             id: notifRepeater
@@ -446,22 +475,22 @@ PanelWindow {
 
                 ParallelAnimation {
                     id: cardEnter
-                    NumberAnimation { target: cardWrapper; property: "opacity"; from: 0; to: 1; duration: 200; easing.type: Easing.OutCubic }
-                    NumberAnimation { target: card; property: "y"; from: -20; to: 0; duration: 200; easing.type: Easing.OutCubic }
+                    NumberAnimation { target: cardWrapper; property: "opacity"; from: 0; to: 1; duration: root.animEnter; easing.type: Easing.OutCubic }
+                    NumberAnimation { target: card; property: "y"; from: -root.animSlideOffset; to: 0; duration: root.animEnter; easing.type: Easing.OutCubic }
                 }
 
                 ParallelAnimation {
                     id: cardExit
-                    NumberAnimation { target: cardWrapper; property: "opacity"; from: 1; to: 0; duration: 150; easing.type: Easing.InCubic }
-                    NumberAnimation { target: card; property: "y"; from: 0; to: -20; duration: 150; easing.type: Easing.InCubic }
+                    NumberAnimation { target: cardWrapper; property: "opacity"; from: 1; to: 0; duration: root.animExit; easing.type: Easing.InCubic }
+                    NumberAnimation { target: card; property: "y"; from: 0; to: -root.animSlideOffset; duration: root.animExit; easing.type: Easing.InCubic }
                     onFinished: root.hideEntry(cardWrapper.index)
                 }
 
                 Rectangle {
                     id: card
                     width: parent.width
-                    height: cardContent.implicitHeight + 16 + (valueBar.visible ? 14 : 0) + (progressBar.visible ? 3 : 0)
-                    radius: 0
+                    height: cardContent.implicitHeight + root.cardPadding * 2 + (valueBar.visible ? 14 : 0) + (progressBar.visible ? 3 : 0)
+                    radius: root.cardRadius
                     color: cardWrapper.notifStyle.bg
                     clip: true
 
@@ -494,7 +523,7 @@ PanelWindow {
                         anchors.left: parent.left
                         anchors.right: parent.right
                         anchors.top: parent.top
-                        anchors.margins: 8
+                        anchors.margins: root.cardPadding
                         spacing: 2
 
                         Row {
@@ -504,11 +533,11 @@ PanelWindow {
 
                             Image {
                                 id: notifIcon
-                                width: 32
-                                height: 32
+                                width: root.iconSize
+                                height: root.iconSize
                                 anchors.verticalCenter: parent.verticalCenter
-                                sourceSize.width: 32
-                                sourceSize.height: 32
+                                sourceSize.width: root.iconSize
+                                sourceSize.height: root.iconSize
                                 visible: status === Image.Ready
                                 source: {
                                     if (cardWrapper.image !== "") return cardWrapper.image;
@@ -529,29 +558,20 @@ PanelWindow {
                                     Text {
                                         text: cardWrapper.summary
                                         color: cardWrapper.notifStyle.fg
-                                        font.family: "DejaVu Sans"
-                                        font.pixelSize: 12
+                                        font.family: root.fontFamily
+                                        font.pixelSize: root.fontSizeTitle
                                         font.bold: true
                                         elide: Text.ElideRight
-                                        width: parent.width - appLabel.implicitWidth - historyIcon.implicitWidth - agoLabel.implicitWidth - 18
-                                    }
-
-                                    Text {
-                                        id: appLabel
-                                        text: cardWrapper.appName
-                                        color: Qt.rgba(1, 1, 1, 0.5)
-                                        font.family: "DejaVu Sans"
-                                        font.pixelSize: 10
-                                        anchors.baseline: parent.children[0] ? parent.children[0].baseline : undefined
+                                        width: parent.width - appNameLabel.implicitWidth - historyIcon.implicitWidth - agoLabel.implicitWidth - 18
                                     }
 
                                     Text {
                                         id: historyIcon
                                         text: "◷"
                                         visible: cardWrapper.dismissed
-                                        color: Qt.rgba(1, 1, 1, 0.35)
-                                        font.family: "DejaVu Sans"
-                                        font.pixelSize: 14
+                                        color: root.dimText
+                                        font.family: root.fontFamily
+                                        font.pixelSize: root.fontSizeMeta
                                         anchors.baseline: parent.children[0] ? parent.children[0].baseline : undefined
                                     }
 
@@ -560,9 +580,9 @@ PanelWindow {
                                         property string ago: { root.clockTick; return root.timeAgo(cardWrapper.arrivedAt); }
                                         text: ago
                                         visible: ago !== ""
-                                        color: Qt.rgba(1, 1, 1, 0.35)
-                                        font.family: "DejaVu Sans"
-                                        font.pixelSize: 10
+                                        color: root.dimText
+                                        font.family: root.fontFamily
+                                        font.pixelSize: root.fontSizeSmall
                                         anchors.baseline: parent.children[0] ? parent.children[0].baseline : undefined
                                     }
                                 }
@@ -571,7 +591,7 @@ PanelWindow {
                                     width: parent.width
                                     text: cardWrapper.body
                                     color: cardWrapper.notifStyle.fg
-                                    font.family: "DejaVu Sans"
+                                    font.family: root.fontFamily
                                     font.pixelSize: cardWrapper.notifStyle.bodySize
                                     font.bold: cardWrapper.notifStyle.boldBody
                                     wrapMode: Text.WordWrap
@@ -588,7 +608,7 @@ PanelWindow {
                             width: parent.width
                             text: cardWrapper.body
                             color: cardWrapper.notifStyle.fg
-                            font.family: "DejaVu Sans"
+                            font.family: root.fontFamily
                             font.pixelSize: cardWrapper.notifStyle.bodySize
                             font.bold: cardWrapper.notifStyle.boldBody
                             wrapMode: Text.WordWrap
@@ -598,11 +618,14 @@ PanelWindow {
                             visible: cardWrapper.notifStyle.hideHeader && text !== ""
                         }
 
-                        Row {
-                            spacing: 6
-                            visible: cardWrapper.hasActions && !cardWrapper.notifStyle.hideActions
+                        Item { width: 1; height: 4; visible: cardWrapper.hasActions && !cardWrapper.notifStyle.hideActions }
 
+                        Row {
+                            spacing: 2
+                            width: parent.width
+                            visible: cardWrapper.hasActions && !cardWrapper.notifStyle.hideActions
                             Repeater {
+                                id: actionsRepeater
                                 model: {
                                     var ref = root.notifRefs[cardWrapper.nid];
                                     return (ref && ref.actions) ? ref.actions : [];
@@ -610,22 +633,26 @@ PanelWindow {
 
                                 Rectangle {
                                     required property var modelData
-                                    width: actionLabel.implicitWidth + 12
-                                    height: actionLabel.implicitHeight + 4
-                                    radius: 4
-                                    color: Qt.rgba(1, 1, 1, 0.1)
+                                    width: (parent.width - (actionsRepeater.count - 1) * 2) / actionsRepeater.count
+                                    height: root.actionHeight
+                                    radius: root.actionRadius
+                                    color: actionHover.hovered ? Helpers.Colors.accent : "transparent"
+                                    border.color: Helpers.Colors.accent
+                                    border.width: 1
+
+                                    HoverHandler { id: actionHover }
 
                                     Text {
-                                        id: actionLabel
                                         anchors.centerIn: parent
                                         text: modelData.text
-                                        color: Qt.rgba(1, 1, 1, 0.8)
-                                        font.family: "DejaVu Sans"
-                                        font.pixelSize: 10
+                                        color: actionHover.hovered ? "white" : Helpers.Colors.accent
+                                        font.family: root.fontFamily
+                                        font.pixelSize: root.fontSizeSmall
                                     }
 
                                     MouseArea {
                                         anchors.fill: parent
+                                        cursorShape: Qt.PointingHandCursor
                                         onClicked: {
                                             modelData.invoke();
                                             root.animateHide(cardWrapper.index);
@@ -634,6 +661,19 @@ PanelWindow {
                                 }
                             }
                         }
+                    }
+
+                    Text {
+                        id: appNameLabel
+                        text: cardWrapper.appName
+                        color: root.mutedText
+                        font.family: root.fontFamily
+                        font.pixelSize: root.fontSizeSmall
+                        anchors.top: parent.top
+                        anchors.topMargin: 2
+                        anchors.right: parent.right
+                        anchors.rightMargin: 4
+                        visible: !cardWrapper.notifStyle.hideHeader && cardWrapper.appName !== ""
                     }
 
                     Rectangle {
@@ -646,7 +686,7 @@ PanelWindow {
                         anchors.bottomMargin: progressBar.visible ? 4 : 6
                         height: 4
                         radius: 2
-                        color: Qt.rgba(1, 1, 1, 0.15)
+                        color: root.trackBg
                         visible: cardWrapper.hintValue >= 0
 
                         Rectangle {
@@ -667,8 +707,8 @@ PanelWindow {
                         anchors.left: parent.left
                         height: 3
                         radius: 0
-                        color: "white"
-                        opacity: 0.2
+                        color: root.timeoutBar
+                        opacity: root.timeoutBarOpacity
                         visible: cardWrapper.timeout > 0
                         width: cardWrapper.timeout > 0 ? parent.width * (1 - cardWrapper.elapsed / cardWrapper.timeout) : 0
 

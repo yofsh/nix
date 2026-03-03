@@ -73,6 +73,7 @@ in {
     "yazi".source = link "${dotfiles}/yazi";
     "hypr".source = link "${dotfiles}/hypr";
     "wiremix".source = link "${dotfiles}/wiremix";
+    "quickshell".source = link "${dotfiles}/quickshell";
     "mpv/mpv.conf".source = link "${dotfiles}/mpv/mpv.conf";
 
     # Source home-manager session vars into uwsm so sessionPath/sessionVariables

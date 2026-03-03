@@ -13,6 +13,7 @@ groups=(
     "AI streaming:Word-by-word text streaming"
     "Long content:Long title and multiline body"
     "Markup:HTML markup (bold, italic, underline, links, colors)"
+    "Action buttons:0, 1, 2, 3 action buttons with/without icons"
     "All:Send everything"
 )
 
@@ -107,6 +108,20 @@ send_long() {
         "Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur."
 }
 
+send_actions() {
+    notify-send "Plain Notification" "Simple text notification with no icon and no actions."
+    sleep $d
+    notify-send -i dialog-information "System Information" "Everything is running smoothly. No action required."
+    sleep $d
+    notify-send -i software-update-available -A "install=Install" "Update Available" "A new system update is ready to install."
+    sleep $d
+    notify-send -A "undo=Undo" "File Deleted" "report-final.pdf was moved to trash."
+    sleep $d
+    notify-send -i call-start -A "accept=Accept" -A "decline=Decline" "Incoming Call" "Alice is calling..."
+    sleep $d
+    notify-send -i appointment-soon -A "join=Join" -A "snooze=Snooze" -A "dismiss=Dismiss" "Meeting in 5 minutes" "Weekly standup starting soon."
+}
+
 send_markup() {
     notify-send "Markup test" \
         "<b>bold text</b> and <i>italic text</i> and <u>underlined</u>"
@@ -131,6 +146,7 @@ while IFS= read -r group; do
         "AI streaming")    send_streaming ;;
         "Long content")    send_long ;;
         "Markup")          send_markup ;;
+        "Action buttons")  send_actions ;;
         "All")
             send_urgency; sleep $d
             send_progress; sleep $d
@@ -142,7 +158,8 @@ while IFS= read -r group; do
             send_multi_replace; sleep $d
             send_streaming; sleep $d
             send_long; sleep $d
-            send_markup
+            send_markup; sleep $d
+            send_actions
             ;;
     esac
     sleep $d
