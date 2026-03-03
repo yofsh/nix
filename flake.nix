@@ -48,7 +48,7 @@
           {
             home-manager.useGlobalPkgs = true;
             home-manager.useUserPackages = true;
-            home-manager.extraSpecialArgs = { inherit inputs; };
+            home-manager.extraSpecialArgs = { inherit inputs; hostname = "iso"; };
             home-manager.sharedModules = [
               inputs.vicinae.homeManagerModules.default
             ];
@@ -89,13 +89,18 @@
         modules = [ ./hosts/demeter/configuration.nix ];
       };
 
-      homeConfigurations.fobos = home-manager.lib.homeManagerConfiguration {
-        extraSpecialArgs = { inherit inputs; };
-        inherit pkgs;
-        modules = [
-          ./home/default.nix
-          inputs.vicinae.homeManagerModules.default
-        ];
+      homeConfigurations = let
+        mkHome = hostname: home-manager.lib.homeManagerConfiguration {
+          extraSpecialArgs = { inherit inputs hostname; };
+          inherit pkgs;
+          modules = [
+            ./home/default.nix
+            inputs.vicinae.homeManagerModules.default
+          ];
+        };
+      in {
+        "fobos@ares" = mkHome "ares";
+        "fobos@athena" = mkHome "athena";
       };
     };
 }

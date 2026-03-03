@@ -1,8 +1,7 @@
-{ inputs, config, pkgs, lib, ... }:
+{ inputs, config, pkgs, lib, hostname ? "", ... }:
 let
   link = config.lib.file.mkOutOfStoreSymlink;
   dotfiles = "${config.home.homeDirectory}/nix/dotfiles";
-  hostname = lib.strings.trim (builtins.readFile "/etc/hostname");
 in {
 
   home.stateVersion = "24.05";
