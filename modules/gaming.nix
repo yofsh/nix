@@ -3,6 +3,7 @@
   environment.systemPackages = with pkgs; [
     mangohud
     protonup-qt
+    vesktop
     vulkan-hdr-layer-kwin6
   ];
 

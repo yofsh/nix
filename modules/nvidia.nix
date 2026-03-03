@@ -21,6 +21,12 @@
     package = config.boot.kernelPackages.nvidiaPackages.stable;
   };
 
+  # Ollama with NVIDIA GPU acceleration
+  services.ollama = {
+    enable = true;
+    package = pkgs.ollama-cuda;
+  };
+
   # Docker with NVIDIA Container Toolkit (CDI)
   virtualisation.docker.enable = true;
   hardware.nvidia-container-toolkit.enable = true;

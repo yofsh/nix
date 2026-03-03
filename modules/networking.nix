@@ -12,6 +12,7 @@
       Domains = [ "~." "lan" ];
       FallbackDNS = [ "192.168.8.30" ];
       DNSOverTLS = "opportunistic";
+      MulticastDNS = "no";
     };
   };
 

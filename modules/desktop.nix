@@ -1,4 +1,17 @@
 { config, lib, pkgs, inputs, ... }:
+let
+  netwatch = pkgs.rustPlatform.buildRustPackage rec {
+    pname = "netwatch-tui";
+    version = "0.3.5";
+    src = pkgs.fetchCrate {
+      inherit pname version;
+      hash = "sha256-NvylrXrCOO5mgTj2zt5XCLQSlKE/V7TrBXYqYivNswE=";
+    };
+    cargoHash = "sha256-rzyqJh6GedeSj5vMqd1B7GgOSuN8uwPavKA/OAX6kvE=";
+    nativeBuildInputs = [ pkgs.pkg-config ];
+    buildInputs = [ pkgs.libpcap ];
+  };
+in
 {
 
   imports = [ ./audio.nix ./printing.nix ./boot-desktop.nix ./gaming.nix ];
@@ -24,6 +37,7 @@
     yazi
     wifitui
     bluetuith
+    netwatch
     powertop
     config.boot.kernelPackages.cpupower
 
@@ -47,12 +61,13 @@
     # WMs and stuff
     pyprland
     hyprpicker
-    (pkgs.writeShellScriptBin "hypr-plugins-load" ''
-      hyprctl plugin load ${pkgs.hyprlandPlugins.hyprexpo}/lib/libhyprexpo.so
-      hyprctl plugin load ${pkgs.hyprlandPlugins.hypr-darkwindow}/lib/libhypr-darkwindow.so
-      hyprctl plugin load ${pkgs.hyprlandPlugins.hy3}/lib/libhy3.so
-      hyprctl plugin load ${pkgs.hyprlandPlugins.hyprscrolling}/lib/libhyprscrolling.so
-    '')
+    # TODO: re-enable when plugins are updated for Hyprland 0.54
+    # (pkgs.writeShellScriptBin "hypr-plugins-load" ''
+    #   hyprctl plugin load ${pkgs.hyprlandPlugins.hyprexpo}/lib/libhyprexpo.so
+    #   hyprctl plugin load ${pkgs.hyprlandPlugins.hypr-darkwindow}/lib/libhypr-darkwindow.so
+    #   hyprctl plugin load ${pkgs.hyprlandPlugins.hy3}/lib/libhy3.so
+    #   hyprctl plugin load ${pkgs.hyprlandPlugins.hyprscrolling}/lib/libhyprscrolling.so
+    # '')
     hyprcursor
     hyprlock
     hypridle
