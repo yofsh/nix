@@ -61,17 +61,9 @@ in
     # WMs and stuff
     pyprland
     hyprpicker
-    # TODO: re-enable when plugins are updated for Hyprland 0.54
-    # (pkgs.writeShellScriptBin "hypr-plugins-load" ''
-    #   hyprctl plugin load ${pkgs.hyprlandPlugins.hyprexpo}/lib/libhyprexpo.so
-    #   hyprctl plugin load ${pkgs.hyprlandPlugins.hypr-darkwindow}/lib/libhypr-darkwindow.so
-    #   hyprctl plugin load ${pkgs.hyprlandPlugins.hy3}/lib/libhy3.so
-    #   hyprctl plugin load ${pkgs.hyprlandPlugins.hyprscrolling}/lib/libhyprscrolling.so
-    # '')
     hyprcursor
     hyprlock
     hypridle
-    hyprpolkitagent
     # hyprpaper
     swww
     brightnessctl

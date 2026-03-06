@@ -22,3 +22,6 @@ Yts 1.0 Yts.qml
 BatteryPopup 1.0 BatteryPopup.qml
 AirPods 1.0 AirPods.qml
 NotificationPopup 1.0 NotificationPopup.qml
+PolkitPopup 1.0 PolkitPopup.qml
+FingerprintPopup 1.0 FingerprintPopup.qml
+OsdPopup 1.0 OsdPopup.qml

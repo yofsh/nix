@@ -11,6 +11,8 @@ Scope {
     id: root
     property bool networkPinned: false
 
+    Modules.PolkitPopup { id: polkitPopup; barHeight: 22 }
+
     IpcHandler {
         target: "network"
         function toggle(): void { root.networkPinned = !root.networkPinned; }
@@ -145,7 +147,7 @@ Scope {
             }
 
             Modules.OsdPopup { screen: barWindow.screen; barHeight: barWindow.implicitHeight }
-            Modules.FingerprintPopup { screen: barWindow.screen; barHeight: barWindow.implicitHeight }
+            Modules.FingerprintPopup { screen: barWindow.screen; barHeight: barWindow.implicitHeight; polkitActive: polkitPopup.active }
             Modules.BatteryPopup { id: batteryPopup; screen: barWindow.screen; barHeight: barWindow.implicitHeight; popupOpen: batteryModule.popupOpen }
             Modules.NotificationPopup { id: notifPopup; screen: barWindow.screen; barHeight: barWindow.implicitHeight }
 

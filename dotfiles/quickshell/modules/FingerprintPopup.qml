@@ -7,6 +7,7 @@ import "../helpers" as Helpers
 PanelWindow {
     id: root
     property int barHeight: 22
+    property bool polkitActive: false
 
     // States: "hidden", "prompt", "success", "failure", "timeout"
     property string fpState: "hidden"
@@ -80,6 +81,7 @@ PanelWindow {
         interval: 50
         onTriggered: {
             if (hyprlockCheck.hyprlockRunning) return
+            if (polkitActive) return
             root.showState("prompt")
         }
     }
@@ -89,6 +91,7 @@ PanelWindow {
         interval: 50
         onTriggered: {
             if (hyprlockCheck.hyprlockRunning) return
+            if (polkitActive) return
             var line = root.resultLine
             if (line.indexOf("verify-match") !== -1) {
                 root.showState("success")
