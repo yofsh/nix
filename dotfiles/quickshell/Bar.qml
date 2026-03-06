@@ -125,6 +125,7 @@ Scope {
                     Modules.WindowTitle { screen: barWindow.screen }
                     Modules.Workspaces {}
                     // Modules.WfRecorder {}
+                    Modules.VoiceRecording {}
                     Modules.Yts {}
                     Modules.Media {}
                     Modules.Backlight {}

@@ -25,7 +25,8 @@ Item {
         var match = line.match(/time=([\d.]+)\s*ms/);
         if (match) {
             root.currentPing = Math.round(parseFloat(match[1]));
-        } else if (line.indexOf("no answer") >= 0 || line.indexOf("Request timeout") >= 0) {
+        } else if (line.indexOf("no answer") >= 0 || line.indexOf("Request timeout") >= 0
+                   || line.indexOf("100% packet loss") >= 0 || line.indexOf("timed out") >= 0) {
             root.currentPing = -2;
         } else {
             return; // ignore non-reply lines (header, stats, etc.)
@@ -45,10 +46,12 @@ Item {
     }
 
     property color pingColor: {
+        if (currentPing === -2) return "#f44336"; 
         if (currentPing < 0) return Helpers.Colors.disconnected;
-        if (currentPing <= 30) return "#4caf50";
-        if (currentPing <= 70) return "#ff9800";
-        return "#f44336";
+        if (currentPing <= 30) return "#4caf50";      
+        if (currentPing <= 70) return "#ff9800";     
+        if (currentPing <= 120) return "#f4721a";   
+        return "#f44336";                          
     }
 
     Canvas {
@@ -60,6 +63,7 @@ Item {
         function pingColor(val) {
             if (val <= 30) return "#4caf50";
             if (val <= 70) return "#ff9800";
+            if (val <= 120) return "#f4721a";
             return "#f44336";
         }
 
@@ -70,7 +74,6 @@ Item {
             if (h.length === 0) return;
             var offset = width - h.length;
 
-            // Draw filled area segments grouped by color
             var i = 0;
             while (i < h.length) {
                 var val = h[i];
@@ -142,7 +145,7 @@ Item {
 
     Process {
         id: pingProc
-        command: ["ping", "-Q", "0xB8", "-i", "1", root.target]
+        command: ["ping", "-O", "-W", "2", "-i", "1", root.target]
         running: root.active && root.target !== ""
         onRunningChanged: if (!running && root.active && root.target !== "") running = true
         stdout: SplitParser {

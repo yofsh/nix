@@ -23,6 +23,10 @@
     vicinae.url = "github:vicinaehq/vicinae";
     hyprland-preview-share-picker.url = "git+https://github.com/WhySoBad/hyprland-preview-share-picker?submodules=1";
     mt7927.url = "github:cmspam/mt7927-nixos";
+    nix-index-database = {
+      url = "github:nix-community/nix-index-database";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
     quickshell = {
       url = "git+https://git.outfoxxed.me/quickshell/quickshell";
       inputs.nixpkgs.follows = "nixpkgs";
@@ -51,6 +55,7 @@
             home-manager.extraSpecialArgs = { inherit inputs; hostname = "iso"; };
             home-manager.sharedModules = [
               inputs.vicinae.homeManagerModules.default
+              inputs.nix-index-database.homeModules.nix-index
             ];
             home-manager.users.fobos = import ./home/default.nix;
             nixpkgs.overlays = [ inputs.quickshell.overlays.default ];
@@ -96,6 +101,7 @@
           modules = [
             ./home/default.nix
             inputs.vicinae.homeManagerModules.default
+            inputs.nix-index-database.homeModules.nix-index
           ];
         };
       in {

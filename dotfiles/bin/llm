@@ -22,7 +22,6 @@ HISTORY_DIR = os.path.expanduser("~/.cache/llm")
 HISTORY_FILE = os.path.join(HISTORY_DIR, "history.json")
 SESSION_FILE = os.path.join(HISTORY_DIR, "session.json")
 
-STT_URL = "http://192.168.1.154:8080/v1/audio/transcriptions"
 TTS_URL = "http://192.168.1.154:8080/v1/audio/speech"
 TTS_MODEL = "voice-en-us-libritts-high"
 
@@ -128,118 +127,20 @@ def clipboard_image():
     return base64.b64encode(img).decode(), "image/png"
 
 
-def stt_transcribe(audio_path):
-    """Send audio file to STT API, return transcribed text."""
-    boundary = uuid.uuid4().hex
-    with open(audio_path, "rb") as f:
-        audio_data = f.read()
-
-    body = b""
-    body += f"--{boundary}\r\n".encode()
-    body += b'Content-Disposition: form-data; name="file"; filename="audio.wav"\r\n'
-    body += b"Content-Type: audio/wav\r\n\r\n"
-    body += audio_data
-    body += f"\r\n--{boundary}\r\n".encode()
-    body += b'Content-Disposition: form-data; name="model"\r\n\r\n'
-    body += b"whisper-large"
-    body += f"\r\n--{boundary}--\r\n".encode()
-
-    req = urllib.request.Request(
-        STT_URL,
-        data=body,
-        headers={"Content-Type": f"multipart/form-data; boundary={boundary}"},
-    )
-    try:
-        resp = urllib.request.urlopen(req)
-        return json.loads(resp.read().decode()).get("text", "").strip()
-    except urllib.error.URLError as e:
-        die(f"STT API error: {e}")
-
-
-VOICE_PID_FILE = os.path.join(HISTORY_DIR, "voice.pid")
-VOICE_WAV_FILE = os.path.join(HISTORY_DIR, "voice.wav")
-VOICE_TAG_FILE = os.path.join(HISTORY_DIR, "voice.tag")
 TTS_PID_FILE = os.path.join(HISTORY_DIR, "tts.pid")
+
+VOICE_NAME = "llm"
+VOICE_TAG_FILE = os.path.join(HISTORY_DIR, "voice.tag")
 
 
 def voice_is_recording():
-    """Check if a voice recording is in progress."""
+    """Check if a voice recording is in progress (via voice script)."""
     try:
-        with open(VOICE_PID_FILE) as f:
-            pid = int(f.read().strip())
-        os.kill(pid, 0)  # check if process exists
+        with open(f"/tmp/voice_{VOICE_NAME}.pid") as f:
+            os.kill(int(f.read().strip()), 0)
         return True
     except (FileNotFoundError, ValueError, ProcessLookupError):
         return False
-
-
-def voice_load_tag():
-    """Load the notification tag saved by voice_start."""
-    try:
-        with open(VOICE_TAG_FILE) as f:
-            return f.read().strip()
-    except FileNotFoundError:
-        return None
-
-
-def voice_start(notify_mode=False, tag=None):
-    """Start recording voice. Returns immediately."""
-    os.makedirs(HISTORY_DIR, exist_ok=True)
-
-    try:
-        proc = subprocess.Popen(
-            ["pw-record", "--media-category=Capture", "--rate=16000", "--channels=1", VOICE_WAV_FILE],
-        )
-    except FileNotFoundError:
-        die("pw-record not found (install pipewire)")
-
-    with open(VOICE_PID_FILE, "w") as f:
-        f.write(str(proc.pid))
-
-    if tag:
-        with open(VOICE_TAG_FILE, "w") as f:
-            f.write(tag)
-
-    if notify_mode and tag:
-        notify("🎤 Recording... press again to stop", tag)
-    else:
-        print("Recording... run again with -V to stop and send", file=sys.stderr)
-
-
-def voice_stop(notify_mode=False, tag=None):
-    """Stop recording, transcribe, return text."""
-    try:
-        with open(VOICE_PID_FILE) as f:
-            pid = int(f.read().strip())
-    except (FileNotFoundError, ValueError):
-        die("not recording")
-
-    try:
-        os.kill(pid, signal.SIGTERM)
-    except ProcessLookupError:
-        pass
-
-    for f in (VOICE_PID_FILE, VOICE_TAG_FILE):
-        try:
-            os.remove(f)
-        except FileNotFoundError:
-            pass
-
-    time.sleep(0.1)  # let pw-record finalize the WAV
-
-    if notify_mode and tag:
-        notify("⏳ Transcribing...", tag)
-    else:
-        print("Transcribing...", file=sys.stderr)
-
-    text = stt_transcribe(VOICE_WAV_FILE)
-
-    try:
-        os.remove(VOICE_WAV_FILE)
-    except FileNotFoundError:
-        pass
-
-    return text
 
 
 def tts_is_playing():
@@ -515,7 +416,11 @@ def main():
     # Unique tag for this invocation so notifications don't clobber each other
     # Voice toggle: reuse the tag from the recording start so it's one continuous notification
     if args.voice and voice_is_recording():
-        tag = voice_load_tag() or f"llm-{uuid.uuid4().hex[:8]}"
+        try:
+            with open(VOICE_TAG_FILE) as f:
+                tag = f.read().strip()
+        except FileNotFoundError:
+            tag = f"llm-{uuid.uuid4().hex[:8]}"
     else:
         tag = f"llm-{uuid.uuid4().hex[:8]}"
 
@@ -539,10 +444,19 @@ def main():
 
     if not parts:
         if args.voice:
+            voice_cmd = ["voice", "-m", "dictate", "--name", VOICE_NAME, "-p", "-r"]
             if voice_is_recording():
                 # Second press: stop recording, transcribe
+                if args.notify:
+                    notify("⏳ Transcribing...", tag)
+                else:
+                    print("Transcribing...", file=sys.stderr)
                 t = time.monotonic()
-                text = voice_stop(notify_mode=args.notify, tag=tag)
+                r = subprocess.run(
+                    voice_cmd + ["--stop"],
+                    capture_output=True, text=True,
+                )
+                text = r.stdout.strip()
                 vlog(f"STT transcribed in {time.monotonic() - t:.2f}s", args.verbose)
                 if not text:
                     if args.notify:
@@ -557,7 +471,14 @@ def main():
                     print(f"Transcribed: {text}", file=sys.stderr)
             else:
                 # First press: start recording and exit
-                voice_start(notify_mode=args.notify, tag=tag)
+                subprocess.run(voice_cmd + ["--start"])
+                if args.notify:
+                    notify("🎤 Recording... press again to stop", tag)
+                else:
+                    print("Recording... run again with -V to stop and send", file=sys.stderr)
+                os.makedirs(HISTORY_DIR, exist_ok=True)
+                with open(VOICE_TAG_FILE, "w") as f:
+                    f.write(tag)
                 sys.exit(0)
         else:
             # Grab primary selection as context

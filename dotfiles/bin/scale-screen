@@ -1,32 +1,164 @@
-#!/usr/bin/env bash
-# Adjust monitor scale up or down
-# Usage: scale-screen <monitor> [+|-]
+#!/usr/bin/env python3
+"""Adjust monitor scale using valid discrete scales for Hyprland.
 
-MONITOR="${1:-eDP-1}"
-DIR="${2:-+}"
-STEP=0.1
+Hyprland validates scales on a n/120 grid. This script computes valid scales
+that divide the monitor resolution into whole pixels, preventing Hyprlens warnings.
+Uses the monitor's existing config (resolution, position, vrr) to avoid flashing.
+"""
 
-# Get current scale
-CURRENT=$(hyprctl monitors -j | jq -r ".[] | select(.name == \"$MONITOR\") | .scale")
+import argparse
+import json
+import subprocess
+import sys
 
-if [ -z "$CURRENT" ] || [ "$CURRENT" = "null" ]; then
-  notify-send -u critical "scale-screen" "Monitor $MONITOR not found"
-  exit 1
-fi
 
-if [ "$DIR" = "+" ]; then
-  NEW=$(echo "$CURRENT + $STEP" | bc)
-elif [ "$DIR" = "-" ]; then
-  NEW=$(echo "$CURRENT - $STEP" | bc)
-else
-  NEW="$DIR"
-fi
+def hyprctl_monitors():
+    result = subprocess.run(["hyprctl", "monitors", "-j"], capture_output=True, text=True)
+    if result.returncode != 0:
+        print("Failed to query hyprctl monitors", file=sys.stderr)
+        sys.exit(1)
+    return json.loads(result.stdout)
 
-# Clamp to reasonable range
-TOO_LOW=$(echo "$NEW < 0.5" | bc)
-TOO_HIGH=$(echo "$NEW > 3.0" | bc)
-[ "$TOO_LOW" = "1" ] && NEW=0.5
-[ "$TOO_HIGH" = "1" ] && NEW=3.0
 
-hyprctl keyword monitor "$MONITOR,preferred,auto,$NEW"
-notify-send -h "string:x-tag:scale-screen" -t 1500 -u low "Scale" "$MONITOR → $NEW"
+def notify(msg, urgency="low", timeout=1500):
+    subprocess.run([
+        "notify-send", "-h", "string:x-tag:scale-screen",
+        "-t", str(timeout), "-u", urgency, "Scale", msg,
+    ])
+
+
+def is_number(s):
+    if s is None:
+        return False
+    try:
+        float(s)
+        return True
+    except ValueError:
+        return False
+
+
+def get_valid_scales(width, height, lo=1.0, hi=2.5):
+    """Compute valid scales on Hyprland's n/120 grid where both dimensions divide cleanly."""
+    scales = []
+    for n in range(int(lo * 120), int(hi * 120) + 1):
+        if (width * 120) % n == 0 and (height * 120) % n == 0:
+            scales.append(n / 120)
+    return scales
+
+
+def fmt_scale(s):
+    """Format scale: up to 4 decimal places, no trailing zeros."""
+    return f"{s:.4f}".rstrip("0").rstrip(".")
+
+
+def find_monitor(monitors, name=None):
+    if name:
+        for m in monitors:
+            if m["name"] == name:
+                return m
+        return None
+    for m in monitors:
+        if m.get("focused"):
+            return m
+    return None
+
+
+def find_nearest_index(valid, current):
+    """Find the index of the valid scale closest to current."""
+    best = 0
+    for i, s in enumerate(valid):
+        if abs(s - current) < abs(valid[best] - current):
+            best = i
+    return best
+
+
+def build_monitor_string(monitor, new_scale):
+    """Build hyprctl monitor string preserving existing settings."""
+    name = monitor["name"]
+    w, h = monitor["width"], monitor["height"]
+    rate = monitor["refreshRate"]
+    x, y = monitor["x"], monitor["y"]
+    scale = fmt_scale(new_scale)
+
+    parts = [name, f"{w}x{h}@{rate:.2f}", f"{x}x{y}", scale]
+
+    if monitor.get("vrr"):
+        parts.append("vrr,1")
+    if monitor.get("transform", 0) != 0:
+        parts.append(f"transform,{monitor['transform']}")
+
+    return ",".join(parts)
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="Adjust Hyprland monitor scale using valid discrete scales.",
+        epilog="Examples:\n"
+               "  scale-screen              Scale up focused monitor\n"
+               "  scale-screen eDP-1 -      Scale down eDP-1\n"
+               "  scale-screen eDP-1 1.5    Set eDP-1 scale to exactly 1.5\n"
+               "  scale-screen -v           Show valid scales for focused monitor\n"
+               "  scale-screen -v eDP-1     Show valid scales for eDP-1",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    parser.add_argument("-l", "--list", action="store_true", help="List monitors and their current scales")
+    parser.add_argument("-v", "--valid", action="store_true", help="Show valid scales for the target monitor")
+    parser.add_argument("monitor", nargs="?", help="Monitor name (default: focused)")
+    parser.add_argument("direction", nargs="?", default="+", help="+, -, or exact scale value (default: +)")
+
+    args = parser.parse_args()
+    monitors = hyprctl_monitors()
+
+    if args.list:
+        for m in monitors:
+            print(f"{m['name']}\t{m['scale']}\t{m.get('description', '')}")
+        return
+
+    # If first positional looks like a direction/value, shift it
+    mon_name = args.monitor
+    direction = args.direction
+    if mon_name in ("+", "-") or is_number(mon_name):
+        direction = mon_name
+        mon_name = None
+
+    monitor = find_monitor(monitors, mon_name)
+    if not monitor:
+        name = mon_name or "(focused)"
+        notify(f"Monitor {name} not found", urgency="critical")
+        sys.exit(1)
+
+    width, height = monitor["width"], monitor["height"]
+    current = monitor["scale"]
+    valid = get_valid_scales(width, height)
+
+    if not valid:
+        notify(f"No valid scales for {width}x{height}", urgency="critical")
+        sys.exit(1)
+
+    if args.valid:
+        print(f"Monitor: {monitor['name']} ({width}x{height}, current: {current})")
+        print(f"Valid scales: {' '.join(fmt_scale(s) for s in valid)}")
+        return
+
+    if direction == "+":
+        idx = find_nearest_index(valid, current)
+        if current >= valid[idx] - 0.01:
+            idx = min(idx + 1, len(valid) - 1)
+        new = valid[idx]
+    elif direction == "-":
+        idx = find_nearest_index(valid, current)
+        if current <= valid[idx] + 0.01:
+            idx = max(idx - 1, 0)
+        new = valid[idx]
+    elif is_number(direction):
+        new = float(direction)
+    else:
+        parser.error(f"Invalid direction: {direction}")
+
+    mon_str = build_monitor_string(monitor, new)
+    subprocess.run(["hyprctl", "keyword", "monitor", mon_str])
+    notify(f"{monitor['name']} → {fmt_scale(new)}")
+
+
+if __name__ == "__main__":
+    main()

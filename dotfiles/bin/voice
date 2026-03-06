@@ -2,13 +2,19 @@
 """Voice transcription with local whisper and remote API backends.
 
 Usage:
-  voice dictate            Toggle dictation (type + clipboard)
-  voice dictate -r         Toggle dictation via remote API
-  voice claude             Toggle voice-to-Claude
-  voice stream             Toggle continuous VAD streaming
+  voice -m dictate         Toggle dictation (type + clipboard)
+  voice -m dictate -r      Toggle dictation via remote API
+  voice -m dictate -p      Toggle dictation, output to stdout (pipeable)
+  voice -m claude          Toggle voice-to-Claude
+  voice -m stream          Toggle continuous VAD streaming
 
-  voice dictate --start    Explicit start/stop
-  voice dictate --stop
+  voice -m dictate --start Explicit start/stop
+  voice -m dictate --stop
+
+Pipe mode (-p):
+  voice -m dictate -p -r --start   Start recording
+  voice -m dictate -p -r --stop    Stop + transcribe, print to stdout
+  voice -m dictate -p --name llm   Use custom PID/WAV namespace
 """
 
 import argparse
@@ -36,12 +42,18 @@ REMOTE_URL = os.environ.get(
 REMOTE_MODEL = os.environ.get("VOICE_REMOTE_MODEL", "whisper-large")
 
 PID_DIR = "/tmp"
+TRANSCRIBING_FLAG = os.path.join(PID_DIR, "voice_transcribing")
 
 
 # --- Helpers ---
 
 
+QUIET = False
+
+
 def notify(title, body=""):
+    if QUIET:
+        return
     subprocess.run(
         ["notify-send", "-h", "string:x-tag:voice", "-t", "3000",
          "-i", "microphone-sensitivity-high", title, body],
@@ -72,7 +84,14 @@ def is_recording(mode):
         return False
 
 
+def is_transcribing():
+    return os.path.exists(TRANSCRIBING_FLAG)
+
+
 def start_recording(mode, msg="Recording..."):
+    if is_transcribing():
+        notify("Still transcribing", "Wait for it to finish")
+        return
     if is_recording(mode):
         notify("Already recording", "Press again to stop")
         return
@@ -113,10 +132,20 @@ def stop_recording(mode):
 # --- Transcription backends ---
 
 
+def local_available():
+    """Check if local whisper binary and model exist."""
+    model = os.path.join(MODEL_DIR, MODEL)
+    if not os.path.exists(model):
+        return False
+    if not subprocess.run(["which", WHISPER_BIN], capture_output=True).returncode == 0:
+        return False
+    return True
+
+
 def transcribe_whisper(audio):
     model = os.path.join(MODEL_DIR, MODEL)
     if not os.path.exists(model):
-        die(f"model not found: {model}")
+        return None
 
     try:
         r = subprocess.run(
@@ -125,11 +154,10 @@ def transcribe_whisper(audio):
             capture_output=True, text=True,
         )
     except FileNotFoundError:
-        die(f"{WHISPER_BIN} not found")
         return None
 
     if r.returncode != 0:
-        die(f"whisper exited {r.returncode}")
+        return None
 
     text = r.stdout.replace("\n", "").strip()
     return text or None
@@ -165,9 +193,18 @@ def transcribe_remote(audio):
 
 
 def transcribe(audio, remote=False):
-    backend = "remote" if remote else "whisper"
-    notify("Transcribing...", backend)
-    return transcribe_remote(audio) if remote else transcribe_whisper(audio)
+    if remote:
+        notify("Transcribing...", "remote")
+        return transcribe_remote(audio)
+
+    if local_available():
+        notify("Transcribing...", "local whisper")
+        result = transcribe_whisper(audio)
+        if result:
+            return result
+
+    notify("Transcribing...", "remote (local unavailable)")
+    return transcribe_remote(audio)
 
 
 def do_transcribe(mode, remote):
@@ -176,7 +213,14 @@ def do_transcribe(mode, remote):
     if not audio:
         return None
 
-    text = transcribe(audio, remote)
+    try:
+        open(TRANSCRIBING_FLAG, "w").close()
+        text = transcribe(audio, remote)
+    finally:
+        try:
+            os.remove(TRANSCRIBING_FLAG)
+        except FileNotFoundError:
+            pass
 
     try:
         os.remove(audio)
@@ -192,12 +236,15 @@ def do_transcribe(mode, remote):
 
 
 def cmd_dictate(args):
-    mode = "dictate"
+    mode = args.name or "dictate"
 
     def on_text(text):
-        subprocess.run(["wl-copy", text], check=False)
-        subprocess.run(["wtype", text], check=False)
-        notify("Transcribed", text)
+        if args.pipe:
+            print(text)
+        else:
+            subprocess.run(["wl-copy", text], check=False)
+            subprocess.run(["wtype", text], check=False)
+            notify("Transcribed", text)
 
     if args.stop or (not args.start and is_recording(mode)):
         text = do_transcribe(mode, args.remote)
@@ -313,23 +360,33 @@ def main():
         description="Voice transcription",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="Toggle is the default action. Use --start/--stop for explicit control.",
+        prefix_chars="-",
     )
-    sub = p.add_subparsers(dest="mode", required=True)
 
-    for name, help_text in [
-        ("dictate", "Transcribe and type + clipboard"),
-        ("claude", "Transcribe and send to Claude Code"),
-        ("stream", "Continuous VAD streaming (local whisper only)"),
-    ]:
-        sp = sub.add_parser(name, help=help_text)
-        sp.add_argument("-r", "--remote", action="store_true",
-                        default=os.environ.get("VOICE_BACKEND") == "remote",
-                        help="Use remote API instead of local whisper")
-        g = sp.add_mutually_exclusive_group()
-        g.add_argument("--start", action="store_true", help="Force start recording")
-        g.add_argument("--stop", action="store_true", help="Force stop and transcribe")
+    p.add_argument("-m", "--mode", required=True,
+                   choices=["dictate", "claude", "stream"],
+                   help="Mode: dictate (type+clipboard), claude (send to Claude), stream (continuous VAD)")
+
+    p.add_argument("-r", "--remote", action="store_true",
+                   default=os.environ.get("VOICE_BACKEND") == "remote",
+                   help="Use remote API instead of local whisper")
+
+    p.add_argument("-q", "--quiet", action="store_true",
+                   help="Suppress notifications")
+
+    p.add_argument("-p", "--pipe", action="store_true",
+                   help="Output text to stdout only (no wtype/clipboard/notifications)")
+
+    p.add_argument("--name",
+                   help="Override mode name for PID/WAV files (avoids conflicts)")
+
+    action = p.add_mutually_exclusive_group()
+    action.add_argument("--start", action="store_true", help="Force start recording")
+    action.add_argument("--stop", action="store_true", help="Force stop and transcribe")
 
     args = p.parse_args()
+    global QUIET
+    QUIET = args.quiet or args.pipe
     {"dictate": cmd_dictate, "claude": cmd_claude, "stream": cmd_stream}[args.mode](args)
 
 
