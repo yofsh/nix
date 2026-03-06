@@ -43,10 +43,10 @@ Item {
         property real _scrollAccum: 0
         onClicked: function(mouse) {
             if (mouse.button === Qt.LeftButton) {
-                setProc.command = ["light", "-S", "15"];
+                setProc.command = ["brightnessctl", "set", "15%"];
                 setProc.running = true;
             } else {
-                setProc.command = ["light", "-S", "1"];
+                setProc.command = ["brightnessctl", "set", "1%"];
                 setProc.running = true;
             }
         }
@@ -54,9 +54,9 @@ Item {
             _scrollAccum += wheel.angleDelta.y;
             if (Math.abs(_scrollAccum) < 120) return;
             if (_scrollAccum > 0) {
-                setProc.command = ["light", "-A", "5"];
+                setProc.command = ["brightnessctl", "set", "5%+"];
             } else {
-                setProc.command = ["light", "-U", "5"];
+                setProc.command = ["brightnessctl", "set", "5%-"];
             }
             _scrollAccum = 0;
             setProc.running = true;

@@ -19,7 +19,6 @@
     SUBSYSTEM=="usb", ATTR{idVendor}=="0bda", ATTR{idProduct}=="5830", MODE="0660", GROUP="video"
   '';
 
-  programs.light.enable = true;
 
   # IIO sensors (accelerometer, gyro, etc.) — needed for auto-rotation
   hardware.sensor.iio.enable = true;
