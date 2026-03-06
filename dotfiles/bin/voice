@@ -1,20 +1,337 @@
-#!/usr/bin/env bash
-# Voice transcription dispatcher
-# Usage: voice <mode> [start|stop|toggle]
-#   modes: dictate, claude, stream
+#!/usr/bin/env python3
+"""Voice transcription with local whisper and remote API backends.
 
-MODE="$1"
-shift
+Usage:
+  voice dictate            Toggle dictation (type + clipboard)
+  voice dictate -r         Toggle dictation via remote API
+  voice claude             Toggle voice-to-Claude
+  voice stream             Toggle continuous VAD streaming
 
-VOICE_DIR="$(dirname "$(realpath "$0")")/voice.d"
+  voice dictate --start    Explicit start/stop
+  voice dictate --stop
+"""
 
-case "$MODE" in
-  dictate) . "$VOICE_DIR/dictate.sh" ;;
-  claude)  . "$VOICE_DIR/claude.sh" ;;
-  stream)  . "$VOICE_DIR/stream.sh" ;;
-  *)
-    echo "Usage: voice <mode> [start|stop|toggle]"
-    echo "Modes: dictate, claude, stream"
-    exit 1
-    ;;
-esac
+import argparse
+import json
+import os
+import signal
+import subprocess
+import sys
+import time
+import urllib.request
+import uuid
+
+# --- Config ---
+
+WHISPER_BIN = os.environ.get("WHISPER_BIN", "whisper-cli")
+MODEL_DIR = os.path.join(
+    os.environ.get("XDG_DATA_HOME", os.path.expanduser("~/.local/share")),
+    "whisper-cpp",
+)
+MODEL = os.environ.get("WHISPER_MODEL", "ggml-large-v3.bin")
+
+REMOTE_URL = os.environ.get(
+    "VOICE_REMOTE_URL", "http://192.168.1.154:8080/v1/audio/transcriptions"
+)
+REMOTE_MODEL = os.environ.get("VOICE_REMOTE_MODEL", "whisper-large")
+
+PID_DIR = "/tmp"
+
+
+# --- Helpers ---
+
+
+def notify(title, body=""):
+    subprocess.run(
+        ["notify-send", "-h", "string:x-tag:voice", "-t", "3000",
+         "-i", "microphone-sensitivity-high", title, body],
+        capture_output=True,
+    )
+
+
+def die(msg):
+    notify("Voice error", msg)
+    print(f"voice: {msg}", file=sys.stderr)
+    sys.exit(1)
+
+
+def pid_path(mode):
+    return os.path.join(PID_DIR, f"voice_{mode}.pid")
+
+
+def wav_path(mode):
+    return os.path.join(PID_DIR, f"voice_{mode}.wav")
+
+
+def is_recording(mode):
+    try:
+        with open(pid_path(mode)) as f:
+            os.kill(int(f.read().strip()), 0)
+        return True
+    except (FileNotFoundError, ValueError, ProcessLookupError):
+        return False
+
+
+def start_recording(mode, msg="Recording..."):
+    if is_recording(mode):
+        notify("Already recording", "Press again to stop")
+        return
+
+    notify(msg, "Speak now")
+    proc = subprocess.Popen(
+        ["pw-record", "--media-category=Capture", "--rate=16000",
+         "--channels=1", wav_path(mode)],
+    )
+    with open(pid_path(mode), "w") as f:
+        f.write(str(proc.pid))
+
+
+def stop_recording(mode):
+    """Stop recording, return audio path or None."""
+    pp = pid_path(mode)
+    try:
+        with open(pp) as f:
+            pid = int(f.read().strip())
+    except (FileNotFoundError, ValueError):
+        notify("Not recording")
+        return None
+
+    try:
+        os.kill(pid, signal.SIGTERM)
+    except ProcessLookupError:
+        pass
+
+    try:
+        os.remove(pp)
+    except FileNotFoundError:
+        pass
+
+    time.sleep(0.1)
+    return wav_path(mode)
+
+
+# --- Transcription backends ---
+
+
+def transcribe_whisper(audio):
+    model = os.path.join(MODEL_DIR, MODEL)
+    if not os.path.exists(model):
+        die(f"model not found: {model}")
+
+    try:
+        r = subprocess.run(
+            [WHISPER_BIN, "-m", model, "-f", audio,
+             "--no-prints", "-nt", "-t", "8", "-l", "auto"],
+            capture_output=True, text=True,
+        )
+    except FileNotFoundError:
+        die(f"{WHISPER_BIN} not found")
+        return None
+
+    if r.returncode != 0:
+        die(f"whisper exited {r.returncode}")
+
+    text = r.stdout.replace("\n", "").strip()
+    return text or None
+
+
+def transcribe_remote(audio):
+    boundary = uuid.uuid4().hex
+    with open(audio, "rb") as f:
+        data = f.read()
+
+    body = (
+        f"--{boundary}\r\n".encode()
+        + b'Content-Disposition: form-data; name="file"; filename="audio.wav"\r\n'
+        + b"Content-Type: audio/wav\r\n\r\n"
+        + data
+        + f"\r\n--{boundary}\r\n".encode()
+        + b'Content-Disposition: form-data; name="model"\r\n\r\n'
+        + REMOTE_MODEL.encode()
+        + f"\r\n--{boundary}--\r\n".encode()
+    )
+
+    req = urllib.request.Request(
+        REMOTE_URL, data=body,
+        headers={"Content-Type": f"multipart/form-data; boundary={boundary}"},
+    )
+    try:
+        resp = urllib.request.urlopen(req, timeout=30)
+        text = json.loads(resp.read().decode()).get("text", "").strip()
+        return text or None
+    except Exception as e:
+        die(f"remote API: {e}")
+        return None
+
+
+def transcribe(audio, remote=False):
+    backend = "remote" if remote else "whisper"
+    notify("Transcribing...", backend)
+    return transcribe_remote(audio) if remote else transcribe_whisper(audio)
+
+
+def do_transcribe(mode, remote):
+    """Stop recording → transcribe → clean up. Returns text or None."""
+    audio = stop_recording(mode)
+    if not audio:
+        return None
+
+    text = transcribe(audio, remote)
+
+    try:
+        os.remove(audio)
+    except FileNotFoundError:
+        pass
+
+    if not text:
+        notify("No speech detected")
+    return text
+
+
+# --- Modes ---
+
+
+def cmd_dictate(args):
+    mode = "dictate"
+
+    def on_text(text):
+        subprocess.run(["wl-copy", text], check=False)
+        subprocess.run(["wtype", text], check=False)
+        notify("Transcribed", text)
+
+    if args.stop or (not args.start and is_recording(mode)):
+        text = do_transcribe(mode, args.remote)
+        if text:
+            on_text(text)
+    else:
+        start_recording(mode)
+
+
+def cmd_claude(args):
+    mode = "claude"
+    extra = os.environ.get("CLAUDE_EXTRA_ARGS", "")
+
+    def on_text(text):
+        notify("Opening Claude Code...", text)
+        cmd = f'claude --dangerously-skip-permissions {extra} "{text}"'
+        subprocess.Popen(["foot", "-e", "bash", "-c", cmd])
+
+    if args.stop or (not args.start and is_recording(mode)):
+        text = do_transcribe(mode, args.remote)
+        if text:
+            on_text(text)
+    else:
+        start_recording(mode, msg="Recording for Claude...")
+
+
+def cmd_stream(args):
+    spid_file = os.path.join(PID_DIR, "voice_stream.pid")
+    fifo = os.path.join(PID_DIR, "voice_stream.fifo")
+    model = os.path.join(MODEL_DIR, MODEL)
+
+    vad_thold = os.environ.get("VAD_THOLD", "0.6")
+    audio_len = os.environ.get("AUDIO_LEN", "10000")
+    capture_id = os.environ.get("CAPTURE_ID", "-1")
+
+    streaming = os.path.exists(spid_file)
+
+    if args.stop or (not args.start and streaming):
+        # Stop
+        if not streaming:
+            notify("Not streaming")
+            return
+        try:
+            with open(spid_file) as f:
+                sp, pp = f.read().strip().split(":")
+            os.kill(int(sp), signal.SIGTERM)
+            os.kill(int(pp), signal.SIGTERM)
+        except (ValueError, ProcessLookupError):
+            pass
+        for p in (spid_file, fifo):
+            try:
+                os.remove(p)
+            except FileNotFoundError:
+                pass
+        notify("Streaming dictation OFF")
+    else:
+        # Start
+        if streaming:
+            notify("Already streaming", "Press again to stop")
+            return
+        if not os.path.exists(model):
+            die(f"model not found: {model}")
+
+        try:
+            os.remove(fifo)
+        except FileNotFoundError:
+            pass
+        os.mkfifo(fifo)
+
+        stream_proc = subprocess.Popen(
+            ["whisper-stream", "-m", model, "--step", "0",
+             "--length", audio_len, "--vad-thold", vad_thold,
+             "--capture", capture_id, "--no-flash-attn", "-t", "4"],
+            stdout=open(fifo, "w"), stderr=subprocess.DEVNULL,
+        )
+
+        parser_script = f"""
+in_block=false; block_text=""; last_text=""
+while IFS= read -r line; do
+  if [[ "$line" == *"START"* ]]; then in_block=true; block_text=""; continue; fi
+  if [[ "$line" == *"END"* ]]; then
+    in_block=false
+    block_text=$(echo "$block_text" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+    if [ -n "$block_text" ] && [ "$block_text" != "$last_text" ]; then
+      if [ -n "$last_text" ] && [[ "$block_text" == "$last_text"* ]]; then
+        new_part="${{block_text#"$last_text"}}"; new_part=$(echo "$new_part" | sed 's/^[[:space:]]*//')
+        [ -n "$new_part" ] && wtype " $new_part"
+      else
+        wtype "$block_text "
+      fi
+      last_text="$block_text"
+    fi
+    continue
+  fi
+  if $in_block; then
+    text=$(echo "$line" | sed 's/^\\[.*\\] *//')
+    [ -n "$text" ] && block_text="${{block_text}} ${{text}}"
+  fi
+done < {fifo}
+"""
+        parser_proc = subprocess.Popen(["bash", "-c", parser_script])
+
+        with open(spid_file, "w") as f:
+            f.write(f"{stream_proc.pid}:{parser_proc.pid}")
+        notify("Streaming dictation ON", "Speak naturally, pauses trigger transcription")
+
+
+# --- CLI ---
+
+
+def main():
+    p = argparse.ArgumentParser(
+        description="Voice transcription",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="Toggle is the default action. Use --start/--stop for explicit control.",
+    )
+    sub = p.add_subparsers(dest="mode", required=True)
+
+    for name, help_text in [
+        ("dictate", "Transcribe and type + clipboard"),
+        ("claude", "Transcribe and send to Claude Code"),
+        ("stream", "Continuous VAD streaming (local whisper only)"),
+    ]:
+        sp = sub.add_parser(name, help=help_text)
+        sp.add_argument("-r", "--remote", action="store_true",
+                        default=os.environ.get("VOICE_BACKEND") == "remote",
+                        help="Use remote API instead of local whisper")
+        g = sp.add_mutually_exclusive_group()
+        g.add_argument("--start", action="store_true", help="Force start recording")
+        g.add_argument("--stop", action="store_true", help="Force stop and transcribe")
+
+    args = p.parse_args()
+    {"dictate": cmd_dictate, "claude": cmd_claude, "stream": cmd_stream}[args.mode](args)
+
+
+if __name__ == "__main__":
+    main()

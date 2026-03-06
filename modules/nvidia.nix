@@ -1,6 +1,9 @@
 { config, pkgs, ... }: {
 
-  environment.systemPackages = [ pkgs.nvtopPackages.nvidia ];
+  environment.systemPackages = [
+    pkgs.nvtopPackages.nvidia
+    (pkgs.whisper-cpp.override { cudaSupport = true; })
+  ];
 
   services.xserver.videoDrivers = [ "nvidia" ];
 

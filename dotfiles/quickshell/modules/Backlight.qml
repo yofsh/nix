@@ -4,7 +4,8 @@ import "../helpers" as Helpers
 
 Item {
     id: root
-    implicitWidth: blText.implicitWidth + 4
+    visible: maxBrightnessFile.text().trim() !== ""
+    implicitWidth: visible ? blText.implicitWidth + 4 : 0
     implicitHeight: parent ? parent.height : 30
 
     property string displayText: {
@@ -17,7 +18,7 @@ Item {
         id: brightnessFile
         path: "/sys/class/backlight/intel_backlight/brightness"
         blockLoading: true
-        watchChanges: true
+        watchChanges: root.visible
         onFileChanged: this.reload()
     }
 

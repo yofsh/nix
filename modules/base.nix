@@ -24,7 +24,8 @@
     lazygit
     lazydocker
     docker-compose
-    ncdu
+    gdu
+    dust
     mtr
     psmisc
     lsof

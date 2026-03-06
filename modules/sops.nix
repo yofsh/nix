@@ -17,4 +17,10 @@
   sops.secrets."unsplash-key" = {
     owner = config.users.users.fobos.name;
   };
+  sops.secrets."todoist-key" = {
+    owner = config.users.users.fobos.name;
+  };
+  sops.secrets."openrouter-key" = {
+    owner = config.users.users.fobos.name;
+  };
 }

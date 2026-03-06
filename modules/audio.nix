@@ -43,6 +43,9 @@
                   "stream.props" = {
                     "sess.latency.msec" = 247.44; # must be integer multiple of rtp.ptime (~7.98ms); 250 causes timestamp desync
                   };
+                  "node.props" = {
+                    "node.channelmix.mute" = true;
+                  };
                 };
               }
             ];

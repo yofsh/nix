@@ -88,9 +88,6 @@ in
     wtype
     wev
 
-    # Voice transcription
-    whisper-cpp
-
     # Screen capture
     grim
     slurp

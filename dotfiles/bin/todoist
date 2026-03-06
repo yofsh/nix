@@ -1,0 +1,159 @@
+#!/usr/bin/env bash
+# todoist - Manage Todoist tasks from the terminal
+# Usage: todoist <command> [args]
+#
+# Commands:
+#   today                  Tasks due today
+#   inbox                  Inbox tasks
+#   projects / list        List all projects
+#   project <name>         Tasks in a project (case-insensitive)
+#   add <text> [-d due] [-p project]   Create a task
+#   done <id>              Complete a task
+#   delete <id>            Delete a task
+
+set -euo pipefail
+
+API="https://api.todoist.com/api/v1"
+
+if [[ ! -f /run/secrets/todoist-key ]]; then
+    echo "Error: /run/secrets/todoist-key not found. Run: sudo nixos-rebuild switch --flake .#ares" >&2
+    exit 1
+fi
+TOKEN=$(cat /run/secrets/todoist-key)
+
+# --- helpers ---
+
+api_get()    { curl -s -H "Authorization: Bearer $TOKEN" "$API/$1"; }
+api_post()   { curl -s -X POST -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" -d "$2" "$API/$1"; }
+api_delete() { curl -s -X DELETE -H "Authorization: Bearer $TOKEN" "$API/$1"; }
+
+format_tasks() {
+    local json="$1"
+    if [[ "$(echo "$json" | jq '.results | length')" == "0" ]]; then
+        echo "No tasks."
+        return
+    fi
+    echo "$json" | jq -r '.results[] |
+        "\u001b[33m" + .id + "\u001b[0m " +
+        (if .priority == 4 then "\u001b[31m!!!\u001b[0m "
+         elif .priority == 3 then "\u001b[38;5;208m!!\u001b[0m "
+         elif .priority == 2 then "\u001b[34m!\u001b[0m "
+         else "" end) +
+        .content +
+        (if .due then " \u001b[2m(" + .due.string + ")\u001b[0m" else "" end)'
+}
+
+find_project_id() {
+    local name="$1"
+    local lower=$(echo "$name" | tr '[:upper:]' '[:lower:]')
+    api_get "projects" | jq -r --arg n "$lower" \
+        '.results[] | select(.name | ascii_downcase == $n) | .id'
+}
+
+# --- commands ---
+
+cmd="${1:-help}"
+shift 2>/dev/null || true
+
+case "$cmd" in
+    today)
+        tasks=$(api_get "tasks?filter=today")
+        format_tasks "$tasks"
+        ;;
+
+    inbox)
+        inbox_id=$(api_get "projects" | jq -r '.results[] | select(.inbox_project == true) | .id')
+        if [[ -z "$inbox_id" ]]; then
+            echo "Could not find inbox project." >&2
+            exit 1
+        fi
+        tasks=$(api_get "tasks?project_id=$inbox_id")
+        format_tasks "$tasks"
+        ;;
+
+    projects|list)
+        api_get "projects" | jq -r '.results[] | "\u001b[33m" + .id + "\u001b[0m " + .name'
+        ;;
+
+    project)
+        if [[ -z "${1:-}" ]]; then
+            echo "Usage: todoist project <name>" >&2
+            exit 1
+        fi
+        pid=$(find_project_id "$1")
+        if [[ -z "$pid" ]]; then
+            echo "Project '$1' not found." >&2
+            exit 1
+        fi
+        tasks=$(api_get "tasks?project_id=$pid")
+        format_tasks "$tasks"
+        ;;
+
+    add)
+        if [[ -z "${1:-}" ]]; then
+            echo "Usage: todoist add <text> [-d due] [-p project]" >&2
+            exit 1
+        fi
+        content=""
+        due=""
+        project=""
+        while [[ $# -gt 0 ]]; do
+            case "$1" in
+                -d) due="$2"; shift 2 ;;
+                -p) project="$2"; shift 2 ;;
+                *)  content="${content:+$content }$1"; shift ;;
+            esac
+        done
+
+        payload=$(jq -n --arg c "$content" '{content: $c}')
+        if [[ -n "$due" ]]; then
+            payload=$(echo "$payload" | jq --arg d "$due" '. + {due_string: $d}')
+        fi
+        if [[ -n "$project" ]]; then
+            pid=$(find_project_id "$project")
+            if [[ -z "$pid" ]]; then
+                echo "Project '$project' not found." >&2
+                exit 1
+            fi
+            payload=$(echo "$payload" | jq --arg p "$pid" '. + {project_id: $p}')
+        fi
+
+        result=$(api_post "tasks" "$payload")
+        id=$(echo "$result" | jq -r '.id // empty')
+        if [[ -n "$id" ]]; then
+            echo -e "Created: \033[33m$id\033[0m $(echo "$result" | jq -r '.content')"
+        else
+            echo "Failed to create task." >&2
+            echo "$result" >&2
+            exit 1
+        fi
+        ;;
+
+    done)
+        if [[ -z "${1:-}" ]]; then
+            echo "Usage: todoist done <id>" >&2
+            exit 1
+        fi
+        api_post "tasks/$1/close" "{}" >/dev/null
+        echo "Completed task $1."
+        ;;
+
+    delete)
+        if [[ -z "${1:-}" ]]; then
+            echo "Usage: todoist delete <id>" >&2
+            exit 1
+        fi
+        api_delete "tasks/$1" >/dev/null
+        echo "Deleted task $1."
+        ;;
+
+    help|--help|-h)
+        sed -n '2,11p' "$0" | sed 's/^# \?//'
+        ;;
+
+    *)
+        echo "Unknown command: $cmd" >&2
+        echo "Run 'todoist --help' for usage." >&2
+        exit 1
+        ;;
+esac

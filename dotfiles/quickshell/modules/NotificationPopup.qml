@@ -597,7 +597,7 @@ PanelWindow {
                                     wrapMode: Text.WordWrap
                                     maximumLineCount: cardWrapper.notifStyle.maxLines
                                     elide: Text.ElideRight
-                                    textFormat: Text.RichText
+                                    textFormat: cardWrapper.appName === "llm" ? Text.MarkdownText : Text.RichText
                                     visible: text !== ""
                                 }
                             }
@@ -614,7 +614,7 @@ PanelWindow {
                             wrapMode: Text.WordWrap
                             maximumLineCount: cardWrapper.notifStyle.maxLines
                             elide: Text.ElideRight
-                            textFormat: Text.RichText
+                            textFormat: cardWrapper.appName === "llm" ? Text.MarkdownText : Text.RichText
                             visible: cardWrapper.notifStyle.hideHeader && text !== ""
                         }
 

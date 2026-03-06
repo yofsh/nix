@@ -140,7 +140,7 @@ alias cont='pkill -18'
 
 alias g='lazygit'
 alias ld='lazydocker'
-alias tui="echo 'htop\nglances\nkmon\nsysz\nsystemctl-tui\ns-tui\nlazygit\nlazydocker\nncdu\nlnav\nyazi\natac\nwifitui' | fzf --prompt='tui> ' | xargs -r -I{} zsh -ic '{}'"
+alias tui="echo 'htop\nglances\nkmon\nsysz\nsystemctl-tui\ns-tui\nlazygit\nlazydocker\ngdu\ndust\nlnav\nyazi\natac\nwifitui\nbluetuith' | fzf --prompt='tui> ' | xargs -r -I{} zsh -ic '{}'"
 
 alias -g v=nvim
 alias vim=nvim
@@ -164,15 +164,16 @@ alias wd="watch -d=permanent --color -n1"
 alias rmmeta="exiftool -all= "
 alias lsmeta="exiftool -l"
 
-alias l='exa -lah   --group-directories-first'
-alias ls='exa'
-alias lt='exa -lah   --group-directories-first -s time'
+alias l='exa -lah   --group-directories-first --icons=always'
+alias ls='exa --icons=always'
+alias lt='exa -lah   --group-directories-first -s time --icons=always'
+alias lsize='exa -lah   --group-directories-first --icons=always --total-size'
+
 alias wifipw='nmcli dev wifi show-password'
 alias ws='wifiscan'
 alias ssh="TERM=xterm-256color ssh"
 
 # --server 27
-alias -g librepods="/nix/store/n2kg65yy6prdicb373q4y5ngmmm3cxv3-librepods-0.1.0/bin/librepods  --start-minimized"
 alias speed="librespeed-cli  --no-icmp --concurrent 10 --telemetry-level disabled --duration 5 --secure"
 alias fast="xdg-open https://fast.com"
 alias gateway='xdg-open http://$(ip route | awk "/default/ {print \$3; exit}")'
@@ -191,6 +192,9 @@ o() {
 settitle() {
   echo -e "\e]2;$1\007"
 }
+
+precmd() { print -Pn "\e]0;%~\a" }
+preexec() { print -Pn "\e]0;$1\a" }
 
 prepare_for_sale() {
   rm -rf /tmp/forsale
@@ -364,3 +368,6 @@ atuin-clean() {
 }
 
 export NODE_OPTIONS='--dns-result-order=ipv4first'
+
+# npm global packages
+export PATH="$HOME/.npm-global/bin:$PATH"
