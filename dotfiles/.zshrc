@@ -212,10 +212,6 @@ weather() {
   curl -s v2.wttr.in/$1
 }
 
-ipinfo() {
-  curl -s "https://ipinfo.io/$1" | jq
-}
-
 # ZSH configuration
 HISTFILE=~/.zsh_history
 HISTSIZE=1000000

@@ -10,12 +10,18 @@ import "helpers" as Helpers
 Scope {
     id: root
     property bool networkPinned: false
+    property bool wallpaperPopupOpen: false
 
     Modules.PolkitPopup { id: polkitPopup; barHeight: 22 }
 
     IpcHandler {
         target: "network"
         function toggle(): void { root.networkPinned = !root.networkPinned; }
+    }
+
+    IpcHandler {
+        target: "wallpaper"
+        function toggle(): void { root.wallpaperPopupOpen = !root.wallpaperPopupOpen; }
     }
 
     Variants {
@@ -133,12 +139,12 @@ Scope {
                     Modules.Network { id: networkModule; pinned: root.networkPinned }
                     Modules.PingGw { active: networkModule.pingActive }
                     Modules.Ping { active: networkModule.pingActive }
-                    Modules.Cpu {}
                     Modules.Memory {}
+                    Modules.Cpu {}
                     Modules.Temperature {}
                     Modules.Battery { id: batteryModule }
                     Modules.AirPods {}
-                    Modules.PowerProfile {}
+
                     Modules.Clock {}
                     Modules.HeadsetBattery {}
                     Modules.Language {}
@@ -156,6 +162,20 @@ Scope {
                 windows: [barWindow, batteryPopup]
                 active: batteryModule.popupOpen
                 onCleared: batteryModule.popupOpen = false
+            }
+
+            Modules.WallpaperPopup {
+                id: wallpaperPopup
+                screen: barWindow.screen
+                barHeight: barWindow.implicitHeight
+                popupOpen: root.wallpaperPopupOpen
+                onClosed: root.wallpaperPopupOpen = false
+            }
+
+            HyprlandFocusGrab {
+                windows: [barWindow, wallpaperPopup]
+                active: root.wallpaperPopupOpen
+                onCleared: wallpaperPopup.revertAndClose()
             }
 
             PanelWindow {

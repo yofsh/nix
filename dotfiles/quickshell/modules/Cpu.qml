@@ -4,7 +4,7 @@ import "../helpers" as Helpers
 
 Item {
     id: root
-    implicitWidth: graphCanvas.width + cpuColumn.width + 4
+    implicitWidth: graphCanvas.width
     implicitHeight: parent ? parent.height : 30
 
     // Previous CPU stats for delta calculation
@@ -22,6 +22,17 @@ Item {
 
     property string currentFreq: ""
 
+    // Power profile
+    property string profileOutput: ""
+
+    property color profileColor: {
+        if (profileOutput === "performance") return "#f38ba8";
+        if (profileOutput === "balanced") return "#a6e3a1";
+        if (profileOutput === "power-saver") return "#89b4fa";
+        return Helpers.Colors.textMuted;
+    }
+
+    property var profiles: ["power-saver", "balanced", "performance"]
 
     Canvas {
         id: graphCanvas
@@ -71,28 +82,44 @@ Item {
         }
     }
 
+    // Overlay: freq and load on the left of the chart
     Column {
-        id: cpuColumn
-        anchors.left: graphCanvas.right
-        anchors.leftMargin: 4
-        anchors.verticalCenter: parent.verticalCenter
+        id: cpuOverlay
+        anchors.left: graphCanvas.left
+        anchors.leftMargin: 2
+        anchors.verticalCenter: graphCanvas.verticalCenter
         spacing: -2
-        width: Math.max(freqText.implicitWidth, loadText.implicitWidth)
+        z: 1
 
         Text {
-            id: freqText
             text: root.currentFreq
-            color: Helpers.Colors.cpu
+            color: root.profileColor
             font.family: "DejaVuSansM Nerd Font"
             font.pixelSize: 10
+            style: Text.Outline
+            styleColor: "#000000"
         }
 
         Text {
-            id: loadText
             text: root.usagePercent
             color: "#ffb74d"
             font.family: "DejaVuSansM Nerd Font"
             font.pixelSize: 10
+            style: Text.Outline
+            styleColor: "#000000"
+        }
+    }
+
+    // Click chart to cycle power profile
+    MouseArea {
+        anchors.fill: graphCanvas
+        cursorShape: Qt.PointingHandCursor
+
+        onClicked: {
+            var idx = root.profiles.indexOf(root.profileOutput);
+            var next = root.profiles[(idx + 1) % root.profiles.length];
+            setProc.command = ["powerprofilesctl", "set", next];
+            setProc.running = true;
         }
     }
 
@@ -172,4 +199,45 @@ Item {
     }
 
     Component.onCompleted: { root.parseStat(); root.parseFreq(); }
+
+    // Fetch power profile
+    Process {
+        id: ppProc
+        command: ["busctl", "--system", "get-property",
+            "net.hadess.PowerProfiles", "/net/hadess/PowerProfiles",
+            "net.hadess.PowerProfiles", "ActiveProfile"]
+        running: true
+
+        stdout: StdioCollector {
+            onStreamFinished: {
+                var text = this.text.trim();
+                var match = text.match(/"(.+)"/);
+                if (match) root.profileOutput = match[1];
+            }
+        }
+    }
+
+    // Monitor D-Bus for profile changes — instant updates
+    Process {
+        id: ppMonitor
+        command: ["busctl", "--system", "--json=short", "monitor",
+            "--match", "type='signal',interface='org.freedesktop.DBus.Properties',member='PropertiesChanged',path='/net/hadess/PowerProfiles'"]
+        running: true
+        stdout: SplitParser {
+            onRead: data => ppDebounce.restart()
+        }
+    }
+
+    Timer {
+        id: ppDebounce
+        interval: 200
+        onTriggered: ppProc.running = true
+    }
+
+    Process {
+        id: setProc
+        command: []
+        running: false
+        onExited: ppProc.running = true
+    }
 }

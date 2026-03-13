@@ -1,0 +1,93 @@
+#!/usr/bin/env python3
+"""Real-time audio spectrum from PipeWire for QuickShell visualization.
+
+Outputs 24 frequency band levels (0.00-1.00) per line at ~30fps.
+Uses overlapping 1024-sample FFT windows with 512-sample hop.
+"""
+import math, struct, subprocess, sys
+
+RATE = 16000
+WINDOW = 1024  # FFT size (15.6 Hz per bin)
+HOP = 512  # hop size → ~30fps
+BANDS = 24
+
+# 25 logarithmically spaced edges from 80Hz to 7800Hz
+_lo, _hi = 80, 7800
+EDGES = [int(_lo * (_hi / _lo) ** (i / BANDS)) for i in range(BANDS + 1)]
+
+try:
+    import numpy as np
+    USE_NUMPY = True
+except ImportError:
+    import cmath
+    USE_NUMPY = False
+
+
+def pure_fft(x):
+    N = len(x)
+    if N <= 1:
+        return x
+    e, o = pure_fft(x[0::2]), pure_fft(x[1::2])
+    h = N // 2
+    T = [cmath.exp(-2j * cmath.pi * k / N) * o[k] for k in range(h)]
+    return [e[k] + T[k] for k in range(h)] + [e[k] - T[k] for k in range(h)]
+
+
+bin_w = RATE / WINDOW
+bands = []
+for b in range(BANDS):
+    lo = max(1, round(EDGES[b] / bin_w))
+    hi = max(lo + 1, round(EDGES[b + 1] / bin_w))
+    hi = min(hi, WINDOW // 2)
+    bands.append((lo, hi))
+
+if USE_NUMPY:
+    window = np.hanning(WINDOW)
+else:
+    window = [0.5 - 0.5 * math.cos(2 * math.pi * i / WINDOW) for i in range(WINDOW)]
+
+proc = subprocess.Popen(
+    ["parec", "--format=s16le", f"--rate={RATE}", "--channels=1", "--latency-msec=32"],
+    stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+)
+
+buf = b""
+
+try:
+    while True:
+        needed = WINDOW * 2 - len(buf)
+        if needed > 0:
+            chunk = proc.stdout.read(needed)
+            if len(chunk) == 0:
+                break
+            buf += chunk
+            if len(buf) < WINDOW * 2:
+                continue
+
+        raw = buf[: WINDOW * 2]
+        buf = buf[HOP * 2 :]
+
+        if USE_NUMPY:
+            s = np.frombuffer(raw, dtype=np.int16).astype(np.float64) * window
+            mags = np.abs(np.fft.rfft(s))[1:] / WINDOW
+        else:
+            s = struct.unpack(f"{WINDOW}h", raw)
+            w = [s[i] * window[i] for i in range(WINDOW)]
+            spec = pure_fft(w)
+            mags = [abs(spec[k]) / WINDOW for k in range(1, WINDOW // 2 + 1)]
+
+        out = []
+        for lo, hi in bands:
+            if USE_NUMPY:
+                avg = float(np.mean(mags[lo - 1 : hi - 1]))
+            else:
+                seg = mags[lo - 1 : hi - 1]
+                avg = sum(seg) / max(1, len(seg))
+            level = 0.0 if avg < 8 else min(1.0, math.sqrt((avg - 8) / 120))
+            out.append(f"{level:.2f}")
+
+        print(" ".join(out), flush=True)
+except (BrokenPipeError, KeyboardInterrupt):
+    pass
+finally:
+    proc.terminate()

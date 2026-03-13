@@ -12,6 +12,7 @@
     gcc
     nodejs
     deno
+    bun
     pnpm
     (python3.withPackages (ps: [ ps.evdev ]))
     yarn
@@ -80,7 +81,17 @@
   };
 
    services.openssh.enable = true;
-   # services.tailscale.enable = true;
+   services.tailscale = {
+     enable = true;
+     useRoutingFeatures = "client";
+     extraUpFlags = [
+       "--accept-routes"
+       "--accept-dns=false"
+       "--exit-node-allow-lan-access"
+     ];
+   };
+   networking.firewall.trustedInterfaces = [ "tailscale0" ];
+   networking.firewall.allowedUDPPorts = [ config.services.tailscale.port ];
    services.sysstat.enable = true;
   users = {
     defaultUserShell = pkgs.zsh;

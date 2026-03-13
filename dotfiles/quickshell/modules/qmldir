@@ -25,3 +25,4 @@ NotificationPopup 1.0 NotificationPopup.qml
 PolkitPopup 1.0 PolkitPopup.qml
 FingerprintPopup 1.0 FingerprintPopup.qml
 OsdPopup 1.0 OsdPopup.qml
+WallpaperPopup 1.0 WallpaperPopup.qml

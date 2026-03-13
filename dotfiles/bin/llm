@@ -16,7 +16,7 @@ import uuid
 
 API_URL = "https://openrouter.ai/api/v1/chat/completions"
 KEY_PATH = "/run/secrets/openrouter-key"
-DEFAULT_MODEL = "openai/gpt-5.2-chat"
+DEFAULT_MODEL = "openai/gpt-5.4"
 NOTIFY_INTERVAL = 0.15  # seconds between notification updates
 HISTORY_DIR = os.path.expanduser("~/.cache/llm")
 HISTORY_FILE = os.path.join(HISTORY_DIR, "history.json")
@@ -235,6 +235,85 @@ def tts_speak(text, speed=1.0):
     os.unlink(wav_path)
 
 
+MODEL_PREVIEW_SCRIPT = r'''#!/usr/bin/env python3
+import json, os, sys, textwrap
+
+models = json.load(open(os.environ["LLM_MODELS_FILE"]))
+mid = sys.argv[1] if len(sys.argv) > 1 else ""
+m = next((x for x in models if x["id"] == mid), None)
+if not m:
+    print("Model not found")
+    sys.exit(0)
+p = m.get("pricing", {})
+ctx = m.get("context_length")
+arch = m.get("architecture", {})
+
+print(m.get("name", m["id"]))
+print("\u2500" * 40)
+if ctx:
+    print(f"Context:      {ctx:,}")
+print(f"Prompt:       ${p.get('prompt', '?')} /token")
+print(f"Completion:   ${p.get('completion', '?')} /token")
+if arch.get("modality"):
+    print(f"Modality:     {arch['modality']}")
+if arch.get("tokenizer"):
+    print(f"Tokenizer:    {arch['tokenizer']}")
+desc = m.get("description", "")
+if desc:
+    print()
+    print(textwrap.fill(desc, width=55))
+'''
+
+
+def fetch_models():
+    """Fetch available models from OpenRouter API."""
+    req = urllib.request.Request("https://openrouter.ai/api/v1/models")
+    try:
+        resp = urllib.request.urlopen(req)
+    except urllib.error.HTTPError as e:
+        die(f"Failed to fetch models: {e.code}")
+    return json.loads(resp.read().decode()).get("data", [])
+
+
+def pick_model():
+    """Interactive model picker using fzf with detail preview."""
+    print("Fetching models...", file=sys.stderr)
+    models = fetch_models()
+    models.sort(key=lambda m: m["id"])
+
+    fd, data_path = tempfile.mkstemp(suffix=".json", prefix="llm-models-")
+    with os.fdopen(fd, "w") as f:
+        json.dump(models, f)
+
+    fd2, preview_path = tempfile.mkstemp(suffix=".py", prefix="llm-preview-")
+    with os.fdopen(fd2, "w") as f:
+        f.write(MODEL_PREVIEW_SCRIPT)
+    os.chmod(preview_path, 0o755)
+
+    model_ids = "\n".join(m["id"] for m in models)
+    try:
+        env = os.environ.copy()
+        env["LLM_MODELS_FILE"] = data_path
+        proc = subprocess.run(
+            [
+                "fzf",
+                "--preview", f"python3 {preview_path} {{}}",
+                "--preview-window", "right:50%:wrap",
+                "--header", "Pick a model (ESC to cancel)",
+            ],
+            input=model_ids,
+            capture_output=True,
+            text=True,
+            env=env,
+        )
+        if proc.returncode != 0:
+            return None
+        return proc.stdout.strip()
+    finally:
+        os.unlink(data_path)
+        os.unlink(preview_path)
+
+
 def build_payload(model, prompt, history=None, image=None, system=None, temperature=None):
     """Build the API payload with optional history."""
     msgs = []
@@ -399,6 +478,7 @@ def main():
     parser.add_argument("-v", "--verbose", action="store_true", help="log request/response JSON to stderr (formatted with jq)")
     parser.add_argument("--raw", action="store_true", help="output raw SSE JSON chunks")
     parser.add_argument("--new", action="store_true", help="clear conversation history and start fresh")
+    parser.add_argument("-L", "--list-models", action="store_true", help="pick model interactively with fzf")
     parser.add_argument("-V", "--voice", action="store_true", help="record voice for prompt (STT via Whisper)")
     parser.add_argument("--tts", action="store_true", help="speak response aloud (TTS)")
     parser.add_argument("--tts-speed", type=float, default=1.0, help="TTS playback speed (default: 1.0)")
@@ -407,6 +487,13 @@ def main():
     # Clear history if requested
     if args.new:
         clear_history()
+
+    # Interactive model picker
+    if args.list_models:
+        selected = pick_model()
+        if not selected:
+            sys.exit(0)
+        args.model = selected
 
     # If TTS is playing, stop it and exit
     if tts_is_playing():

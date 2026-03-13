@@ -161,7 +161,7 @@ Item {
             }
         }
 
-        Item { width: 25; height: 1 }
+
     }
 
     MouseArea {

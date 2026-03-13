@@ -225,9 +225,17 @@ case "$1" in
 		wallpaper -s next
 	fi
 	echo "Starting autowallpaper rotation"
+	interval="${2:-1200}"
 	while true; do
-		sleep "${2:-900}"
-		wallpaper -s next
+		last_change=$(stat -c %Y "$HOME/.current-wallpaper" 2>/dev/null || echo 0)
+		now=$(date +%s)
+		age=$((now - last_change))
+		if [ "$age" -ge "$interval" ]; then
+			wallpaper -s next
+			sleep 30
+		else
+			sleep $((interval - age))
+		fi
 	done
 	;;
 "set")

@@ -19,10 +19,10 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
     sops-nix.url = "github:Mic92/sops-nix";
-    claude-code.url = "github:sadjow/claude-code-nix";
+    claude-code.url = "github:numtide/llm-agents.nix";
     vicinae.url = "github:vicinaehq/vicinae";
     hyprland-preview-share-picker.url = "git+https://github.com/WhySoBad/hyprland-preview-share-picker?submodules=1";
-    mt7927.url = "github:cmspam/mt7927-nixos";
+    mt7927.url = "github:cmspam/mt7927-nixos/6df10b70cdcea923ae77ff433262bb47371b36a1";
     nix-index-database = {
       url = "github:nix-community/nix-index-database";
       inputs.nixpkgs.follows = "nixpkgs";
@@ -70,7 +70,12 @@
           inputs.mt7927.nixosModules.default
           sops-nix.nixosModules.sops
           ./hosts/ares/configuration.nix
-          { nixpkgs.overlays = [ inputs.quickshell.overlays.default ]; }
+          {
+            nixpkgs.overlays = [
+              inputs.quickshell.overlays.default
+              (_: prev: { monique = prev.callPackage ./packages/monique.nix { }; })
+            ];
+          }
         ];
       };
 

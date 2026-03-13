@@ -1,0 +1,61 @@
+#!/usr/bin/env bash
+
+data=$(curl -s "ip-api.com/json/$1?fields=66846719")
+
+if [[ $(echo "$data" | jq -r '.status') != "success" ]]; then
+  echo "Lookup failed for: ${1:-self}"
+  exit 1
+fi
+
+read_field() { echo "$data" | jq -r ".$1 | tostring"; }
+
+ip=$(read_field query)
+country=$(read_field country)
+code=$(read_field countryCode)
+region=$(read_field regionName)
+city=$(read_field city)
+district=$(read_field district)
+zip=$(read_field zip)
+continent=$(read_field continent)
+lat=$(read_field lat)
+lon=$(read_field lon)
+tz=$(read_field timezone)
+offset=$(read_field offset)
+currency=$(read_field currency)
+isp=$(read_field isp)
+org=$(read_field org)
+as=$(read_field as)
+asname=$(read_field asname)
+reverse=$(read_field reverse)
+mobile=$(read_field mobile)
+proxy=$(read_field proxy)
+hosting=$(read_field hosting)
+
+printf "\n"
+printf "  \033[1;37m%s\033[0m\n" "$ip"
+printf "\n"
+printf "  \033[1;34mLocation\033[0m\n"
+printf "  %-14s %s\n" "Country" "$country ($code)"
+printf "  %-14s %s\n" "Region" "$region"
+printf "  %-14s %s\n" "City" "$city"
+[[ -n $district ]] && printf "  %-14s %s\n" "District" "$district"
+printf "  %-14s %s\n" "ZIP" "$zip"
+printf "  %-14s %s\n" "Continent" "$continent"
+printf "  %-14s %s, %s\n" "Coordinates" "$lat" "$lon"
+printf "  %-14s https://maps.google.com/?q=%s,%s\n" "Map" "$lat" "$lon"
+printf "\n"
+printf "  \033[1;34mTime & Currency\033[0m\n"
+printf "  %-14s %s (UTC%+d)\n" "Timezone" "$tz" "$((offset / 3600))"
+printf "  %-14s %s\n" "Currency" "$currency"
+printf "\n"
+printf "  \033[1;34mNetwork\033[0m\n"
+printf "  %-14s %s\n" "ISP" "$isp"
+printf "  %-14s %s\n" "Org" "$org"
+printf "  %-14s %s\n" "AS" "$as"
+[[ -n $reverse ]] && printf "  %-14s %s\n" "Reverse DNS" "$reverse"
+printf "\n"
+printf "  \033[1;34mFlags\033[0m\n"
+printf "  %-14s %s\n" "Proxy/VPN" "$proxy"
+printf "  %-14s %s\n" "Mobile" "$mobile"
+printf "  %-14s %s\n" "Hosting/DC" "$hosting"
+printf "\n"

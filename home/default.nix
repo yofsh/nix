@@ -18,7 +18,8 @@ in {
   home.packages = [
     pkgs.libnotify
     pkgs.playerctl
-    inputs.claude-code.packages.${pkgs.system}.default
+    inputs.claude-code.packages.${pkgs.system}.claude-code
+    inputs.claude-code.packages.${pkgs.system}.codex
     pkgs.glow
 
     # Voice transcription
@@ -78,6 +79,7 @@ in {
     "wiremix".source = link "${dotfiles}/wiremix";
     "quickshell".source = link "${dotfiles}/quickshell";
     "mpv/mpv.conf".source = link "${dotfiles}/mpv/mpv.conf";
+    "zellij".source = link "${dotfiles}/zellij";
 
     # Source home-manager session vars into uwsm so sessionPath/sessionVariables
     # are available to Hyprland and all graphical apps launched by it.
