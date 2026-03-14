@@ -1,0 +1,346 @@
+#!/usr/bin/env python3
+"""
+IIO Sensor TUI — real-time display of all IIO sensors (proximity, gyro,
+accel, magnetometer, gravity, rotation quaternions, hinge angles).
+
+Auto-discovers device numbers by name so it works regardless of probe order.
+Requires: python3, rich (pip/nix)
+"""
+
+import math
+import signal
+import sys
+import time
+import threading
+from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
+
+from rich.console import Console, Group
+from rich.live import Live
+from rich.table import Table
+from rich.text import Text
+
+IIO = Path("/sys/bus/iio/devices")
+TARGET_HZ = 30
+DEFAULT_HZ = 10
+
+# ── auto-discover IIO devices by name ────────────────────────────────────────
+
+SENSOR_NAMES = {
+    "prox": "prox",
+    "gyro": "gyro_3d",
+    "accel": "accel_3d",
+    "rotation": "dev_rotation",
+    "magn": "magn_3d",
+    "geomag": "geomagnetic_orientation",
+    "gravity": "gravity",
+    "relative": "relative_orientation",
+    "hinge": "hinge",
+}
+
+_devmap: dict[str, int] = {}
+
+
+def discover_devices():
+    for d in sorted(IIO.glob("iio:device*")):
+        name_file = d / "name"
+        if not name_file.exists():
+            continue
+        try:
+            name = name_file.read_text().strip()
+        except OSError:
+            continue
+        num = int(d.name.removeprefix("iio:device"))
+        for key, expected in SENSOR_NAMES.items():
+            if name == expected:
+                _devmap[key] = num
+
+
+def dev(key: str) -> int:
+    return _devmap.get(key, -1)
+
+
+# ── sensor cache (filled by background thread) ──────────────────────────────
+
+_cache: dict[tuple[int, str], str] = {}
+_cache_lock = threading.Lock()
+_poll_hz: float = 0.0
+
+
+def _build_attrs() -> list[tuple[int, str]]:
+    attrs = []
+
+    def add(key: str, *names: str):
+        d = dev(key)
+        if d < 0:
+            return
+        for n in names:
+            attrs.append((d, n))
+
+    add("prox", "in_proximity0_raw", "in_proximity0_scale",
+        "in_proximity1_raw", "in_proximity1_scale", "in_attention_input")
+    add("gyro", "in_anglvel_scale", "in_anglvel_x_raw",
+        "in_anglvel_y_raw", "in_anglvel_z_raw")
+    add("accel", "in_accel_scale", "in_accel_x_raw",
+        "in_accel_y_raw", "in_accel_z_raw")
+    add("rotation", "in_rot_scale", "in_rot_quaternion_raw")
+    add("magn", "in_magn_scale", "in_magn_x_raw", "in_magn_y_raw",
+        "in_magn_z_raw", "in_rot_from_north_magnetic_tilt_comp_raw")
+    add("gravity", "in_gravity_scale", "in_gravity_x_raw",
+        "in_gravity_y_raw", "in_gravity_z_raw")
+    add("geomag", "in_rot_scale", "in_rot_quaternion_raw")
+    add("relative", "in_rot_scale", "in_rot_quaternion_raw")
+    add("hinge", "in_angl0_label", "in_angl0_raw",
+        "in_angl1_label", "in_angl1_raw", "in_angl2_label", "in_angl2_raw")
+    return attrs
+
+
+_pool = ThreadPoolExecutor(max_workers=16)
+
+
+def _read_one(dev_num: int, attr: str) -> tuple[tuple[int, str], str]:
+    try:
+        val = (IIO / f"iio:device{dev_num}" / attr).read_text().strip()
+    except (OSError, PermissionError):
+        val = ""
+    return ((dev_num, attr), val)
+
+
+def refresh_cache(attrs: list[tuple[int, str]]):
+    results = dict(_pool.map(lambda a: _read_one(*a), attrs))
+    with _cache_lock:
+        _cache.update(results)
+
+
+def _reader_loop(attrs: list[tuple[int, str]], stop_event: threading.Event):
+    global _poll_hz
+    while not stop_event.is_set():
+        t0 = time.perf_counter()
+        refresh_cache(attrs)
+        dt = time.perf_counter() - t0
+        if dt > 0:
+            _poll_hz = 1.0 / dt
+
+
+# ── helpers ──────────────────────────────────────────────────────────────────
+
+def read(key: str, attr: str) -> str:
+    d = dev(key)
+    with _cache_lock:
+        return _cache.get((d, attr), "")
+
+
+def read_float(key: str, attr: str) -> float:
+    try:
+        return float(read(key, attr))
+    except ValueError:
+        return 0.0
+
+
+def read_floats(key: str, attr: str) -> list[float]:
+    try:
+        return [float(x) for x in read(key, attr).split()]
+    except ValueError:
+        return [0.0]
+
+
+def fv(val: float, prec: int = 3) -> Text:
+    s = f"{val:>9.{prec}f}"
+    return Text(s, style="green" if abs(val) > 1e-6 else "dim")
+
+
+def heading_text(deg: float) -> str:
+    dirs = ["N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE",
+            "S", "SSW", "SW", "WSW", "W", "WNW", "NW", "NNW"]
+    return dirs[round(deg / 22.5) % 16]
+
+
+def make_row(*cells) -> Table:
+    t = Table(show_header=False, show_edge=False, expand=True,
+              padding=(0, 2), show_lines=False)
+    for _ in cells:
+        t.add_column(ratio=1)
+    t.add_row(*cells)
+    return t
+
+
+# ── build display ────────────────────────────────────────────────────────────
+
+def build_display() -> Group:
+    now = time.strftime("%H:%M:%S")
+    header = Text(
+        f" IIO Sensors  {now}  Sensor: {TARGET_HZ} Hz  Poll: {_poll_hz:.0f} Hz  Ctrl+C to exit ",
+        style="bold white on dark_blue", justify="center")
+
+    # proximity
+    p0 = read_float("prox", "in_proximity0_raw") * read_float("prox", "in_proximity0_scale")
+    dist = read_float("prox", "in_proximity1_raw") * read_float("prox", "in_proximity1_scale")
+    attn = read_float("prox", "in_attention_input")
+    present = Text("YES", style="bold green") if p0 > 0.5 else Text("no", style="dim")
+    attn_style = "green" if attn > 50 else "yellow" if attn > 0 else "dim"
+    prox = Text.assemble(
+        Text("Proximity\n", style="bold cyan"),
+        "  Present: ", present, "\n",
+        "  Dist:    ", fv(dist, 3), "\n",
+        "  Attn:    ", Text(f"{attn:>5.0f}%", style=attn_style))
+
+    # gyroscope
+    gs = read_float("gyro", "in_anglvel_scale")
+    gx, gy, gz = [read_float("gyro", f"in_anglvel_{a}_raw") * gs for a in "xyz"]
+    r2d = 180.0 / math.pi
+    gyro = Text.assemble(
+        Text("Gyroscope\n", style="bold blue"),
+        "  X: ", fv(gx * r2d, 2), " °/s\n",
+        "  Y: ", fv(gy * r2d, 2), " °/s\n",
+        "  Z: ", fv(gz * r2d, 2), " °/s")
+
+    # accelerometer
+    asc = read_float("accel", "in_accel_scale")
+    ax, ay, az = [read_float("accel", f"in_accel_{a}_raw") * asc for a in "xyz"]
+    mag = math.sqrt(ax * ax + ay * ay + az * az)
+    accel = Text.assemble(
+        Text("Accelerometer\n", style="bold yellow"),
+        "  X: ", fv(ax), "  m/s²\n",
+        "  Y: ", fv(ay), "  m/s²\n",
+        "  Z: ", fv(az), "  ‖a‖: ", fv(mag))
+
+    # magnetometer
+    ms = read_float("magn", "in_magn_scale")
+    mx, my, mz = [read_float("magn", f"in_magn_{a}_raw") * ms * 100 for a in "xyz"]
+    hdeg = read_float("magn", "in_rot_from_north_magnetic_tilt_comp_raw") / 100_000
+    bearing = heading_text(hdeg % 360)
+    magn = Text.assemble(
+        Text("Magnetometer\n", style="bold red"),
+        "  X: ", fv(mx, 2), "  Y: ", fv(my, 2), " µT\n",
+        "  Z: ", fv(mz, 2), " µT\n",
+        "  Heading: ", Text(f"{hdeg:>6.1f}° {bearing}", style="bold green"))
+
+    # gravity
+    grs = read_float("gravity", "in_gravity_scale")
+    grx, gry, grz = [read_float("gravity", f"in_gravity_{a}_raw") * grs for a in "xyz"]
+    grav = Text.assemble(
+        Text("Gravity\n", style="bold green"),
+        "  X: ", fv(grx), "  m/s²\n",
+        "  Y: ", fv(gry), "  m/s²\n",
+        "  Z: ", fv(grz), "  m/s²")
+
+    # hinge angles
+    hinge_parts = [Text("Hinge Angles\n", style="bold white")]
+    for i in range(3):
+        label = read("hinge", f"in_angl{i}_label") or f"angle{i}"
+        raw = read_float("hinge", f"in_angl{i}_raw")
+        style = "green" if abs(raw) > 0.01 else "dim"
+        hinge_parts.extend(["  ", f"{label.capitalize():>8}: ", Text(f"{raw:>7.2f}°", style=style)])
+        if i < 2:
+            hinge_parts.append("\n")
+    hinge = Text.assemble(*hinge_parts)
+
+    # quaternions
+    def quat(key: str, name: str, color: str) -> Text:
+        s = read_float(key, "in_rot_scale")
+        q = read_floats(key, "in_rot_quaternion_raw")
+        while len(q) < 4:
+            q.append(0.0)
+        q = [val * s for val in q]
+        return Text.assemble(
+            Text(f"{name}\n", style=f"bold {color}"),
+            "  W: ", fv(q[0], 5), "  X: ", fv(q[1], 5), "\n",
+            "  Y: ", fv(q[2], 5), "  Z: ", fv(q[3], 5))
+
+    sep = Text("─" * 120, style="dim")
+
+    return Group(
+        header, Text(""),
+        make_row(prox, gyro, accel),
+        sep,
+        make_row(magn, grav, hinge),
+        sep,
+        make_row(
+            quat("rotation", "Rotation", "magenta"),
+            quat("geomag", "Geomag Orient.", "bright_cyan"),
+            quat("relative", "Relative Orient.", "bright_magenta"),
+        ),
+    )
+
+
+# ── sensor setup ─────────────────────────────────────────────────────────────
+
+ROTATION_KEYS = ["rotation", "geomag", "relative"]
+
+FREQ_ATTRS = [
+    ("prox", "in_proximity0_sampling_frequency"),
+    ("prox", "in_proximity1_sampling_frequency"),
+    ("prox", "in_attention_sampling_frequency"),
+    ("gyro", "in_anglvel_sampling_frequency"),
+    ("accel", "in_accel_sampling_frequency"),
+    ("rotation", "in_rot_sampling_frequency"),
+    ("magn", "in_magn_sampling_frequency"),
+    ("magn", "in_rot_sampling_frequency"),
+    ("gravity", "in_gravity_sampling_frequency"),
+    ("geomag", "in_rot_sampling_frequency"),
+    ("relative", "in_rot_sampling_frequency"),
+    ("hinge", "in_angl_sampling_frequency"),
+]
+
+
+def set_sampling_rates(hz: int):
+    for key, attr in FREQ_ATTRS:
+        d = dev(key)
+        if d < 0:
+            continue
+        try:
+            (IIO / f"iio:device{d}" / attr).write_text(str(hz))
+        except (OSError, PermissionError):
+            pass
+
+
+def set_rotation_buffers(enable: bool):
+    val = "1" if enable else "0"
+    for key in ROTATION_KEYS:
+        d = dev(key)
+        if d < 0:
+            continue
+        base = IIO / f"iio:device{d}"
+        try:
+            if enable:
+                (base / "scan_elements" / "in_rot_quaternion_en").write_text(val)
+                (base / "buffer" / "enable").write_text(val)
+            else:
+                (base / "buffer" / "enable").write_text(val)
+                (base / "scan_elements" / "in_rot_quaternion_en").write_text(val)
+        except (OSError, PermissionError):
+            pass
+
+
+def main():
+    console = Console()
+    signal.signal(signal.SIGINT, lambda *_: sys.exit(0))
+
+    discover_devices()
+    if not _devmap:
+        console.print("[red]No IIO sensors found.[/red]")
+        sys.exit(1)
+
+    attrs = _build_attrs()
+    set_rotation_buffers(True)
+    set_sampling_rates(TARGET_HZ)
+    refresh_cache(attrs)
+
+    stop = threading.Event()
+    reader = threading.Thread(target=_reader_loop, args=(attrs, stop), daemon=True)
+    reader.start()
+    try:
+        with Live(build_display(), console=console, refresh_per_second=30,
+                  screen=True) as live:
+            while True:
+                time.sleep(0.033)
+                live.update(build_display())
+    finally:
+        stop.set()
+        reader.join(timeout=1)
+        set_sampling_rates(DEFAULT_HZ)
+        set_rotation_buffers(False)
+
+
+if __name__ == "__main__":
+    main()

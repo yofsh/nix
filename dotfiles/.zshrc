@@ -1,11 +1,6 @@
-if [ -d "$HOME/bin" ]; then
-  export PATH="$HOME/bin:$HOME/bin/utils:$PATH"
-fi
-
-
 export EDITOR='nvim'
 export VISUAL='nvim'
-export PATH="$HOME/nix/dotfiles/bin:$HOME/nix/dotfiles/bin/utils:$PATH"
+export PATH="$HOME/nix/dotfiles/bin:$HOME/nix/dotfiles/bin/utils:$HOME/nix/dotfiles/bin/laptop:$PATH"
 
 nvimman() {
   nvim -c "set ft=man ts=8 nomod nolist nonu noma" -c "Man $*" -c "silent! only"
@@ -339,6 +334,16 @@ _aichat_zsh() {
 zle -N _aichat_zsh
 bindkey '\ee' _aichat_zsh
 
+_fzf_bin() {
+  local cmd
+  cmd=$(find "$HOME/nix/dotfiles/bin" -maxdepth 1 -type f -executable -printf '%f\n' | sort | fzf --prompt='bin> ')
+  if [[ -n "$cmd" ]]; then
+    LBUFFER+="$cmd "
+  fi
+  zle redisplay
+}
+zle -N _fzf_bin
+bindkey '^[b' _fzf_bin
 
 export FZF_DEFAULT_COMMAND='fd --type f --hidden --color=always --exclude node_modules --exclude .git'
 export FZF_DEFAULT_OPTS='--preview-window=border-none --border=none --no-height --ansi'

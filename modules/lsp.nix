@@ -11,6 +11,7 @@
     typescript
     nixd
     vscode-langservers-extracted
+    shellcheck
   ];
 }
 
