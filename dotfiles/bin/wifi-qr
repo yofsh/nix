@@ -11,12 +11,15 @@ if [ "$QRTYPE" != "WIFI" ]; then
 	exit 1
 fi
 
-SSID=$(echo "$QR" | awk -F'[ ;]' '{print $1}' | awk -F'[ :]' '{print $3}')
-PASSWORD=$(echo "$QR" | awk -F'[ ;]' '{print $3}' | awk -F'[ :]' '{print $2}')
-HIDDEN=$(echo "$QR" | awk -F'[ ;]' '{print $4}' | awk -F'[ :]' '{print $2}')
-TYPE=$(echo "$QR" | awk -F'[ ;]' '{print $2}' | awk -F'[ :]' '{print $2}')
+get_field() {
+	echo "$QR" | sed 's/^WIFI://' | tr ';' '\n' | grep "^$1:" | sed "s/^$1://"
+}
 
-#TODO: add support for hidden networks
-echo "Trying to connect to SSID $SSID, with - $TYPE, hidden - $HIDDEN"
+TYPE=$(get_field T)
+SSID=$(get_field S)
+PASSWORD=$(get_field P)
+HIDDEN=$(get_field H)
+
+echo "Trying to connect to SSID '$SSID', type $TYPE, hidden: ${HIDDEN:-no}"
 nmcli d w l --rescan yes
 nmcli dev wifi connect "$SSID" password "$PASSWORD"
