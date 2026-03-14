@@ -1,0 +1,70 @@
+#!/usr/bin/env bash
+
+INTERVAL=0.5
+SHOW_TITLE=false
+
+if ! VALID_ARGS=$(getopt -o tn: --long title,interval: -- "$@"); then
+	exit 1
+fi
+
+eval set -- "$VALID_ARGS"
+
+while true; do
+	case "$1" in
+	-n | --interval)
+		INTERVAL=$2
+		shift 2
+		;;
+	-t | --title)
+		SHOW_TITLE=true
+		shift
+		;;
+	--)
+		shift
+		break
+		;;
+	*)
+		echo "Invalid option: $1" >&2
+		exit 1
+		;;
+	esac
+done
+
+COMMAND=("$@")
+if [[ ${#COMMAND[@]} -eq 0 ]]; then
+	echo "Usage: grc-watch [-t] [-n interval] <command> [args...]" >&2
+	exit 1
+fi
+
+tput civis
+finish() {
+	tput cnorm
+}
+trap finish EXIT
+
+COLS=$(tput cols)
+LINES=$(tput lines)
+
+clear
+tput cup 0 0
+
+while true; do
+	NEW_COLS=$(tput cols)
+	NEW_LINES=$(tput lines)
+
+	if [[ "$NEW_COLS" -ne "$COLS" || "$NEW_LINES" -ne "$LINES" ]]; then
+		clear
+		COLS="$NEW_COLS"
+		LINES="$NEW_LINES"
+	fi
+	tput cup 0 0
+
+	if $SHOW_TITLE; then
+		date +"%Y-%m-%d %H:%M:%S,%3N"
+		echo
+		grc --colour=on "${COMMAND[@]}" | head -n "$((LINES - 3))"
+	else
+		grc --colour=on "${COMMAND[@]}" | head -n "$((LINES - 1))"
+	fi
+	sleep "$INTERVAL"
+done

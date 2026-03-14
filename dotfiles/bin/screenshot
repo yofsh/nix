@@ -1,7 +1,7 @@
-#!/bin/sh
+#!/usr/bin/env bash
 
 usage() {
-	echo "
+	cat <<EOF
    Usage: $0 [params]
 
    Region:
@@ -9,52 +9,60 @@ usage() {
     -w, --window
     -r, --region
 
-   Action: 
+   Action:
     -s, --save
-    -c, --copy 
+    -c, --copy
     -e, --edit
 
     -n, --notify            Enabled notification
-    -l, --location <DIR>    Directory to save screen shots, defaults to $(xdg-user-dir PICTURES)/screenshots
-
-    -u, --upload            Upload file to remote server (TODO: pass args)"
+    -l, --location <DIR>    Directory to save screenshots, defaults to $(xdg-user-dir PICTURES)/screenshots
+    -u, --upload            Upload file to remote server
+EOF
 	exit 1
 }
 
 notify() {
-	if [ "$NOTIFY" = true ]; then
+	if [[ "$NOTIFY" == true ]]; then
 		notify-send -u low -i background "Screenshot $TYPE $ACTION" "$1"
 	fi
 }
 
-# Warm satty shared libraries into page cache (3ms, runs in background)
 warm_satty_cache() {
-	cat "$(which satty)" $(ldd "$(which satty)" 2>/dev/null | awk '/=>/{print $3}') > /dev/null 2>&1 &
+	local satty_bin
+	local deps=()
+	local dep
+	satty_bin=$(command -v satty) || return 0
+	while IFS= read -r dep; do
+		deps+=("$dep")
+	done < <(ldd "$satty_bin" 2>/dev/null | awk '/=>/{print $3}')
+	cat "$satty_bin" "${deps[@]}" > /dev/null 2>&1 &
 }
 
-VALID_ARGS=$(getopt -o ufwrascenl:h --long upload,fullscreen,window,region,save,copy,edit,notify,location:,help -- "$@")
-if [[ $? -ne 0 ]]; then
+if ! VALID_ARGS=$(getopt -o ufwrascenl:h --long upload,fullscreen,window,region,save,copy,edit,notify,location:,help -- "$@"); then
 	exit 1
 fi
 
-# TYPE=${1:-full}
-# ACTION=${2:-save}
+TYPE=full
+ACTION=copy
 NOTIFY=false
+UPLOAD=false
 FN=$(date "+%Y.%m.%d-%H:%M:%S")
 EXT="jpeg"
 LOCATION=$(xdg-user-dir PICTURES)/screenshots
 FILE=$LOCATION/screenshot-$FN.$EXT
-TMPFILE=/tmp/src.$EXT
+TMPBASE=/tmp/src-$FN
+TMPFILE=$TMPBASE.$EXT
+PNGFILE=$TMPBASE.png
 
 eval set -- "$VALID_ARGS"
-while [ : ]; do
+while true; do
 	case "$1" in
 	-h | --help)
 		usage
 		;;
 	-l | --location)
 		LOCATION=$2
-		shift
+		shift 2
 		;;
 	-r | --region)
 		TYPE=region
@@ -95,83 +103,84 @@ while [ : ]; do
 	esac
 done
 
+mkdir -p "$LOCATION"
+
 case "$TYPE" in
-"region") warm_satty_cache; GEOMETRY=$(slurp 2>&1) ;;
-"full") warm_satty_cache ;;
-"window") warm_satty_cache
-	if pgrep -x "Hyprland" >/dev/null; then
-		# POS=`hyprctl activewindow | grep 'at:' | cut -d':' -f2 | tr -d ' ' | tail -n1`
-		# SIZE=`hyprctl activewindow | grep 'size:' | cut -d':' -f2 | tr -d ' ' | tail -n1 | sed s/,/x/g`
-		# GEOMETRY="$POS $SIZE"
-		GEOMETRY=$(hyprctl clients -j | jq -r ".[] | select(.workspace.id == "$(hyprctl activewindow -j | jq -r '.workspace.id')\)"" | jq -r ".at,.size" | jq -s "add" | jq '_nwise(4)' | jq -r '"\(.[0]),\(.[1]) \(.[2])x\(.[3])"' | slurp)
-	fi
-	if pgrep -x "sway" >/dev/null; then
-		GEOMETRY=$(swaymsg -t get_tree | jq -r '.. | select(.pid? and .visible?) | .rect | "\(.x),\(.y) \(.width)x\(.height)"' | slurp)
-	fi
-	;;
-*)
-	echo "Please specify action"
-	usage
-	exit 1
-	;;
+region)
+		warm_satty_cache
+		GEOMETRY=$(slurp 2>&1)
+		;;
+	full)
+		warm_satty_cache
+		GEOMETRY=""
+		;;
+	window)
+		warm_satty_cache
+		if pgrep -x "Hyprland" >/dev/null; then
+			GEOMETRY=$(hyprctl activewindow -j | jq -r '"\(.at[0]),\(.at[1]) \(.size[0])x\(.size[1])"')
+		elif pgrep -x "sway" >/dev/null; then
+			GEOMETRY=$(swaymsg -t get_tree | jq -r '.. | select(.pid? and .visible?) | .rect | "\(.x),\(.y) \(.width)x\(.height)"' | slurp)
+		else
+			GEOMETRY=""
+		fi
+		;;
+	*)
+		echo "Please specify action"
+		usage
+		;;
 esac
 
-if [ "$GEOMETRY" = "selection cancelled" ]; then
+if [[ "$GEOMETRY" == "selection cancelled" ]]; then
 	echo "Region selection was cancelled, aborting"
 	exit 2
 fi
 
-if [ -z "$GEOMETRY" ]; then
-	grim -t $EXT "/tmp/src.$EXT"
+if [[ -z "$GEOMETRY" ]]; then
+	grim -t "$EXT" "$TMPFILE"
 else
-	grim -t $EXT -g "$GEOMETRY" "/tmp/src.$EXT"
+	grim -t "$EXT" -g "$GEOMETRY" "$TMPFILE"
 fi
 
+ensure_png() {
+	convert "$TMPFILE" "$PNGFILE"
+}
+
 case "$ACTION" in
-"save")
-	cp "$TMPFILE" "$FILE"
-  convert $TMPFILE $TMPFILE.png
-	wl-copy <$TMPFILE.png
-	notify "Saved to \n\n$FILE\n\n and copied to clipboard"
-	;;
-"edit")
-	# swappy -f $TMPFILE -o $TMPFILE
-	#
-	rm $TMPFILE.png
-	GSK_RENDERER=ngl satty --filename $TMPFILE --output-filename $TMPFILE.png --init-tool brush --copy-command wl-copy --early-exit
-	if [ -e "$TMPFILE.png" ]; then
-		convert $TMPFILE.png $TMPFILE
+	save)
 		cp "$TMPFILE" "$FILE"
-		notify "Image saved!"
-	else
-		echo "File does not exist"
-	fi
-	# convert $TMPFILE.png $TMPFILE
-	# cp "$TMPFILE" "$FILE"
-	# wl-copy <$FILE
-	# notify "Copied to clipboard!"
-	;;
-"copy")
-  convert $TMPFILE $TMPFILE.png
-	wl-copy <$TMPFILE.png
-	notify "Copied to clipboard!"
-	;;
-*)
-  convert $TMPFILE $TMPFILE.png
-	wl-copy <$TMPFILE.png
-	notify "Copied to clipboard!"
-	;;
+		ensure_png
+		wl-copy < "$PNGFILE"
+		notify "Saved to \n\n$FILE\n\n and copied to clipboard"
+		;;
+	edit)
+		rm -f "$PNGFILE"
+		GSK_RENDERER=ngl satty --filename "$TMPFILE" --output-filename "$PNGFILE" --init-tool brush --copy-command wl-copy --early-exit
+		if [[ -e "$PNGFILE" ]]; then
+			convert "$PNGFILE" "$TMPFILE"
+			cp "$TMPFILE" "$FILE"
+			notify "Image saved!"
+		else
+			echo "File does not exist"
+		fi
+		;;
+	copy)
+		ensure_png
+		wl-copy < "$PNGFILE"
+		notify "Copied to clipboard!"
+		;;
+	*)
+		ensure_png
+		wl-copy < "$PNGFILE"
+		notify "Copied to clipboard!"
+		;;
 esac
 
-rm $TMPFILE
-rm $TMPFILE.png
-
-#TODO: move to separate script and pipe filename
-
-if [ "$UPLOAD" = true ]; then
+if [[ "$UPLOAD" == true ]]; then
 	notify "Uploading file to remote server..."
-	scp $TMPFILE yof.sh:httpdocs/src/$FN.$EXT
+	scp "$TMPFILE" "yof.sh:httpdocs/src/$FN.$EXT"
 	notify "File uploaded! URL copied"
 	echo "https://yof.sh/src/$FN.$EXT"
 	wl-copy "https://yof.sh/src/$FN.$EXT"
 fi
+
+rm -f "$TMPFILE" "$PNGFILE"

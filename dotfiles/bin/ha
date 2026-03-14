@@ -4,13 +4,18 @@
 #   actions: toggle, up, down, scene
 
 HA_URL="http://192.168.8.30:8123"
-HA_TOKEN=$(cat /run/secrets/ha-token)
+HA_TOKEN=$(< /run/secrets/ha-token)
 STEP=25  # brightness step (0-255 scale, ~10%)
-ICON=~/nix/dotfiles/icons/ha.png
+ICON="go-home"
 
-ACTION=$1
-ENTITY=$2
+ACTION="${1:-}"
+ENTITY="${2:-}"
 DOMAIN=${ENTITY%%.*}
+
+if [[ -z "$ACTION" || -z "$ENTITY" ]]; then
+  echo "Usage: ha <toggle|up|down|scene> <entity_id>" >&2
+  exit 1
+fi
 
 api() { curl -s -H "Authorization: Bearer $HA_TOKEN" -H "Content-Type: application/json" "$@"; }
 
@@ -19,8 +24,8 @@ notify() { notify-send -h "string:x-tag:ha" -t 2000 -u low -i "$ICON" "$@"; }
 case $ACTION in
   up|down)
     state=$(api "$HA_URL/api/states/$ENTITY")
-    current=$(echo "$state" | jq '.attributes.brightness // 0' | cut -d. -f1)
-    name=$(echo "$state" | jq -r '.attributes.friendly_name // "'$ENTITY'"')
+    current=$(echo "$state" | jq -r '(.attributes.brightness // 0) | floor')
+    name=$(echo "$state" | jq -r --arg entity "$ENTITY" '.attributes.friendly_name // $entity')
 
     if [ "$ACTION" = "up" ]; then
       new=$((current + STEP))
@@ -44,8 +49,8 @@ case $ACTION in
   toggle)
     state=$(api "$HA_URL/api/states/$ENTITY")
     current=$(echo "$state" | jq -r '.state')
-    name=$(echo "$state" | jq -r '.attributes.friendly_name // "'$ENTITY'"')
-    brightness=$(echo "$state" | jq '.attributes.brightness // 0' | cut -d. -f1)
+    name=$(echo "$state" | jq -r --arg entity "$ENTITY" '.attributes.friendly_name // $entity')
+    brightness=$(echo "$state" | jq -r '(.attributes.brightness // 0) | floor')
 
     api -X POST -d "{\"entity_id\":\"$ENTITY\"}" "$HA_URL/api/services/$DOMAIN/toggle" >/dev/null &
 

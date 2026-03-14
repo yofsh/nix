@@ -1,13 +1,28 @@
-{ inputs, config, pkgs, lib, hostname ? "", ... }:
+{
+  inputs,
+  config,
+  pkgs,
+  lib,
+  hostname ? "",
+  ...
+}:
 let
   link = config.lib.file.mkOutOfStoreSymlink;
   dotfiles = "${config.home.homeDirectory}/nix/dotfiles";
-in {
+in
+{
 
   home.stateVersion = "24.05";
 
-  imports = [ ./xdg.nix ./firefox.nix ./theming.nix ]
-    ++ lib.optionals (hostname == "athena") [ ./touchpad.nix ./laptop.nix ];
+  imports = [
+    ./xdg.nix
+    ./firefox.nix
+    ./theming.nix
+  ]
+  ++ lib.optionals (hostname == "athena") [
+    ./touchpad.nix
+    ./laptop.nix
+  ];
 
   nixpkgs.config.allowUnfree = true;
 
@@ -24,7 +39,10 @@ in {
     pkgs.glow
 
     # Voice transcription
-    (pkgs.python312.withPackages (ps: [ ps.faster-whisper ps.evdev ]))
+    (pkgs.python312.withPackages (ps: [
+      ps.faster-whisper
+      ps.evdev
+    ]))
 
     inputs.hyprland-preview-share-picker.packages.${pkgs.system}.default
 
@@ -95,7 +113,6 @@ in {
 
   home.sessionPath = [
     "${dotfiles}/bin"
-    "${dotfiles}/bin/utils"
   ];
 
   home.sessionVariables = {

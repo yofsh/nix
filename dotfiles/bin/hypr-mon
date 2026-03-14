@@ -1,12 +1,9 @@
 #!/usr/bin/env bash
 
-# Colors
 RESET='\033[0m'
 BOLD='\033[1m'
 DIM='\033[2m'
 
-# Foreground colors
-RED='\033[38;5;203m'
 GREEN='\033[38;5;114m'
 YELLOW='\033[38;5;221m'
 BLUE='\033[38;5;111m'
@@ -20,7 +17,6 @@ GRAY='\033[38;5;245m'
 # Icons
 ICON_MONITOR="󰍹"
 ICON_RES="󰹑"
-ICON_REFRESH="󰓦"
 ICON_POS="󰆾"
 ICON_SCALE="󰩨"
 ICON_WORKSPACE="󰖯"
@@ -56,7 +52,6 @@ parse_monitors() {
     local resolution=""
     local refresh=""
     local position=""
-    local description=""
     local make=""
     local model=""
     local physical_size=""
@@ -66,7 +61,6 @@ parse_monitors() {
     local vrr=""
     local workspace=""
     local modes=""
-    local transform=""
     local format=""
 
     while IFS= read -r line; do
@@ -80,9 +74,9 @@ parse_monitors() {
             current_monitor="${BASH_REMATCH[1]}"
             monitor_id="${BASH_REMATCH[2]}"
             # Reset values
-            resolution="" refresh="" position="" description="" make="" model=""
+            resolution="" refresh="" position="" make="" model=""
             physical_size="" scale="" focused="" dpms="" vrr="" workspace="" modes=""
-            transform="" format=""
+            format=""
 
         # Resolution and position line
         elif [[ "$line" =~ ^[[:space:]]+([0-9]+x[0-9]+)@([0-9.]+)\ at\ ([0-9]+x[0-9]+) ]]; then
@@ -91,8 +85,6 @@ parse_monitors() {
             position="${BASH_REMATCH[3]}"
 
         # Other fields
-        elif [[ "$line" =~ ^[[:space:]]+description:\ (.+) ]]; then
-            description="${BASH_REMATCH[1]}"
         elif [[ "$line" =~ ^[[:space:]]+make:\ (.+) ]]; then
             make="${BASH_REMATCH[1]}"
         elif [[ "$line" =~ ^[[:space:]]+model:\ (.+) ]]; then
@@ -101,8 +93,6 @@ parse_monitors() {
             physical_size="${BASH_REMATCH[1]}"
         elif [[ "$line" =~ ^[[:space:]]+scale:\ (.+) ]]; then
             scale="${BASH_REMATCH[1]}"
-        elif [[ "$line" =~ ^[[:space:]]+transform:\ (.+) ]]; then
-            transform="${BASH_REMATCH[1]}"
         elif [[ "$line" =~ ^[[:space:]]+focused:\ (.+) ]]; then
             focused="${BASH_REMATCH[1]}"
         elif [[ "$line" =~ ^[[:space:]]+dpmsStatus:\ (.+) ]]; then
@@ -174,7 +164,7 @@ print_monitor() {
     if [[ -n "$modes" ]]; then
         echo
         echo -e "     ${DIM}${GRAY}Available modes:${RESET}"
-        local mode_array=($modes)
+        read -r -a mode_array <<< "$modes"
         local count=0
         local mode_line="     "
         for mode in "${mode_array[@]}"; do

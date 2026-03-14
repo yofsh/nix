@@ -1,5 +1,6 @@
-#!/bin/sh
-UNSPLASH_ACCESS_KEY=$(cat /run/secrets/unsplash-key 2>/dev/null)
+#!/usr/bin/env bash
+
+UNSPLASH_ACCESS_KEY=$(< /run/secrets/unsplash-key 2>/dev/null)
 if [ -z "$UNSPLASH_ACCESS_KEY" ]; then
 	echo "Error: Unsplash API key not found at /run/secrets/unsplash-key" >&2
 	exit 1
@@ -17,7 +18,9 @@ fi
 mkdir -p "$WALLPAPER_DIR"
 
 # Get the biggest monitor resolution
-eval $(hyprctl monitors -j | jq -r 'max_by(.width * .height) | "WIDTH=\(.width) H=\(.height)"')
+if ! read -r WIDTH _ < <(hyprctl monitors -j | jq -r 'max_by(.width * .height) | "\(.width) \(.height)"'); then
+	WIDTH=1920
+fi
 
 # Ensure swww daemon is running
 pgrep -x swww-daemon >/dev/null || swww-daemon 2>/dev/null &
@@ -31,7 +34,7 @@ notify() {
 
 	[ "$SILENT" -eq 1 ] && return
 	notify-send -u "$urgency" -i "$icon" -h "string:x-tag:wallpaper" "[Wallpaper] $title" "$body"
-	echo -e "[Wallpaper] [$title] $body" >&2
+	printf '[Wallpaper] [%s] %s\n' "$title" "$body" >&2
 }
 
 get_pos() { cat "$POS" 2>/dev/null || echo 0; }
@@ -40,12 +43,16 @@ get_len() { wc -l < "$HISTORY" 2>/dev/null || echo 0; }
 # Build info string for a local image file
 local_info() {
 	local f="$1"
-	local res=$(identify -ping -format '%wx%h' "$f" 2>/dev/null)
-	local size=$(du -h "$f" | cut -f1)
+	local res
+	local size
 	local info=""
+
+	res=$(identify -ping -format '%wx%h' "$f" 2>/dev/null)
+	size=$(du -h "$f" | cut -f1)
+
 	[ -n "$res" ] && info="📐 $res"
 	[ -n "$size" ] && info="${info:+$info\n}📦 $size"
-	echo -e "$info"
+	printf '%b\n' "$info"
 }
 
 _apply() {
@@ -55,7 +62,9 @@ _apply() {
 
 set_wallpaper() {
 	_apply "$1"
-	local pos=$(get_pos) len=$(get_len)
+	local pos len
+	pos=$(get_pos)
+	len=$(get_len)
 	if [ "$pos" -gt 0 ] && [ "$pos" -lt "$len" ]; then
 		head -n "$pos" "$HISTORY" > "${HISTORY}.tmp" && mv "${HISTORY}.tmp" "$HISTORY"
 	fi
@@ -70,19 +79,20 @@ download_one() {
 
 	local headers_file="/tmp/wallpaper_headers_$$"
 	local url="https://api.unsplash.com/photos/random?client_id=${UNSPLASH_ACCESS_KEY}&orientation=landscape"
+	local encoded_query http_status err_msg api_errors
 	if [ -n "$query" ]; then
-		local encoded_query=$(printf '%s' "$query" | jq -sRr @uri)
+		encoded_query=$(printf '%s' "$query" | jq -sRr @uri)
 		url="${url}&query=${encoded_query}"
 	fi
 	response=$(curl -s -D "$headers_file" "$url")
-	local http_status=$(head -1 "$headers_file" 2>/dev/null | grep -oP '\d{3}')
+	http_status=$(head -1 "$headers_file" 2>/dev/null | grep -oP '\d{3}')
 	rate_remaining=$(grep -i 'x-ratelimit-remaining' "$headers_file" 2>/dev/null | grep -oP '\d+')
 	rm -f "$headers_file"
 
 	if [ "$http_status" != "200" ]; then
-		local err_msg="HTTP $http_status"
+		err_msg="HTTP $http_status"
 		[ -n "$rate_remaining" ] && [ "$rate_remaining" -eq 0 ] 2>/dev/null && err_msg="$err_msg (rate limit exceeded)"
-		local api_errors=$(echo "$response" | jq -r '.errors[]? // empty' 2>/dev/null)
+		api_errors=$(echo "$response" | jq -r '.errors[]? // empty' 2>/dev/null)
 		[ -n "$api_errors" ] && err_msg="$err_msg: $api_errors"
 		DL_ERROR="$err_msg"
 		return 1
@@ -124,7 +134,8 @@ download_one() {
 
 # Direct download (for URLs)
 download_wp() {
-	local tmp="/tmp/wallpaper_$(date +%s%N).jpg"
+	local tmp
+	tmp="/tmp/wallpaper_$(date +%s%N).jpg"
 	notify low folder-download "Wallpaper" "Downloading..."
 
 	curl -s -L -o "$tmp" "$1"
@@ -142,7 +153,7 @@ download_wp() {
 input_string=$1
 url_pattern="^(http|https|ftp)://[a-zA-Z0-9.-]+\.[a-zA-Z]{2,4}(/\S*)?$"
 
-if [[ $input_string =~ $url_pattern ]]; then
+if [[ "$input_string" =~ $url_pattern ]]; then
 	download_wp "$1"
 	exit 0
 fi
@@ -234,7 +245,7 @@ case "$1" in
 			wallpaper -s next
 			sleep 30
 		else
-			sleep $((interval - age))
+			sleep "$((interval - age))"
 		fi
 	done
 	;;
@@ -242,7 +253,10 @@ case "$1" in
 	# Set wallpaper from a local file, with macOS support
 	image="$2"
 	[ -z "$image" ] && { echo "Usage: wallpaper set <file>"; exit 1; }
-	[ -e "$image" ] && file --mime-type "$image" | grep -qE 'image/(jpeg|jpg|png|gif|bmp|webp|tiff)' || { echo "Not an image"; exit 1; }
+	if [ ! -e "$image" ] || ! file --mime-type "$image" | grep -qE 'image/(jpeg|jpg|png|gif|bmp|webp|tiff)'; then
+		echo "Not an image"
+		exit 1
+	fi
 	# Get absolute path
 	case "$image" in
 		/*) ;;
@@ -274,7 +288,7 @@ case "$1" in
 		notify low folder-download "Wallpaper" "Downloading random..."
 	fi
 
-	for i in $(seq 1 $MAX_RETRIES); do
+	for ((i = 1; i <= MAX_RETRIES; i++)); do
 		dest="$WALLPAPER_DIR/${query:-random}_$(date +%s%N).jpg"
 
 		if download_one "$query" "$dest"; then

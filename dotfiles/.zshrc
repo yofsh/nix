@@ -1,6 +1,6 @@
 export EDITOR='nvim'
 export VISUAL='nvim'
-export PATH="$HOME/nix/dotfiles/bin:$HOME/nix/dotfiles/bin/utils:$HOME/nix/dotfiles/bin/laptop:$PATH"
+export PATH="$HOME/nix/dotfiles/bin:$HOME/nix/dotfiles/bin/laptop:$PATH"
 
 nvimman() {
   nvim -c "set ft=man ts=8 nomod nolist nonu noma" -c "Man $*" -c "silent! only"
@@ -165,7 +165,7 @@ alias lt='exa -lah   --group-directories-first -s time --icons=always'
 alias lsize='exa -lah   --group-directories-first --icons=always --total-size'
 
 alias wifipw='nmcli dev wifi show-password'
-alias ws='wifiscan'
+alias ws='wifi-scan'
 alias ssh="TERM=xterm-256color ssh"
 
 # --server 27
