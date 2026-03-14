@@ -20,6 +20,7 @@ in {
     pkgs.playerctl
     inputs.claude-code.packages.${pkgs.system}.claude-code
     inputs.claude-code.packages.${pkgs.system}.codex
+    inputs.claude-code.packages.${pkgs.system}.opencode
     pkgs.glow
 
     # Voice transcription

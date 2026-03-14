@@ -129,7 +129,8 @@ in
   services.flatpak.enable = true;
 
   services.fwupd.enable = true;
-  services.power-profiles-daemon.enable = true;
+  services.tuned.enable = true;
+  services.tuned.ppdSupport = true;
   services.gvfs.enable = true;
   services.udisks2.enable = true;
   services.locate.enable = true;
