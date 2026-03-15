@@ -7,111 +7,31 @@
 
 get_summary_prompt() {
 	local lang="$1" has_comments="$2"
-	local section_count
+	local section_count lang_instruction
 
-	if [[ "$lang" == "ru" ]]; then
-		if [[ "$has_comments" == "true" ]]; then
-			section_count="пять"
-		else
-			section_count="четыре"
-		fi
-
-		printf '%s' "ultrathink
-
-Проанализируй транскрипт видео и создай структурированное резюме НА РУССКОМ ЯЗЫКЕ.
-
-КРИТИЧЕСКИ ВАЖНО:
-- Выводи ТОЛЬКО чистый Markdown текст без форматирования терминала
-- ВСЕ ${section_count} секции ОБЯЗАТЕЛЬНЫ — не пропускай ни одну
-- Используй ТОЧНО такие заголовки как указано ниже
-
-Формат (следуй ТОЧНО):
-
-## Резюме
-2-3 предложения с общим обзором содержания видео.
-
-## Заключение
-Расширенные ключевые выводы (4-6 предложений, охватывающих основные идеи и их значение).
-
-## Обсуждаемые темы
-Для КАЖДОЙ темы укажи:
-
-- **Название темы.** Краткое изложение. Вывод по теме.
-- **Название темы.** Краткое изложение. Вывод по теме.
-(перечисли ВСЕ основные темы из видео в таком формате)
-"
-
-		if [[ "$has_comments" == "true" ]]; then
-			cat <<'PROMPT'
-
-## Реакция аудитории 💬
-*Анализ комментариев зрителей:*
-
-**Общее настроение:** [позитивное/смешанное/негативное/критическое]
-
-**Основные темы обсуждения:**
-- **[тема]** — что зрители говорят, насколько это соответствует содержанию видео
-- **[тема]** — что зрители говорят, насколько это соответствует содержанию видео
-
-**Интересные дополнения от зрителей:** (если есть полезная информация в комментариях)
-- [дополнение/уточнение от зрителей]
-
-**Критика и несогласие:** (если зрители выражают несогласие)
-- [с чем не согласны зрители и почему]
-PROMPT
-		fi
-
-		cat <<'PROMPT'
-
-## Мысли робота 🤖
-*Мои личные размышления как ИИ-ассистента:*
-
-**Оценка качества материала:** [твоя оценка полезности и достоверности контента]
-
-**Что выглядит убедительно:**
-- **[утверждение]** — подробное объяснение почему это верно, логическое обоснование, известные исследования или источники подтверждающие это, практические примеры если применимо
-- **[утверждение]** — подробное объяснение почему это верно, логическое обоснование, известные исследования или источники подтверждающие это, практические примеры если применимо
-- ...
-
-**Критика:** (только если есть реальные проблемы по теме)
-- 🔴 **[серьёзная ошибка]** — подробное объяснение почему это неверно, логическое обоснование, контраргументы или источники опровергающие это
-- 🟠 **[умеренная проблема]** — подробное объяснение в чём проблема, почему это важно, как это влияет на выводы
-- 🟡 **[незначительное замечание]** — пояснение что не так и почему стоит обратить внимание
-
-**Неподтверждённые утверждения:** (только если есть сомнительные факты)
-- 🔴 **[вероятно ложное утверждение]** — почему вызывает сомнения, какие факты противоречат, где искать опровержение
-- 🟠 **[требует проверки]** — что именно нужно проверить, какие источники могут подтвердить или опровергнуть
-- 🟡 **[желательно уточнить]** — почему стоит перепроверить, возможные неточности
-
-**Возникшие вопросы:**
-- **[вопрос]** — почему это важно выяснить, как ответ повлияет на понимание темы
-- **[вопрос]** — почему это важно выяснить, как ответ повлияет на понимание темы
-- ...
-
-ВАЖНО:
-- Пиши ВСЁ на русском языке
-- Секция "Мысли робота" ОБЯЗАТЕЛЬНА — дай свою честную критическую оценку
-- НЕ используй цветное форматирование или ANSI коды
-
-Транскрипт:
-PROMPT
-
+	if [[ "$has_comments" == "true" ]]; then
+		section_count="five"
 	else
-		# English prompt
-		if [[ "$has_comments" == "true" ]]; then
-			section_count="five"
-		else
-			section_count="four"
-		fi
+		section_count="four"
+	fi
 
-		printf '%s' "ultrathink
+	if [[ "$lang" == "en" ]]; then
+		lang_instruction="Write ALL content in English."
+	else
+		lang_instruction="Write your ENTIRE response in the language identified by code '${lang}'. Translate ALL section headers and content to that language."
+	fi
 
-Analyze the video transcript and create a structured summary IN ENGLISH.
+	printf '%s' "ultrathink
+
+Analyze the video transcript and create a structured summary.
+
+OUTPUT LANGUAGE: ${lang_instruction}
 
 CRITICAL REQUIREMENTS:
 - Output ONLY plain Markdown text without terminal formatting
 - ALL ${section_count} sections are REQUIRED — do not skip any
-- Use EXACTLY the headers shown below
+- Use EXACTLY the section structure shown below
+- Section headers shown below are in English for reference — translate them to the output language
 
 Format (follow EXACTLY):
 
@@ -129,8 +49,8 @@ For EACH topic provide:
 (list ALL main topics from the video in this format)
 "
 
-		if [[ "$has_comments" == "true" ]]; then
-			cat <<'PROMPT'
+	if [[ "$has_comments" == "true" ]]; then
+		cat <<'PROMPT'
 
 ## Audience Reactions 💬
 *Analysis of viewer comments:*
@@ -147,9 +67,9 @@ For EACH topic provide:
 **Criticism and disagreement:** (if viewers express disagreement)
 - [what viewers disagree with and why]
 PROMPT
-		fi
+	fi
 
-		cat <<'PROMPT'
+	cat <<'PROMPT'
 
 ## Robot Thoughts 🤖
 *These are my personal reflections as an AI assistant:*
@@ -177,39 +97,26 @@ PROMPT
 - ...
 
 IMPORTANT:
-- Write ALL content in English
 - The "Robot Thoughts" section is REQUIRED — provide your honest critical assessment
 - Do NOT use colored formatting or ANSI codes
+- Remember: ALL output must be in the specified language
 
 Transcript:
 PROMPT
-	fi
 }
 
 get_followup_prompt() {
 	local lang="$1" question="$2" transcript_file="$3"
-	local transcript_content
+	local transcript_content lang_instruction
 	transcript_content=$(<"$transcript_file")
 
-	if [[ "$lang" == "ru" ]]; then
-		cat <<PROMPT
-Ты помощник, который отвечает на вопросы о видео на основе его транскрипта.
-
-Правила:
-- Отвечай только на основе информации из транскрипта
-- Если информации нет в транскрипте, честно скажи об этом
-- Будь точен и конкретен
-- Форматируй ответ в Markdown
-
-Транскрипт видео:
-${transcript_content}
-
-Вопрос пользователя: ${question}
-
-Ответ:
-PROMPT
+	if [[ "$lang" == "en" ]]; then
+		lang_instruction="Respond in English."
 	else
-		cat <<PROMPT
+		lang_instruction="Respond in the language identified by code '${lang}'."
+	fi
+
+	cat <<PROMPT
 You are an assistant that answers questions about a video based on its transcript.
 
 Rules:
@@ -217,6 +124,7 @@ Rules:
 - If the information is not in the transcript, honestly say so
 - Be precise and specific
 - Format your response in Markdown
+- ${lang_instruction}
 
 Video transcript:
 ${transcript_content}
@@ -225,7 +133,6 @@ User question: ${question}
 
 Answer:
 PROMPT
-	fi
 }
 
 # ---------------------------------------------------------------------------
@@ -235,7 +142,12 @@ PROMPT
 download_transcript() {
 	local url="$1" vid="$2"
 	local lang last_error="" vtt_file transcript
-	local -a langs
+	local -a langs cookie_args=()
+
+	# Build cookie args if configured
+	if [[ -n "${YTS_COOKIES_BROWSER:-}" ]]; then
+		cookie_args=(--cookies-from-browser "$YTS_COOKIES_BROWSER")
+	fi
 
 	# Split $YTS_SUB_LANGS (comma-separated) into array
 	IFS=',' read -ra langs <<<"$YTS_SUB_LANGS"
@@ -244,7 +156,7 @@ download_transcript() {
 		log "Trying subtitles: $lang"
 
 		# Run yt-dlp; capture exit code without aborting
-		if yt-dlp --write-auto-subs --sub-lang "$lang" --sub-format vtt \
+		if yt-dlp "${cookie_args[@]}" --write-auto-subs --sub-lang "$lang" --sub-format vtt \
 			--skip-download -o "/tmp/$vid" "$url" 2>"/tmp/yts-ytdlp-err-$vid"; then
 			# Success — look for VTT
 			vtt_file=$(find /tmp -maxdepth 1 -name "${vid}*.vtt" -print -quit 2>/dev/null)
@@ -279,12 +191,27 @@ download_transcript() {
 	rm -f "/tmp/yts-ytdlp-err-$vid"
 
 	# All attempts exhausted
-	if [[ "$last_error" == *"429"* ]] || [[ "$last_error" == *"Too Many Requests"* ]]; then
+	if [[ "$last_error" == *"Sign in to confirm"* ]] || [[ "$last_error" == *"not a bot"* ]]; then
+		printf 'YouTube bot detection — try updating browser cookies' >&2
+	elif [[ "$last_error" == *"reloaded"* ]]; then
+		printf 'YouTube session expired — re-login in browser and retry' >&2
+	elif [[ "$last_error" == *"429"* ]] || [[ "$last_error" == *"Too Many Requests"* ]]; then
 		printf 'Rate limited by YouTube' >&2
 	else
 		printf 'No subtitles available for this video' >&2
 	fi
 	return 1
+}
+
+fetch_video_title_fallback() {
+	local url="$1"
+	local encoded_url response title
+
+	encoded_url=$(jq -nr --arg url "$url" '$url|@uri') || return 1
+	response=$(curl -fsSL "https://www.youtube.com/oembed?url=${encoded_url}&format=json" 2>/dev/null) || return 1
+	title=$(printf '%s' "$response" | jq -r '.title // empty') || return 1
+	[[ -n "$title" ]] || return 1
+	printf '%s' "$title"
 }
 
 # ---------------------------------------------------------------------------
@@ -414,23 +341,25 @@ generate_summary() {
 	fi
 
 	# Validate required sections
-	if [[ "$lang" == "ru" ]]; then
-		required_sections=("## Резюме" "## Заключение" "## Обсуждаемые темы" "## Мысли робота")
-	else
+	if [[ "$lang" == "en" ]]; then
 		required_sections=("## Summary" "## Conclusion" "## Topics Discussed" "## Robot Thoughts")
-	fi
-
-	local missing="" section
-	for section in "${required_sections[@]}"; do
-		# Match flexibly: ignore extra spaces/bold markers around heading text
-		local heading_text="${section#\#\# }"
-		if ! printf '%s' "$summary" | grep -qiP "^##\s+\**${heading_text}\**\s*$"; then
-			missing="${missing:+$missing, }$section"
+		local missing="" section
+		for section in "${required_sections[@]}"; do
+			local heading_text="${section#\#\# }"
+			if ! printf '%s' "$summary" | grep -qiP "^##\s+\**${heading_text}\**\s*$"; then
+				missing="${missing:+$missing, }$section"
+			fi
+		done
+		if [[ -n "$missing" ]]; then
+			log "Warning: summary missing sections: $missing — accepting anyway"
 		fi
-	done
-
-	if [[ -n "$missing" ]]; then
-		log "Warning: summary missing sections: $missing — accepting anyway"
+	else
+		# For non-English output, headers are translated — just count them
+		local header_count
+		header_count=$(printf '%s' "$summary" | grep -cP '^\s*##\s' || true)
+		if [[ "$header_count" -lt 3 ]]; then
+			log "Warning: summary has only $header_count section headers (expected at least 4) — accepting anyway"
+		fi
 	fi
 
 	printf '%s' "$summary"
@@ -497,7 +426,22 @@ save_summary() {
 # ---------------------------------------------------------------------------
 
 cmd_summarize() {
-	local url="${1:-}" vid norm_url existing
+	local url="" lang="$YTS_LANG" vid norm_url existing
+
+	# Parse arguments
+	while [[ $# -gt 0 ]]; do
+		case "$1" in
+		-l | --lang)
+			[[ -z "${2:-}" ]] && {
+				printf 'Error: --lang requires a language code\n' >&2
+				return 1
+			}
+			lang="$2"
+			shift 2
+			;;
+		*) url="$1"; shift ;;
+		esac
+	done
 
 	# 1. Get URL from arg, clipboard, or prompt
 	if [[ -z "$url" ]]; then
@@ -544,7 +488,7 @@ cmd_summarize() {
 {
   "videoId": "${vid}",
   "url": "${norm_url}",
-  "outputLanguage": "${YTS_LANG}",
+  "outputLanguage": "${lang}",
   "createdAt": "${created}",
   "youtubeApiKey": "${YTS_YOUTUBE_API_KEY}",
   "fetchComments": ${YTS_FETCH_COMMENTS},
@@ -621,34 +565,39 @@ cmd_worker() {
 
 	# --- Stage: getting_info ---
 	set_stage "$vid" "getting_info" "$title" "$url"
-	local info_output info_err
+	local info_output info_err info_status stderr_content
 	info_err=$(mktemp)
-	if info_output=$(timeout 30 yt-dlp --get-title "$url" 2>"$info_err"); then
-		title=$(printf '%s' "$info_output" | head -1 | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
-		log "Got title: $title"
-	else
-		local stderr_content
-		stderr_content=$(<"$info_err")
-		rm -f "$info_err"
-
-		local user_message
-		if [[ "$stderr_content" == *"unavailable"* ]] || [[ "$info_output" == *"unavailable"* ]]; then
-			user_message="Video not found or unavailable"
-		elif [[ "$stderr_content" == *"Private video"* ]] || [[ "$info_output" == *"Private video"* ]]; then
-			user_message="Video is private"
-		elif [[ "$stderr_content" == *"command not found"* ]]; then
-			user_message="yt-dlp not installed"
-		elif [[ "$stderr_content" == *"getaddrinfo"* ]] || [[ "$stderr_content" == *"ETIMEDOUT"* ]] ||
-			[[ "$stderr_content" == *"Network"* ]] || [[ "$stderr_content" == *"network"* ]]; then
-			user_message="Network error"
-		else
-			user_message="${stderr_content:0:80}"
-		fi
-
-		_worker_fail "$user_message" "getting_info"
-		return 1
+	info_status=0
+	local -a cookie_args=()
+	if [[ -n "${YTS_COOKIES_BROWSER:-}" ]]; then
+		cookie_args=(--cookies-from-browser "$YTS_COOKIES_BROWSER")
 	fi
+	info_output=$(timeout 30 yt-dlp "${cookie_args[@]}" --no-playlist --get-title "$url" 2>"$info_err") || info_status=$?
+	title=$(printf '%s' "$info_output" | awk 'NF { gsub(/^[[:space:]]+|[[:space:]]+$/, ""); print; exit }')
+	stderr_content=$(<"$info_err")
 	rm -f "$info_err"
+
+	if [[ -n "$title" ]]; then
+		log "Got title from yt-dlp: $title"
+	elif title=$(fetch_video_title_fallback "$url"); then
+		log "Got title from oEmbed fallback: $title"
+	elif [[ "$stderr_content" == *"unavailable"* ]] || [[ "$info_output" == *"unavailable"* ]]; then
+		_worker_fail "Video not found or unavailable" "getting_info"
+		return 1
+	elif [[ "$stderr_content" == *"Private video"* ]] || [[ "$info_output" == *"Private video"* ]]; then
+		_worker_fail "Video is private" "getting_info"
+		return 1
+	elif [[ "$stderr_content" == *"command not found"* ]]; then
+		_worker_fail "yt-dlp not installed" "getting_info"
+		return 1
+	elif [[ "$stderr_content" == *"getaddrinfo"* ]] || [[ "$stderr_content" == *"ETIMEDOUT"* ]] ||
+		[[ "$stderr_content" == *"Network"* ]] || [[ "$stderr_content" == *"network"* ]]; then
+		_worker_fail "Network error" "getting_info"
+		return 1
+	else
+		title="$vid"
+		log "Warning: title lookup failed (exit $info_status); using video ID as title"
+	fi
 
 	# --- Stage: downloading_transcript ---
 	set_stage "$vid" "downloading_transcript" "$title" "$url"

@@ -147,7 +147,21 @@ cmd_list() {
 # --- cmd_ask: interactive follow-up Q&A ---
 
 cmd_ask() {
-	local vid="${1:-}"
+	local vid="" lang="$YTS_LANG"
+
+	while [[ $# -gt 0 ]]; do
+		case "$1" in
+		-l | --lang)
+			[[ -z "${2:-}" ]] && {
+				printf 'Error: --lang requires a language code\n' >&2
+				return 1
+			}
+			lang="$2"
+			shift 2
+			;;
+		*) vid="$1"; shift ;;
+		esac
+	done
 
 	if [[ -z "$vid" ]]; then
 		local selected
@@ -178,7 +192,7 @@ cmd_ask() {
 		read -rp "Question (q to quit): " question
 		[[ -z "$question" || "$question" == "q" ]] && break
 
-		prompt=$(get_followup_prompt "$YTS_LANG" "$question" "$transcript_file")
+		prompt=$(get_followup_prompt "$lang" "$question" "$transcript_file")
 		printf '\n'
 		answer=$(printf '%s' "$prompt" | claude --print --no-session-persistence 2>/dev/null)
 		if [[ -n "$answer" ]]; then
@@ -457,7 +471,7 @@ cmd_config() {
 # yts configuration
 # This file is sourced as bash. Set variables as needed.
 
-# Summary language: ru or en
+# Output language (ISO 639-1 code, e.g. en, ru, uk, de, fr, es)
 #YTS_LANG=ru
 
 # YouTube API key for comments (optional)
@@ -471,6 +485,10 @@ cmd_config() {
 
 # Auto-open summary on completion
 #YTS_AUTO_OPEN=false
+
+# Browser for yt-dlp cookies (firefox, chrome, brave, etc.)
+# Append :PROFILE for a specific profile, e.g. firefox:fobos
+#YTS_COOKIES_BROWSER=firefox
 
 # Subtitle languages to try (comma-separated, in order)
 #YTS_SUB_LANGS=en,ru,uk
@@ -492,6 +510,7 @@ DEFAULTCFG
 	printf 'YTS_FETCH_COMMENTS=%s\n' "$YTS_FETCH_COMMENTS"
 	printf 'YTS_MAX_COMMENTS=%s\n' "$YTS_MAX_COMMENTS"
 	printf 'YTS_AUTO_OPEN=%s\n' "$YTS_AUTO_OPEN"
+	printf 'YTS_COOKIES_BROWSER=%s\n' "${YTS_COOKIES_BROWSER:-(not set)}"
 	printf 'YTS_SUB_LANGS=%s\n' "$YTS_SUB_LANGS"
 	printf 'Config file: %s\n' "$YTS_CONFIG_FILE"
 }

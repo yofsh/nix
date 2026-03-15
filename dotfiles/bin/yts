@@ -14,6 +14,7 @@ YTS_YOUTUBE_API_KEY=
 YTS_FETCH_COMMENTS=false
 YTS_MAX_COMMENTS=20
 YTS_AUTO_OPEN=false
+YTS_COOKIES_BROWSER=firefox
 YTS_SUB_LANGS=en,ru,uk
 YTS_CONFIG_FILE="${HOME}/.config/yts/config"
 
@@ -37,9 +38,9 @@ yts - YouTube Summary Manager
 Usage: yts <command> [args]
 
 Commands:
-  summarize, s [URL]    Summarize a YouTube video (background)
-  list, l               Browse summaries (fzf)
-  ask, a [VIDEO_ID]     Ask follow-up questions about a video
+  summarize, s [-l LANG] [URL]   Summarize a YouTube video (background)
+  list, l                        Browse summaries (fzf)
+  ask, a [-l LANG] [VIDEO_ID]    Ask follow-up questions about a video
   transcript, tr [VID]  View raw transcript
   comments, cm [VID]    View/fetch YouTube comments
   status, st            Show active processing jobs
@@ -56,6 +57,10 @@ Keybindings (in list view):
   Ctrl-T    View transcript
   Ctrl-A    Ask follow-up (new terminal)
   Ctrl-R    Retry failed job
+
+Options:
+  -l, --lang LANG   Output language (ISO 639-1 code: en, ru, uk, de, fr, ...)
+                    Overrides YTS_LANG from config. Default: ru
 
 Config: ~/.config/yts/config
 Summaries: ~/Documents/video_summaries/
