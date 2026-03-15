@@ -1,12 +1,15 @@
 import QtQuick
 import Quickshell.Io
 import "../helpers" as Helpers
+import "../config" as AppConfig
 
 Item {
     id: root
     visible: maxBrightnessFile.text().trim() !== ""
     implicitWidth: visible ? blText.implicitWidth + 4 : 0
     implicitHeight: parent ? parent.height : 30
+
+    property string backlightPath: AppConfig.Config.backlight.devicePath
 
     property string displayText: {
         var cur = parseInt(brightnessFile.text().trim()) || 0;
@@ -16,7 +19,7 @@ Item {
 
     FileView {
         id: brightnessFile
-        path: "/sys/class/backlight/intel_backlight/brightness"
+        path: root.backlightPath + "/brightness"
         blockLoading: true
         watchChanges: root.visible
         onFileChanged: this.reload()
@@ -24,7 +27,7 @@ Item {
 
     FileView {
         id: maxBrightnessFile
-        path: "/sys/class/backlight/intel_backlight/max_brightness"
+        path: root.backlightPath + "/max_brightness"
         blockLoading: true
     }
 
@@ -33,8 +36,8 @@ Item {
         anchors.verticalCenter: parent.verticalCenter
         text: root.displayText
         color: Helpers.Colors.backlight
-        font.family: "DejaVuSansM Nerd Font"
-        font.pixelSize: 12
+        font.family: AppConfig.Config.theme.fontFamily
+        font.pixelSize: AppConfig.Config.theme.fontSizeDefault
     }
 
     MouseArea {
@@ -43,10 +46,10 @@ Item {
         property real _scrollAccum: 0
         onClicked: function(mouse) {
             if (mouse.button === Qt.LeftButton) {
-                setProc.command = ["brightnessctl", "set", "15%"];
+                setProc.command = ["brightnessctl", "set", AppConfig.Config.backlight.leftClickValue];
                 setProc.running = true;
             } else {
-                setProc.command = ["brightnessctl", "set", "1%"];
+                setProc.command = ["brightnessctl", "set", AppConfig.Config.backlight.rightClickValue];
                 setProc.running = true;
             }
         }
@@ -54,9 +57,9 @@ Item {
             _scrollAccum += wheel.angleDelta.y;
             if (Math.abs(_scrollAccum) < 120) return;
             if (_scrollAccum > 0) {
-                setProc.command = ["brightnessctl", "set", "5%+"];
+                setProc.command = ["brightnessctl", "set", AppConfig.Config.backlight.scrollStepUp];
             } else {
-                setProc.command = ["brightnessctl", "set", "5%-"];
+                setProc.command = ["brightnessctl", "set", AppConfig.Config.backlight.scrollStepDown];
             }
             _scrollAccum = 0;
             setProc.running = true;

@@ -1,4 +1,5 @@
 import QtQuick
+import "../config" as AppConfig
 
 Item {
     id: root
@@ -8,7 +9,7 @@ Item {
 
     Ping {
         id: pingWidget
-        target: "hermes"
+        target: AppConfig.Config.network.gatewayTarget
         active: root.active
         anchors.fill: parent
     }

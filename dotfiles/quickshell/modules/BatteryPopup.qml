@@ -3,10 +3,12 @@ import Quickshell.Io
 import Quickshell.Wayland
 import QtQuick
 import "../helpers" as Helpers
+import "../components" as Components
+import "../config" as AppConfig
 
 PanelWindow {
     id: root
-    property int barHeight: 22
+    property int barHeight: AppConfig.Config.theme.barHeight
     property bool popupOpen: false
 
     anchors.top: true
@@ -123,7 +125,7 @@ PanelWindow {
             width: parent.width
             height: parent.height
             y: -parent.height
-            opacity: 0.85
+            opacity: AppConfig.Config.theme.surfaceOpacityStrong
 
             states: State {
                 name: "visible"; when: root.popupOpen
@@ -132,18 +134,11 @@ PanelWindow {
 
             transitions: Transition {
                 id: slideAnim
-                NumberAnimation { properties: "y"; duration: 150; easing.type: Easing.OutCubic }
+                NumberAnimation { properties: "y"; duration: AppConfig.Config.theme.popupSlideDuration; easing.type: Easing.OutCubic }
             }
 
-            Item {
+            Components.PopupSurface {
                 anchors.fill: parent
-                clip: true
-                Rectangle {
-                    anchors.fill: parent
-                    anchors.topMargin: -16
-                    color: "#11000000"
-                    radius: 16
-                }
             }
 
             // Header
@@ -160,8 +155,8 @@ PanelWindow {
                     return Math.round(last.pct) + "%" + stateText + "  \u2014  last 3 days";
                 }
                 color: Helpers.Colors.battery
-                font.family: "DejaVuSansM Nerd Font"
-                font.pixelSize: 11
+                font.family: AppConfig.Config.theme.fontFamily
+                font.pixelSize: AppConfig.Config.theme.fontSizeBody
             }
 
             // On-battery time
@@ -173,8 +168,8 @@ PanelWindow {
                 text: root.onBatteryText
                 visible: root.onBatteryText !== ""
                 color: Helpers.Colors.textMuted
-                font.family: "DejaVuSansM Nerd Font"
-                font.pixelSize: 9
+                font.family: AppConfig.Config.theme.fontFamily
+                font.pixelSize: AppConfig.Config.theme.fontSizeXSmall
             }
 
             // Graph
@@ -196,7 +191,7 @@ PanelWindow {
                     var d = root.historyData;
                     if (d.length < 2) {
                         ctx.fillStyle = Helpers.Colors.textMuted;
-                        ctx.font = "11px 'DejaVuSansM Nerd Font'";
+                        ctx.font = AppConfig.Config.theme.fontSizeBody + "px '" + AppConfig.Config.theme.fontFamily + "'";
                         ctx.textAlign = "center";
                         ctx.fillText("no data", width / 2, height / 2);
                         return;
@@ -313,7 +308,7 @@ PanelWindow {
                                      d[hi].state === "fully-charged" ? " \u2713" : "";
                         var label = Math.round(d[hi].pct) + "%" + hState + "  " + hTime;
 
-                        ctx.font = "10px 'DejaVuSansM Nerd Font'";
+                        ctx.font = AppConfig.Config.theme.fontSizeSmall + "px '" + AppConfig.Config.theme.fontFamily + "'";
                         var tw = ctx.measureText(label).width;
                         var tx = hx + 8;
                         if (tx + tw + 8 > w) tx = hx - tw - 16;
@@ -371,8 +366,8 @@ PanelWindow {
                     y: graphCanvas.y + graphCanvas.height - (modelData / 100) * graphCanvas.height - 5
                     text: modelData
                     color: Helpers.Colors.textMuted
-                    font.family: "DejaVuSansM Nerd Font"
-                    font.pixelSize: 8
+                    font.family: AppConfig.Config.theme.fontFamily
+                    font.pixelSize: AppConfig.Config.theme.fontSizeTiny
                 }
             }
 
@@ -385,8 +380,8 @@ PanelWindow {
                     y: graphCanvas.y + graphCanvas.height + 3
                     text: modelData.label
                     color: Helpers.Colors.textMuted
-                    font.family: "DejaVuSansM Nerd Font"
-                    font.pixelSize: 8
+                    font.family: AppConfig.Config.theme.fontFamily
+                    font.pixelSize: AppConfig.Config.theme.fontSizeTiny
                 }
             }
         }

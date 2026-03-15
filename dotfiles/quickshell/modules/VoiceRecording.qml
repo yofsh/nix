@@ -1,6 +1,7 @@
 import QtQuick
 import Quickshell.Io
 import "../helpers" as Helpers
+import "../config" as AppConfig
 
 Item {
     id: root
@@ -27,9 +28,9 @@ Item {
             id: icon
             anchors.verticalCenter: parent.verticalCenter
             text: root.transcribing ? "" : ""
-            color: root.transcribing ? "#ff9800" : Helpers.Colors.mutedRed
-            font.family: "DejaVuSansM Nerd Font"
-            font.pixelSize: 14
+            color: root.transcribing ? Helpers.Colors.cpu : Helpers.Colors.mutedRed
+            font.family: AppConfig.Config.theme.fontFamily
+            font.pixelSize: AppConfig.Config.theme.fontSizeIcon
             Behavior on color { ColorAnimation { duration: 300 } }
 
             SequentialAnimation on opacity {
@@ -83,9 +84,9 @@ Item {
                 id: labelText
                 anchors.verticalCenter: parent.verticalCenter
                 text: "\udb81\udd1f"
-                color: "#ff9800"
-                font.family: "DejaVuSansM Nerd Font"
-                font.pixelSize: 14
+                color: Helpers.Colors.cpu
+                font.family: AppConfig.Config.theme.fontFamily
+                font.pixelSize: AppConfig.Config.theme.fontSizeIcon
             }
         }
     }
@@ -110,12 +111,12 @@ Item {
         command: ["bash", "-c", [
             "rec=false stt=false",
             // Check PID files and verify process is alive; clean up stale ones
-            "for f in /tmp/voice_dictate.pid /tmp/voice_claude.pid /tmp/voice_stream.pid; do",
+            "for f in '" + AppConfig.Config.voice.dictatePidFile + "' '" + AppConfig.Config.voice.claudePidFile + "' '" + AppConfig.Config.voice.streamPidFile + "'; do",
             "  [ -f \"$f\" ] || continue",
             "  if kill -0 $(head -1 \"$f\") 2>/dev/null; then rec=true",
             "  else rm \"$f\"; fi",
             "done",
-            "[ -f /tmp/voice_transcribing ] && stt=true",
+            "[ -f '" + AppConfig.Config.voice.transcribingFlag + "' ] && stt=true",
             "echo $rec $stt"
         ].join("\n")]
         running: true

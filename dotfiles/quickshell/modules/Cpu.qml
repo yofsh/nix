@@ -1,6 +1,7 @@
 import QtQuick
 import Quickshell.Io
 import "../helpers" as Helpers
+import "../config" as AppConfig
 
 Item {
     id: root
@@ -26,9 +27,9 @@ Item {
     property string profileOutput: ""
 
     property color profileColor: {
-        if (profileOutput === "performance") return "#f38ba8";
-        if (profileOutput === "balanced") return "#a6e3a1";
-        if (profileOutput === "power-saver") return "#89b4fa";
+        if (profileOutput === "performance") return AppConfig.Config.cpu.performanceColor;
+        if (profileOutput === "balanced") return AppConfig.Config.cpu.balancedColor;
+        if (profileOutput === "power-saver") return AppConfig.Config.cpu.powerSaverColor;
         return Helpers.Colors.textMuted;
     }
 
@@ -94,19 +95,15 @@ Item {
         Text {
             text: root.currentFreq
             color: root.profileColor
-            font.family: "DejaVuSansM Nerd Font"
-            font.pixelSize: 10
-            style: Text.Outline
-            styleColor: "#000000"
+            font.family: AppConfig.Config.theme.fontFamily
+            font.pixelSize: AppConfig.Config.theme.fontSizeSmall
         }
 
         Text {
             text: root.usagePercent
-            color: "#ffb74d"
-            font.family: "DejaVuSansM Nerd Font"
-            font.pixelSize: 10
-            style: Text.Outline
-            styleColor: "#000000"
+            color: AppConfig.Config.cpu.usageColor
+            font.family: AppConfig.Config.theme.fontFamily
+            font.pixelSize: AppConfig.Config.theme.fontSizeSmall
         }
     }
 
@@ -118,7 +115,9 @@ Item {
         onClicked: {
             var idx = root.profiles.indexOf(root.profileOutput);
             var next = root.profiles[(idx + 1) % root.profiles.length];
-            setProc.command = ["powerprofilesctl", "set", next];
+            setProc.command = ["busctl", "--system", "set-property",
+                "net.hadess.PowerProfiles", "/net/hadess/PowerProfiles",
+                "net.hadess.PowerProfiles", "ActiveProfile", "s", next];
             setProc.running = true;
         }
     }

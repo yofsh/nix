@@ -4,43 +4,44 @@ import Quickshell.Wayland
 import Quickshell.Services.Notifications
 import QtQuick
 import "../helpers" as Helpers
+import "../config" as AppConfig
 
 PanelWindow {
     id: root
-    property int barHeight: 22
-    property string position: "top-left"
-    property int horizontalOffset: 400
-    property int maxEntries: 40
-    property int maxVisible: 20
+    property int barHeight: AppConfig.Config.theme.barHeight
+    property string position: AppConfig.Config.notifications.position
+    property int horizontalOffset: AppConfig.Config.notifications.horizontalOffset
+    property int maxEntries: AppConfig.Config.notifications.maxEntries
+    property int maxVisible: AppConfig.Config.notifications.maxVisible
 
     // --- Theme: Colors ---
-    property color defaultBg: "#cc1a1a1a"
-    property color defaultFg: "#eeeeee"
-    property color dimText: Qt.rgba(1, 1, 1, 0.35)
-    property color mutedText: Qt.rgba(1, 1, 1, 0.5)
-    property color trackBg: Qt.rgba(1, 1, 1, 0.15)
-    property color timeoutBar: "white"
-    property real timeoutBarOpacity: 0.2
+    property color defaultBg: AppConfig.Config.notifications.defaultBg
+    property color defaultFg: AppConfig.Config.notifications.defaultFg
+    property color dimText: AppConfig.Config.notifications.dimText
+    property color mutedText: AppConfig.Config.notifications.mutedText
+    property color trackBg: AppConfig.Config.notifications.trackBg
+    property color timeoutBar: AppConfig.Config.notifications.timeoutBar
+    property real timeoutBarOpacity: AppConfig.Config.notifications.timeoutBarOpacity
 
     // --- Theme: Typography ---
-    property string fontFamily: "DejaVu Sans"
-    property int fontSizeTitle: 12
-    property int fontSizeBody: 11
-    property int fontSizeSmall: 10
-    property int fontSizeMeta: 14
+    property string fontFamily: AppConfig.Config.notifications.fontFamily
+    property int fontSizeTitle: AppConfig.Config.notifications.fontSizeTitle
+    property int fontSizeBody: AppConfig.Config.notifications.fontSizeBody
+    property int fontSizeSmall: AppConfig.Config.notifications.fontSizeSmall
+    property int fontSizeMeta: AppConfig.Config.notifications.fontSizeMeta
 
     // --- Theme: Layout ---
-    property int iconSize: 32
-    property int cardPadding: 8
-    property int cardRadius: 0
-    property int cardSpacing: 6
-    property int actionHeight: 22
-    property int actionRadius: 4
+    property int iconSize: AppConfig.Config.notifications.iconSize
+    property int cardPadding: AppConfig.Config.notifications.cardPadding
+    property int cardRadius: AppConfig.Config.notifications.cardRadius
+    property int cardSpacing: AppConfig.Config.notifications.cardSpacing
+    property int actionHeight: AppConfig.Config.notifications.actionHeight
+    property int actionRadius: AppConfig.Config.notifications.actionRadius
 
     // --- Theme: Animation ---
-    property int animEnter: 200
-    property int animExit: 150
-    property int animSlideOffset: 20
+    property int animEnter: AppConfig.Config.notifications.animEnter
+    property int animExit: AppConfig.Config.notifications.animExit
+    property int animSlideOffset: AppConfig.Config.notifications.animSlideOffset
 
     // Exposed for Bar.qml notification icon
     property int activeCount: visibleCount
@@ -54,10 +55,10 @@ PanelWindow {
     }
 
     exclusionMode: ExclusionMode.Ignore
-    margins.top: barHeight + 4
-    margins.right: 8
+    margins.top: barHeight + AppConfig.Config.theme.spacingSmall
+    margins.right: AppConfig.Config.theme.spacingDefault
     margins.left: screen ? (screen.width - implicitWidth) / 2 + horizontalOffset : horizontalOffset
-    margins.bottom: 8
+    margins.bottom: AppConfig.Config.theme.spacingDefault
     implicitWidth: 400
     implicitHeight: screen ? screen.height - barHeight - 12 : 1400
     visible: true
@@ -524,11 +525,11 @@ PanelWindow {
                         anchors.right: parent.right
                         anchors.top: parent.top
                         anchors.margins: root.cardPadding
-                        spacing: 2
+                        spacing: AppConfig.Config.theme.spacingCompact
 
                         Row {
                             width: parent.width
-                            spacing: 8
+                            spacing: AppConfig.Config.theme.spacingDefault
                             visible: !cardWrapper.notifStyle.hideHeader
 
                             Image {
@@ -553,7 +554,7 @@ PanelWindow {
 
                                 Row {
                                     width: parent.width
-                                    spacing: 6
+                                    spacing: AppConfig.Config.theme.spacingMedium
 
                                     Text {
                                         text: cardWrapper.summary
@@ -621,7 +622,7 @@ PanelWindow {
                         Item { width: 1; height: 4; visible: cardWrapper.hasActions && !cardWrapper.notifStyle.hideActions }
 
                         Row {
-                            spacing: 2
+                            spacing: AppConfig.Config.theme.spacingCompact
                             width: parent.width
                             visible: cardWrapper.hasActions && !cardWrapper.notifStyle.hideActions
                             Repeater {

@@ -4,10 +4,12 @@ import Quickshell.Wayland
 import Quickshell.Services.Pipewire
 import QtQuick
 import "../helpers" as Helpers
+import "../components" as Components
+import "../config" as AppConfig
 
 PanelWindow {
     id: root
-    property int barHeight: 22
+    property int barHeight: AppConfig.Config.theme.barHeight
 
     property bool initialized: false
     property string osdIcon: ""
@@ -53,7 +55,7 @@ PanelWindow {
 
     FileView {
         id: brightnessFile
-        path: "/sys/class/backlight/intel_backlight/brightness"
+        path: AppConfig.Config.backlight.devicePath + "/brightness"
         blockLoading: true
         watchChanges: true
         onFileChanged: this.reload()
@@ -61,7 +63,7 @@ PanelWindow {
 
     FileView {
         id: maxBrightnessFile
-        path: "/sys/class/backlight/intel_backlight/max_brightness"
+        path: AppConfig.Config.backlight.devicePath + "/max_brightness"
         blockLoading: true
     }
 
@@ -113,7 +115,7 @@ PanelWindow {
             width: parent.width
             height: parent.height
             y: -parent.height
-            opacity: 0.8
+            opacity: AppConfig.Config.theme.surfaceOpacity
 
             states: State {
                 name: "visible"; when: root.osdVisible
@@ -122,31 +124,23 @@ PanelWindow {
 
             transitions: Transition {
                 id: slideAnim
-                NumberAnimation { properties: "y"; duration: 150; easing.type: Easing.OutCubic }
+                NumberAnimation { properties: "y"; duration: AppConfig.Config.theme.popupSlideDuration; easing.type: Easing.OutCubic }
             }
 
-            Item {
+            Components.PopupSurface {
                 anchors.fill: parent
-                clip: true
-
-                Rectangle {
-                    anchors.fill: parent
-                    anchors.topMargin: -16
-                    color: "#11000000"
-                    radius: 16
-                }
             }
 
             Row {
                 anchors.centerIn: parent
-                spacing: 8
+                spacing: AppConfig.Config.theme.spacingDefault
 
                 Text {
                     anchors.verticalCenter: parent.verticalCenter
                     text: root.osdIcon
                     color: root.osdColor
-                    font.family: "DejaVuSansM Nerd Font"
-                    font.pixelSize: 14
+                    font.family: AppConfig.Config.theme.fontFamily
+                    font.pixelSize: AppConfig.Config.theme.fontSizeIcon
                 }
 
                 Item {
@@ -176,8 +170,8 @@ PanelWindow {
                     anchors.verticalCenter: parent.verticalCenter
                     text: Math.round(root.osdValue * 100)
                     color: root.osdColor
-                    font.family: "DejaVuSansM Nerd Font"
-                    font.pixelSize: 12
+                    font.family: AppConfig.Config.theme.fontFamily
+                    font.pixelSize: AppConfig.Config.theme.fontSizeDefault
                 }
             }
         }

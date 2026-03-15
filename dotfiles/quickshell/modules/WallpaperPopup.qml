@@ -2,11 +2,11 @@ import Quickshell
 import Quickshell.Io
 import Quickshell.Wayland
 import QtQuick
-import "../helpers" as Helpers
+import "../config" as AppConfig
 
 PanelWindow {
     id: root
-    property int barHeight: 22
+    property int barHeight: AppConfig.Config.theme.barHeight
     property bool popupOpen: false
 
     anchors.top: true
@@ -22,7 +22,7 @@ PanelWindow {
     WlrLayershell.namespace: "quickshell-wallpaper"
     WlrLayershell.keyboardFocus: popupOpen ? WlrKeyboardFocus.Exclusive : WlrKeyboardFocus.None
 
-    signal closed()
+    signal dismissed()
 
     property var wallpapers: []
     property string currentWallpaper: ""
@@ -50,7 +50,7 @@ PanelWindow {
         originalWallpaper = path;
         applyProc.wallpaperPath = path;
         applyProc.running = true;
-        closed();
+        dismissed();
     }
 
     function revertAndClose() {
@@ -58,7 +58,7 @@ PanelWindow {
             previewWallpaper(originalWallpaper);
             currentWallpaper = originalWallpaper;
         }
-        closed();
+        dismissed();
     }
 
     function moveSelection(delta) {
@@ -81,7 +81,7 @@ PanelWindow {
 
     Process {
         id: scanProc
-        command: ["bash", "-c", "find ~/pics/wallpapers -type f \\( -name '*.jpg' -o -name '*.png' -o -name '*.webp' \\) -printf '%T@\\t%p\\n'"]
+        command: ["bash", "-c", "find \"" + AppConfig.Config.wallpaper.directory + "\" -type f \\( -name '*.jpg' -o -name '*.png' -o -name '*.webp' \\) -printf '%T@\\t%p\\n'"]
         running: false
         stdout: StdioCollector {
             onStreamFinished: {
@@ -101,7 +101,7 @@ PanelWindow {
 
     Process {
         id: currentProc
-        command: ["bash", "-c", "readlink -f ~/.current-wallpaper"]
+        command: ["bash", "-c", "readlink -f \"" + AppConfig.Config.wallpaper.currentLink + "\""]
         running: false
         stdout: StdioCollector {
             onStreamFinished: {
@@ -128,7 +128,7 @@ PanelWindow {
     Process {
         id: previewProc
         property string wallpaperPath: ""
-        command: ["swww", "img", wallpaperPath, "--resize", "crop", "--transition-type", "any", "--transition-duration", "0.4", "--transition-fps", "240"]
+        command: ["swww", "img", wallpaperPath, "--resize", "crop", "--transition-type", AppConfig.Config.wallpaper.previewTransitionType, "--transition-duration", AppConfig.Config.wallpaper.previewTransitionDuration, "--transition-fps", AppConfig.Config.wallpaper.previewTransitionFps]
         running: false
     }
 
@@ -203,7 +203,7 @@ PanelWindow {
 
                         Rectangle {
                             anchors.fill: parent
-                            radius: 8
+                            radius: AppConfig.Config.theme.cardRadiusSmall
                             color: Qt.rgba(1, 1, 1, 0.05)
                             visible: thumb.status !== Image.Ready
                         }
@@ -229,7 +229,7 @@ PanelWindow {
                             root.originalWallpaper = entry.path;
                             applyProc.wallpaperPath = entry.path;
                             applyProc.running = true;
-                            root.closed();
+                            root.dismissed();
                         }
                     }
                 }

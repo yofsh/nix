@@ -5,10 +5,12 @@ import Quickshell.Hyprland
 import Quickshell.Services.Polkit
 import QtQuick
 import "../helpers" as Helpers
+import "../components" as Components
+import "../config" as AppConfig
 
 PanelWindow {
     id: root
-    property int barHeight: 22
+    property int barHeight: AppConfig.Config.theme.barHeight
     readonly property bool active: agent.isActive
 
     property string polkitState: "hidden" // "fingerprint", "password", "success"
@@ -179,24 +181,23 @@ PanelWindow {
 
             states: State {
                 name: "visible"; when: root.popupVisible
-                PropertyChanges { target: popupContent; opacity: 0.8 }
+                PropertyChanges { target: popupContent; opacity: AppConfig.Config.theme.surfaceOpacity }
             }
 
             transitions: Transition {
                 id: fadeAnim
-                NumberAnimation { property: "opacity"; duration: 150; easing.type: Easing.OutCubic }
+                NumberAnimation { property: "opacity"; duration: AppConfig.Config.theme.popupSlideDuration; easing.type: Easing.OutCubic }
             }
 
-            Rectangle {
+            Components.PopupSurface {
                 anchors.fill: parent
-                color: "#11000000"
-                radius: 16
+                topBleed: 0
             }
 
             Column {
                 id: contentCol
                 anchors.centerIn: parent
-                spacing: 8
+                spacing: AppConfig.Config.theme.spacingDefault
                 width: parent.width - 48
 
                 // Header icon
@@ -204,8 +205,8 @@ PanelWindow {
                     anchors.horizontalCenter: parent.horizontalCenter
                     text: root.polkitState === "success" ? "\udb81\udd65" : "\uf023"
                     color: root.polkitState === "success" ? Helpers.Colors.fingerprintOk : Helpers.Colors.textDefault
-                    font.family: "DejaVuSansM Nerd Font"
-                    font.pixelSize: 28
+                    font.family: AppConfig.Config.theme.fontFamily
+                    font.pixelSize: AppConfig.Config.theme.fontSizeHero
 
                     Behavior on color { ColorAnimation { duration: 200 } }
                 }
@@ -216,8 +217,8 @@ PanelWindow {
                     anchors.horizontalCenter: parent.horizontalCenter
                     text: agent.flow ? agent.flow.message : ""
                     color: Helpers.Colors.textMuted
-                    font.family: "DejaVuSansM Nerd Font"
-                    font.pixelSize: 11
+                    font.family: AppConfig.Config.theme.fontFamily
+                    font.pixelSize: AppConfig.Config.theme.fontSizeBody
                     horizontalAlignment: Text.AlignHCenter
                     wrapMode: Text.WordWrap
                     maximumLineCount: 2
@@ -228,7 +229,7 @@ PanelWindow {
                 // --- Fingerprint section ---
                 Column {
                     anchors.horizontalCenter: parent.horizontalCenter
-                    spacing: 4
+                    spacing: AppConfig.Config.theme.spacingSmall
                     visible: root.polkitState === "fingerprint"
 
                     Text {
@@ -240,8 +241,8 @@ PanelWindow {
                             if (root.fpVisual === "retry" || root.fpVisual === "failed") return Helpers.Colors.fingerprintFail
                             return Helpers.Colors.textDefault
                         }
-                        font.family: "DejaVuSansM Nerd Font"
-                        font.pixelSize: 36
+                        font.family: AppConfig.Config.theme.fontFamily
+                        font.pixelSize: AppConfig.Config.theme.fontSizeDisplay
 
                         Behavior on color { ColorAnimation { duration: 200 } }
                     }
@@ -255,8 +256,8 @@ PanelWindow {
                             return "Scan finger"
                         }
                         color: fingerprintIcon.color
-                        font.family: "DejaVuSansM Nerd Font"
-                        font.pixelSize: 14
+                        font.family: AppConfig.Config.theme.fontFamily
+                        font.pixelSize: AppConfig.Config.theme.fontSizeIcon
                         font.bold: true
                     }
                 }
@@ -265,7 +266,7 @@ PanelWindow {
                 Column {
                     id: passwordSection
                     anchors.horizontalCenter: parent.horizontalCenter
-                    spacing: 6
+                    spacing: AppConfig.Config.theme.spacingMedium
                     visible: root.polkitState === "password"
                     width: parent.width
 
@@ -284,8 +285,8 @@ PanelWindow {
                             anchors.rightMargin: 10
                             verticalAlignment: TextInput.AlignVCenter
                             color: Helpers.Colors.textDefault
-                            font.family: "DejaVuSansM Nerd Font"
-                            font.pixelSize: 13
+                            font.family: AppConfig.Config.theme.fontFamily
+                            font.pixelSize: AppConfig.Config.theme.fontSizeMedium
                             echoMode: agent.flow && agent.flow.responseVisible ? TextInput.Normal : TextInput.Password
                             clip: true
 
@@ -298,8 +299,8 @@ PanelWindow {
                         width: parent.width
                         text: agent.flow && agent.flow.supplementaryMessage ? agent.flow.supplementaryMessage : ""
                         color: Helpers.Colors.fingerprintFail
-                        font.family: "DejaVuSansM Nerd Font"
-                        font.pixelSize: 11
+                        font.family: AppConfig.Config.theme.fontFamily
+                        font.pixelSize: AppConfig.Config.theme.fontSizeBody
                         horizontalAlignment: Text.AlignHCenter
                         visible: text !== ""
                         wrapMode: Text.WordWrap
@@ -311,8 +312,8 @@ PanelWindow {
                     anchors.horizontalCenter: parent.horizontalCenter
                     text: "Authenticated"
                     color: Helpers.Colors.fingerprintOk
-                    font.family: "DejaVuSansM Nerd Font"
-                    font.pixelSize: 14
+                    font.family: AppConfig.Config.theme.fontFamily
+                    font.pixelSize: AppConfig.Config.theme.fontSizeIcon
                     font.bold: true
                     visible: root.polkitState === "success"
                 }

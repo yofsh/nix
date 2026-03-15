@@ -1,37 +1,67 @@
 import QtQuick
 import Quickshell.Io
-import Quickshell.Services.Mpris
 import "../helpers" as Helpers
+import "../config" as AppConfig
 
 Item {
     id: root
     implicitWidth: iconText.implicitWidth + artWrapper.width + infoWrapper.width + 4
     implicitHeight: parent ? parent.height : 30
-    visible: root.player !== null
+    visible: root.playerName !== ""
     clip: true
 
-    property MprisPlayer player: Mpris.players.values.length > 0 ? Mpris.players.values[0] : null
+    property string playerName: ""
+    property string playStatus: ""
+    property string trackArtist: ""
+    property string trackTitle: ""
+    property string artUrl: ""
+    property int trackLengthMicros: 0
+    property real trackPositionSeconds: 0
     property bool hovered: false
-    property real progress: (player && player.positionSupported && player.lengthSupported && player.length > 0)
-        ? Math.max(0, Math.min(1, player.position / player.length)) : -1
+    property bool isPlaying: root.playStatus === "Playing"
+    property real progress: root.trackLengthMicros > 0
+        ? Math.max(0, Math.min(1, (root.trackPositionSeconds * 1000000) / root.trackLengthMicros)) : -1
 
-    Timer {
-        interval: 1000
-        running: root.player !== null && root.player.isPlaying
-        repeat: true
-        onTriggered: root.progressChanged()
+    function clearPlayer() {
+        root.playerName = "";
+        root.playStatus = "";
+        root.trackArtist = "";
+        root.trackTitle = "";
+        root.artUrl = "";
+        root.trackLengthMicros = 0;
+        root.trackPositionSeconds = 0;
+        root.hovered = false;
     }
 
+    function refresh() {
+        if (!infoProc.running)
+            infoProc.running = true;
+    }
+
+    Timer {
+        interval: root.playerName !== "" ? 1000 : 3000
+        running: true
+        repeat: true
+        onTriggered: root.refresh()
+    }
+
+    Timer {
+        id: refreshDelay
+        interval: 150
+        onTriggered: root.refresh()
+    }
+
+    Component.onCompleted: root.refresh()
+
     property string displayText: {
-        if (!player) return "";
-        return player.isPlaying ? " 󰏤 " : " 󰐊 ";
+        if (!root.playerName) return "";
+        return root.isPlaying ? " " + String.fromCodePoint(0xF03E4) + " " : " " + String.fromCodePoint(0xF040A) + " ";
     }
 
     property string trackInfo: {
-        if (!player) return "";
         var parts = [];
-        if (player.trackArtist) parts.push(player.trackArtist);
-        if (player.trackTitle) parts.push(player.trackTitle);
+        if (root.trackArtist) parts.push(root.trackArtist);
+        if (root.trackTitle) parts.push(root.trackTitle);
         return parts.join(" - ");
     }
 
@@ -60,14 +90,11 @@ Item {
         }
     }
 
-    property string artUrl: player && player.trackArtUrl ? player.trackArtUrl : ""
-
-    // Hidden text to measure target width without binding loop
     Text {
         id: infoMeasure
         text: root.trackInfo
-        font.family: "DejaVuSansM Nerd Font"
-        font.pixelSize: 12
+        font.family: AppConfig.Config.theme.fontFamily
+        font.pixelSize: AppConfig.Config.theme.fontSizeDefault
         visible: false
     }
 
@@ -81,7 +108,7 @@ Item {
             anchors.verticalCenter: parent.verticalCenter
             text: root.displayText
             color: Helpers.Colors.media
-            font.family: "DejaVuSansM Nerd Font"
+            font.family: AppConfig.Config.theme.fontFamily
             font.pixelSize: 15
         }
 
@@ -97,7 +124,6 @@ Item {
             }
 
             Image {
-                id: artImage
                 source: root.artUrl
                 width: parent.height
                 height: parent.height
@@ -124,8 +150,8 @@ Item {
                 anchors.leftMargin: 4
                 text: root.trackInfo
                 color: Helpers.Colors.media
-                font.family: "DejaVuSansM Nerd Font"
-                font.pixelSize: 12
+                font.family: AppConfig.Config.theme.fontFamily
+                font.pixelSize: AppConfig.Config.theme.fontSizeDefault
             }
         }
     }
@@ -134,34 +160,74 @@ Item {
         anchors.fill: parent
         hoverEnabled: true
         acceptedButtons: Qt.LeftButton | Qt.RightButton | Qt.MiddleButton
-        property real _scrollAccum: 0
+        property real scrollAccum: 0
 
         onEntered: root.hovered = true
         onExited: root.hovered = false
 
         onClicked: function(mouse) {
-            if (!root.player) return;
+            if (!root.playerName) return;
             if (mouse.button === Qt.LeftButton) {
-                root.player.togglePlaying();
+                controlProc.command = ["playerctl", "-s", "-p", root.playerName, "play-pause"];
+                controlProc.running = true;
             } else if (mouse.button === Qt.RightButton) {
-                root.player.next();
+                controlProc.command = ["playerctl", "-s", "-p", root.playerName, "next"];
+                controlProc.running = true;
             } else if (mouse.button === Qt.MiddleButton) {
-                var q = root.player.trackArtist + " - " + root.player.trackTitle;
+                var q = root.trackArtist + " - " + root.trackTitle;
                 geniusProc.command = ["xdg-open", "https://genius.com/search?q=" + encodeURIComponent(q)];
                 geniusProc.running = true;
             }
         }
 
         onWheel: function(wheel) {
-            if (!root.player || !root.player.canSeek) return;
-            _scrollAccum += wheel.angleDelta.y;
-            if (Math.abs(_scrollAccum) < 120) return;
-            if (_scrollAccum > 0)
-                root.player.seek(3);
-            else
-                root.player.seek(-3);
-            _scrollAccum = 0;
+            if (!root.playerName || root.trackLengthMicros <= 0) return;
+            scrollAccum += wheel.angleDelta.y;
+            if (Math.abs(scrollAccum) < 120) return;
+            controlProc.command = ["playerctl", "-s", "-p", root.playerName, "position", scrollAccum > 0 ? "3+" : "3-"];
+            scrollAccum = 0;
+            controlProc.running = true;
         }
+    }
+
+    Process {
+        id: infoProc
+        command: ["bash", "-c", [
+            "PLAYER=$(playerctl -s -l 2>/dev/null | grep -v '^playerctld$' | head -n 1)",
+            "[ -n \"$PLAYER\" ] || exit 0",
+            "STATUS=$(playerctl -s -p \"$PLAYER\" status 2>/dev/null || true)",
+            "ARTIST=$(playerctl -s -p \"$PLAYER\" metadata --format '{{artist}}' 2>/dev/null || true)",
+            "TITLE=$(playerctl -s -p \"$PLAYER\" metadata --format '{{title}}' 2>/dev/null || true)",
+            "ART=$(playerctl -s -p \"$PLAYER\" metadata --format '{{mpris:artUrl}}' 2>/dev/null || true)",
+            "LEN=$(playerctl -s -p \"$PLAYER\" metadata --format '{{mpris:length}}' 2>/dev/null || true)",
+            "POS=$(playerctl -s -p \"$PLAYER\" position 2>/dev/null || true)",
+            "printf '%s\\n%s\\n%s\\n%s\\n%s\\n%s\\n%s\\n' \"$PLAYER\" \"$STATUS\" \"$ARTIST\" \"$TITLE\" \"$ART\" \"$LEN\" \"$POS\""
+        ].join("\n")]
+        running: false
+
+        stdout: StdioCollector {
+            onStreamFinished: {
+                var lines = this.text.split("\n");
+                if (lines.length < 7 || lines[0].trim() === "") {
+                    root.clearPlayer();
+                    return;
+                }
+                root.playerName = lines[0].trim();
+                root.playStatus = lines[1].trim();
+                root.trackArtist = lines[2].trim();
+                root.trackTitle = lines[3].trim();
+                root.artUrl = lines[4].trim();
+                root.trackLengthMicros = parseInt(lines[5].trim()) || 0;
+                root.trackPositionSeconds = parseFloat(lines[6].trim()) || 0;
+            }
+        }
+    }
+
+    Process {
+        id: controlProc
+        command: []
+        running: false
+        onExited: refreshDelay.restart()
     }
 
     Process {

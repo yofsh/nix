@@ -6,23 +6,14 @@ import Quickshell.Wayland
 import QtQuick
 import "modules" as Modules
 import "helpers" as Helpers
+import "components" as Components
+import "config" as AppConfig
+import "state" as AppState
 
 Scope {
     id: root
-    property bool networkPinned: false
-    property bool wallpaperPopupOpen: false
 
-    Modules.PolkitPopup { id: polkitPopup; barHeight: 22 }
-
-    IpcHandler {
-        target: "network"
-        function toggle(): void { root.networkPinned = !root.networkPinned; }
-    }
-
-    IpcHandler {
-        target: "wallpaper"
-        function toggle(): void { root.wallpaperPopupOpen = !root.wallpaperPopupOpen; }
-    }
+    Modules.PolkitPopup { id: polkitPopup; barHeight: AppConfig.Config.theme.barHeight }
 
     Variants {
         model: Quickshell.screens
@@ -45,7 +36,7 @@ Scope {
 
             margins.top: 0
             color: "transparent"
-            implicitHeight: 22
+            implicitHeight: AppConfig.Config.theme.barHeight
 
             Process {
                 id: keybindsProc
@@ -67,8 +58,8 @@ Scope {
             Text {
                 id: comboMeasure
                 visible: false
-                font.family: "DejaVuSansM Nerd Font"
-                font.pixelSize: 12
+                font.family: AppConfig.Config.theme.fontFamily
+                font.pixelSize: AppConfig.Config.theme.fontSizeDefault
                 font.bold: true
             }
 
@@ -114,18 +105,18 @@ Scope {
                 anchors.centerIn: parent
                 width: barRow.implicitWidth + 16
                 height: parent.height
-                opacity: 0.8
+                opacity: AppConfig.Config.theme.surfaceOpacity
 
                 Rectangle {
                     anchors.fill: parent
-                    color: "#11000000"
-                    radius: 16
+                    color: AppConfig.Config.theme.surfaceColor
+                    radius: AppConfig.Config.theme.surfaceRadius
                 }
 
                 Row {
                     id: barRow
                     anchors.centerIn: parent
-                    spacing: 8
+                    spacing: AppConfig.Config.theme.spacingDefault
                     height: parent.height
 
                     Modules.WindowTitle { screen: barWindow.screen }
@@ -136,7 +127,7 @@ Scope {
                     Modules.Media {}
                     Modules.Backlight {}
                     Modules.Volume {}
-                    Modules.Network { id: networkModule; pinned: root.networkPinned }
+                    Modules.Network { id: networkModule; pinned: AppState.ShellState.networkPinned }
                     Modules.PingGw { active: networkModule.pingActive }
                     Modules.Ping { active: networkModule.pingActive }
                     Modules.Memory {}
@@ -168,13 +159,13 @@ Scope {
                 id: wallpaperPopup
                 screen: barWindow.screen
                 barHeight: barWindow.implicitHeight
-                popupOpen: root.wallpaperPopupOpen
-                onClosed: root.wallpaperPopupOpen = false
+                popupOpen: AppState.ShellState.wallpaperPopupOpen
+                onDismissed: AppState.ShellState.closeWallpaperPopup()
             }
 
             HyprlandFocusGrab {
                 windows: [barWindow, wallpaperPopup]
-                active: root.wallpaperPopupOpen
+                active: AppState.ShellState.wallpaperPopupOpen
                 onCleared: wallpaperPopup.revertAndClose()
             }
 
@@ -198,7 +189,7 @@ Scope {
                         width: parent.width
                         height: parent.height
                         y: -parent.height
-                        opacity: 0.8
+                        opacity: AppConfig.Config.theme.surfaceOpacity
 
                         states: State {
                             name: "visible"; when: barWindow.submapName !== ""
@@ -207,54 +198,46 @@ Scope {
 
                         transitions: Transition {
                             id: submapAnim
-                            NumberAnimation { properties: "y"; duration: 150; easing.type: Easing.OutCubic }
+                            NumberAnimation { properties: "y"; duration: AppConfig.Config.theme.popupSlideDuration; easing.type: Easing.OutCubic }
                         }
 
-                        Item {
+                        Components.PopupSurface {
                             anchors.fill: parent
-                            clip: true
-
-                            Rectangle {
-                                anchors.fill: parent
-                                anchors.topMargin: -16
-                                color: "#11000000"
-                                radius: 16
-                            }
                         }
 
                         Column {
                             id: submapPopupCol
                             anchors.centerIn: parent
-                            spacing: 2
+                            spacing: AppConfig.Config.theme.spacingCompact
 
                             Text {
                                 id: submapLabel
                                 anchors.horizontalCenter: parent.horizontalCenter
                                 text: barWindow.submapName
                                 color: Helpers.Colors.textDefault
-                                font.family: "DejaVuSansM Nerd Font"
-                                font.pixelSize: 12
+                                font.family: AppConfig.Config.theme.fontFamily
+                                font.pixelSize: AppConfig.Config.theme.fontSizeDefault
                                 font.bold: true
                             }
 
                             Repeater {
                                 model: barWindow.submapBinds
                                 Row {
-                                    spacing: 8
+                                    spacing: AppConfig.Config.theme.spacingDefault
                                     Text {
                                         width: barWindow.submapComboWidth
                                         horizontalAlignment: Text.AlignRight
                                         text: modelData.combo
                                         color: Helpers.Colors.textDefault
-                                        font.family: "DejaVuSansM Nerd Font"
-                                        font.pixelSize: 12
+                                        font.family: AppConfig.Config.theme.fontFamily
+                                        font.pixelSize: AppConfig.Config.theme.fontSizeDefault
                                         font.bold: true
                                     }
                                     Text {
                                         text: modelData.desc
                                         color: Helpers.Colors.textMuted
-                                        font.family: "DejaVuSansM Nerd Font"
-                                        font.pixelSize: 12
+                                        font.family: AppConfig.Config.theme.fontFamily
+                                        font.pixelSize: AppConfig.Config.theme.fontSizeDefault
                                     }
                                 }
                             }

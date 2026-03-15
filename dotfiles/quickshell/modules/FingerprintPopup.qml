@@ -3,10 +3,12 @@ import Quickshell.Io
 import Quickshell.Wayland
 import QtQuick
 import "../helpers" as Helpers
+import "../components" as Components
+import "../config" as AppConfig
 
 PanelWindow {
     id: root
-    property int barHeight: 22
+    property int barHeight: AppConfig.Config.theme.barHeight
     property bool polkitActive: false
 
     // States: "hidden", "prompt", "success", "failure", "timeout"
@@ -169,7 +171,7 @@ PanelWindow {
             width: parent.width
             height: parent.height
             y: -parent.height
-            opacity: 0.8
+            opacity: AppConfig.Config.theme.surfaceOpacity
 
             states: State {
                 name: "visible"; when: root.popupVisible
@@ -178,32 +180,24 @@ PanelWindow {
 
             transitions: Transition {
                 id: slideAnim
-                NumberAnimation { properties: "y"; duration: 150; easing.type: Easing.OutCubic }
+                NumberAnimation { properties: "y"; duration: AppConfig.Config.theme.popupSlideDuration; easing.type: Easing.OutCubic }
             }
 
-            Item {
+            Components.PopupSurface {
                 anchors.fill: parent
-                clip: true
-
-                Rectangle {
-                    anchors.fill: parent
-                    anchors.topMargin: -16
-                    color: "#11000000"
-                    radius: 16
-                }
             }
 
             Column {
                 anchors.centerIn: parent
-                spacing: 4
+                spacing: AppConfig.Config.theme.spacingSmall
 
                 Text {
                     id: iconText
                     anchors.horizontalCenter: parent.horizontalCenter
                     text: root.displayIcon
                     color: root.displayColor
-                    font.family: "DejaVuSansM Nerd Font"
-                    font.pixelSize: 48
+                    font.family: AppConfig.Config.theme.fontFamily
+                    font.pixelSize: AppConfig.Config.theme.fontSizeDisplayLarge
 
                     Behavior on color {
                         ColorAnimation { duration: 200 }
@@ -214,8 +208,8 @@ PanelWindow {
                     anchors.horizontalCenter: parent.horizontalCenter
                     text: root.displayText
                     color: root.displayColor
-                    font.family: "DejaVuSansM Nerd Font"
-                    font.pixelSize: 24
+                    font.family: AppConfig.Config.theme.fontFamily
+                    font.pixelSize: AppConfig.Config.theme.fontSizeTitleLarge
                     font.bold: true
 
                     Behavior on color {
