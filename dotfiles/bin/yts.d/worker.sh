@@ -139,6 +139,23 @@ PROMPT
 # Transcript downloading
 # ---------------------------------------------------------------------------
 
+download_transcript_ytapi() {
+	local vid="$1"
+	local lang_csv="$YTS_SUB_LANGS"
+
+	YTS_VID="$vid" YTS_LANGS="$lang_csv" \
+		nix-shell -p 'python3.withPackages(ps: [ps.youtube-transcript-api])' --run '
+			python3 -c "
+import os, sys
+from youtube_transcript_api import YouTubeTranscriptApi
+vid = os.environ[\"YTS_VID\"]
+langs = os.environ[\"YTS_LANGS\"].split(\",\")
+api = YouTubeTranscriptApi()
+t = api.fetch(vid, languages=langs)
+print(\" \".join(s.text for s in t.snippets))
+"' 2>/dev/null
+}
+
 download_transcript() {
 	local url="$1" vid="$2"
 	local lang last_error="" vtt_file transcript
@@ -157,7 +174,7 @@ download_transcript() {
 
 		# Run yt-dlp; capture exit code without aborting
 		if yt-dlp "${cookie_args[@]}" --write-auto-subs --sub-lang "$lang" --sub-format vtt \
-			--skip-download -o "/tmp/$vid" "$url" 2>"/tmp/yts-ytdlp-err-$vid"; then
+			--skip-download -o "/tmp/$vid" "$url" >/dev/null 2>"/tmp/yts-ytdlp-err-$vid"; then
 			# Success — look for VTT
 			vtt_file=$(find /tmp -maxdepth 1 -name "${vid}*.vtt" -print -quit 2>/dev/null)
 			if [[ -n "$vtt_file" ]]; then
@@ -189,6 +206,17 @@ download_transcript() {
 	done
 
 	rm -f "/tmp/yts-ytdlp-err-$vid"
+
+	# yt-dlp failed — try youtube-transcript-api as fallback
+	log "yt-dlp subtitle download failed, trying youtube-transcript-api fallback"
+	local api_transcript
+	if api_transcript=$(download_transcript_ytapi "$vid"); then
+		if [[ -n "$api_transcript" ]]; then
+			log "Got transcript via youtube-transcript-api"
+			printf '%s' "$api_transcript"
+			return 0
+		fi
+	fi
 
 	# All attempts exhausted
 	if [[ "$last_error" == *"Sign in to confirm"* ]] || [[ "$last_error" == *"not a bot"* ]]; then
