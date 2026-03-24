@@ -18,6 +18,10 @@ ec() {
 alias cc="claude --dangerously-skip-permissions"
 alias ccc="nix run github:numtide/llm-agents.nix#claude-code -- --dangerously-skip-permissions"
 
+
+alias ccs="cd ~/servant/ && claude --dangerously-skip-permissions"
+alias ccn="cd ~/nix/ && claude --dangerously-skip-permissions"
+
 alias ai="aichat"
 alias aic="aichat --role %code%"
 

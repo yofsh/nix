@@ -1,0 +1,11 @@
+[ui]
+use_nerd_font_icons = true
+
+[ui.input_bar]
+border_type = "none"
+
+[ui.results_panel]
+border_type = "none"
+
+[ui.preview_panel]
+border_type = "none"

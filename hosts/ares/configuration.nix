@@ -10,8 +10,10 @@
     ./../../modules/fingerprint.nix
     ./../../modules/zenpower5.nix
     ./../../modules/syncthing.nix
+    ./../../modules/transmission.nix
   ];
   networking.hostName = "ares";
+  networking.interfaces.enp113s0.wakeOnLan.enable = true;
 
   hardware.mediatek-mt7927 = {
     enable = true;
@@ -22,9 +24,14 @@
 
   hardware.zenpower5.enable = true;
 
+  # MT7925/MT7927 WiFi tuning — disable CLC region-based Tx power caps
+  boot.extraModprobeConfig = ''
+    options mt7925-common disable_clc=1
+  '';
+
   # NCT6799D Super I/O chip - fan speed monitoring
   boot.kernelModules = [ "nct6775" ];
   boot.kernelParams = [ "acpi_enforce_resources=lax" "pcie_aspm=off" ];
 
-  environment.systemPackages = [ pkgs.android-tools ];
+  environment.systemPackages = [ pkgs.android-tools pkgs.hyperhdr pkgs.monique ];
 }

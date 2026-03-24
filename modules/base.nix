@@ -60,6 +60,7 @@
     qrencode
     zoxide
     fzf
+    television
     exiftool
     lshw
     pngquant

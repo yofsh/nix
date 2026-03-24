@@ -1,0 +1,65 @@
+#!/usr/bin/env bash
+# Outputs active privacy-sensitive resources: MIC, CAM, SCREEN
+# Format: MIC:app1,app2\nCAM:app1\nSCREEN:app1
+
+tmpdir=$(mktemp -d)
+trap 'rm -rf "$tmpdir"' EXIT
+
+# --- Microphone (background) ---
+(
+    # Collect voice script PIDs to exclude (VoiceRecording.qml handles those)
+    voice_pids=""
+    for f in /tmp/voice_*.pid; do
+        [ -f "$f" ] || continue
+        pid=$(head -1 "$f" 2>/dev/null)
+        [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null && voice_pids="${voice_pids:+$voice_pids|}$pid"
+    done
+
+    # Single jq call: filter uncorked non-monitor streams, exclude voice PIDs
+    pactl -f json list source-outputs 2>/dev/null | jq -r --arg vpids "$voice_pids" '
+        ($vpids | split("|")) as $exclude |
+        [.[] | select(.corked == false) |
+         select((.properties."stream.monitor" // "") != "true") |
+         select((.properties."application.process.id" // "") as $pid |
+                ($exclude | index($pid)) | not) |
+         .properties."application.name" // empty] | unique | join(",")
+    ' 2>/dev/null > "$tmpdir/mic"
+) &
+
+# --- Camera (background) ---
+(
+    pids=$(fuser /dev/video* 2>/dev/null | tr -s ' ' '\n' | sort -u)
+    names=""
+    for pid in $pids; do
+        name=$(tr '\0' '\n' < "/proc/$pid/cmdline" 2>/dev/null | head -1)
+        name=$(basename "$name" 2>/dev/null)
+        [ -n "$name" ] && names="${names:+$names,}$name"
+    done
+    echo "$names" | tr ',' '\n' | sort -u | paste -sd, > "$tmpdir/cam"
+) &
+
+# --- Screen share (background) ---
+(
+    pw-dump 2>/dev/null | jq -r '
+        ([.[] | select(.info.props."media.class" == "Video/Source") |
+          select(.info.props."node.name" // "" | test("xdg-desktop-portal")) |
+          .id]) as $portal_ids |
+        if ($portal_ids | length) == 0 then "" else
+        [.[] | select(.info.props."media.class" == "Stream/Input/Video") |
+         select((.info.props."node.target" // .info.props."node.driver-id") as $t |
+                $portal_ids | index($t)) |
+         .info.props."node.name" // empty] | unique | join(",")
+        end
+    ' 2>/dev/null > "$tmpdir/screen"
+) &
+
+wait
+
+# --- Output ---
+mic=$(<"$tmpdir/mic")
+cam=$(<"$tmpdir/cam")
+screen=$(<"$tmpdir/screen")
+
+[ -n "$mic" ] && echo "MIC:$mic"
+[ -n "$cam" ] && echo "CAM:$cam"
+[ -n "$screen" ] && echo "SCREEN:$screen"

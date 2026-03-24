@@ -123,6 +123,7 @@ Scope {
                     Modules.Workspaces {}
                     // Modules.WfRecorder {}
                     Modules.VoiceRecording {}
+                    Modules.PrivacyIndicators {}
                     Modules.Yts {}
                     Modules.Media {}
                     Modules.Backlight {}

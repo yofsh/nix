@@ -11,8 +11,8 @@ WINDOW = 1024  # FFT size (15.6 Hz per bin)
 HOP = 512  # hop size → ~30fps
 BANDS = 24
 
-# 25 logarithmically spaced edges from 80Hz to 7800Hz
-_lo, _hi = 80, 7800
+# 25 logarithmically spaced edges from 60Hz to 800Hz (speech fundamentals)
+_lo, _hi = 60, 800
 EDGES = [int(_lo * (_hi / _lo) ** (i / BANDS)) for i in range(BANDS + 1)]
 
 try:

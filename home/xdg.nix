@@ -18,6 +18,14 @@
     "audio/*" = ["mpv.desktop"];
     "video/*" = ["mpv.desktop"];
     "image/*" = ["imv.desktop"];
+    "image/png" = ["imv.desktop"];
+    "image/jpeg" = ["imv.desktop"];
+    "image/gif" = ["imv.desktop"];
+    "image/webp" = ["imv.desktop"];
+    "image/bmp" = ["imv.desktop"];
+    "image/tiff" = ["imv.desktop"];
+    "image/svg+xml" = ["imv.desktop"];
+    "image/avif" = ["imv.desktop"];
     "application/json" = browser;
     "application/pdf" = browser;
     "x-scheme-handler/tg" = ["telegramdesktop.desktop"];

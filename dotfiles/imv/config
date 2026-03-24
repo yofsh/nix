@@ -1,0 +1,5 @@
+[options]
+overlay = true
+overlay_font = Noto Sans:14
+overlay_position_bottom = true
+overlay_text = [$imv_current_index/$imv_file_count] [${imv_width}x${imv_height}] [$imv_scale] $imv_current_file [$imv_scaling_mode] $(imv-exif "$imv_current_file")

@@ -160,11 +160,11 @@ keymap = [
 ]
 
 append_keymap = [
-	{ on = "W", run = "shell 'wallpaper set \"$@\"' --block", desc = "Set wallpaper" },
+	{ on = "W", run = "shell 'wallpaper set %s' --block", desc = "Set wallpaper" },
 	{ on = "!", run = "shell '$SHELL' --confirm --block", desc = "Run shell here" },
-	{ on = "C", run = "shell 'cd \"$(dirname \"$1\")\"; items=\"\"; for f in \"$@\"; do items=\"$items $(basename \"$f\")\"; done; eval zip -r -9 archive.zip $items' --block", desc = "Compress selected files to zip (max compression)" },
-	{ on = "E", run = "shell 'ya pub extract --list \"$@\"' --block", desc = "Extract archive here" },
-	{ on = "I", run = "shell 'echo \"Output: <name>_001.jpg, <name>_002.jpg, ...\"; read -p \"Name: \" name && img-convert \"$name\" \"$@\"' --block", desc = "Convert images to JPEG (4K, stripped)" },
+	{ on = "C", run = "shell 'cd \"$(dirname %h)\"; items=\"\"; for f in %s; do items=\"$items $(basename \"$f\")\"; done; eval zip -r -9 archive.zip $items' --block", desc = "Compress selected files to zip (max compression)" },
+	{ on = "E", run = "shell 'ya pub extract --list %s' --block", desc = "Extract archive here" },
+	{ on = "I", run = "shell 'read -p \"Name (Enter for folder name): \" name; img-convert \"$name\" %s' --block", desc = "Convert images to JPEG (4K, stripped)" },
 ]
 
 [tasks]

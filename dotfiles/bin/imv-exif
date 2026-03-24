@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+file="$1"
+[[ -z "$file" ]] && exit 0
+
+cache_dir="/tmp/imv-exif-cache"
+mkdir -p "$cache_dir"
+cache_key=$(printf '%s' "$file" | md5sum | cut -d' ' -f1)
+cache_file="$cache_dir/$cache_key"
+
+if [[ -f "$cache_file" ]]; then
+  cat "$cache_file"
+  exit 0
+fi
+
+out=""
+while IFS= read -r line; do
+  [[ -n "$line" ]] && out+="$line | "
+done < <(exiftool -p '$Model' -p '${FocalLength}' -p 'f/$Aperture' -p '${ExposureTime}s' -p 'ISO $ISO' -p '$DateTimeOriginal' "$file" 2>/dev/null)
+
+[[ -n "$out" ]] && out="// ${out%| }"
+printf '%s' "$out" > "$cache_file"
+echo "$out"

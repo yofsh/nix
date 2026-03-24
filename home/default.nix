@@ -97,6 +97,8 @@ in
     "hypr".source = link "${dotfiles}/hypr";
     "wiremix".source = link "${dotfiles}/wiremix";
     "quickshell".source = link "${dotfiles}/quickshell";
+    "imv".source = link "${dotfiles}/imv";
+    "television".source = link "${dotfiles}/television";
     "mpv/mpv.conf".source = link "${dotfiles}/mpv/mpv.conf";
     "zellij".source = link "${dotfiles}/zellij";
 

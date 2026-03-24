@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
 # Convert images to JPEG, scale to max 2K, strip EXIF
-# Usage: img-convert <name> <file>...
+# Supports archives (zip, tar.gz, rar, 7z) — extracts images first
+# Usage: img-convert <name> <file|archive>...
 
 set -euo pipefail
 
-name="${1:?Usage: img-convert <name> <file>...}"
+name="${1:-}"
 shift
 
 if [ $# -eq 0 ]; then
@@ -12,17 +13,77 @@ if [ $# -eq 0 ]; then
 	exit 1
 fi
 
-total=$#
 dir="$(dirname "$1")"
+files=()
+tmpdir=""
+archive=""
+
+# Check if input is an archive
+is_archive() {
+	case "${1,,}" in
+		*.zip|*.tar.gz|*.tgz|*.tar.bz2|*.tbz2|*.tar.xz|*.txz|*.tar|*.rar|*.7z) return 0 ;;
+		*) return 1 ;;
+	esac
+}
+
+# Strip all extensions from archive name (e.g. photos.tar.gz -> photos)
+archive_stem() {
+	local base
+	base="$(basename "$1")"
+	base="${base%%.*}"
+	echo "$base"
+}
+
+if [ $# -eq 1 ] && is_archive "$1"; then
+	archive="$1"
+	tmpdir="$(mktemp -d)"
+	echo "Extracting $(basename "$archive")..."
+
+	case "${archive,,}" in
+		*.tar.gz|*.tgz|*.tar.bz2|*.tbz2|*.tar.xz|*.txz|*.tar) tar xf "$archive" -C "$tmpdir" ;;
+		*) nix-shell -p p7zip --run "7z x -o'$tmpdir' -bso0 '$archive'" ;;
+	esac
+
+	# Collect image files from extracted contents
+	while IFS= read -r -d '' f; do
+		files+=("$f")
+	done < <(find "$tmpdir" -type f \( -iname '*.jpg' -o -iname '*.jpeg' -o -iname '*.png' -o -iname '*.webp' -o -iname '*.heic' -o -iname '*.heif' -o -iname '*.tiff' -o -iname '*.tif' -o -iname '*.bmp' -o -iname '*.avif' \) -print0 | sort -z)
+
+	if [ ${#files[@]} -eq 0 ]; then
+		echo "No images found in archive" >&2
+		rm -rf "$tmpdir"
+		exit 1
+	fi
+
+	if [ -z "$name" ]; then
+		name="$(archive_stem "$archive")"
+	fi
+
+	echo "Found ${#files[@]} image(s)"
+	echo
+else
+	# Regular image files
+	for f in "$@"; do
+		files+=("$f")
+	done
+
+	if [ -z "$name" ]; then
+		# Use first file's name without extension as default
+		name="$(basename "${files[0]}")"
+		name="${name%.*}"
+	fi
+fi
+
 outdir="$dir/$name"
 mkdir -p "$outdir"
 
+total=${#files[@]}
 echo "Converting $total image(s) → $outdir/"
 echo "Output: ${name}_001.jpg, ${name}_002.jpg, ..."
 echo
 
 count=0
-for f in "$@"; do
+for f in "${files[@]}"; do
 	count=$((count + 1))
 	out="$outdir/${name}_$(printf '%03d' $count).jpg"
 	echo "[$count/$total] $(basename "$f") → $(basename "$out")"
@@ -32,6 +93,11 @@ done
 echo
 echo "Done. $count image(s) saved to $outdir/"
 
+# Clean up temp dir from archive extraction
+if [ -n "$tmpdir" ]; then
+	rm -rf "$tmpdir"
+fi
+
 printf "\nDelete original files? [y/N] "
 read -r answer
 if [[ "$answer" =~ ^[Yy]$ ]]; then
@@ -40,10 +106,15 @@ if [[ "$answer" =~ ^[Yy]$ ]]; then
 	else
 		del="rm"
 	fi
-	for f in "$@"; do
-		$del "$f"
-		echo "Deleted $(basename "$f")"
-	done
+	if [ -n "$archive" ]; then
+		$del "$archive"
+		echo "Deleted $(basename "$archive")"
+	else
+		for f in "${files[@]}"; do
+			$del "$f"
+			echo "Deleted $(basename "$f")"
+		done
+	fi
 fi
 
 notify-send "img-convert" "Converted $count image(s) to $outdir"
