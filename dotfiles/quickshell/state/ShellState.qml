@@ -6,6 +6,7 @@ Scope {
     id: root
 
     property bool networkPinned: false
+    property bool pingActive: false
     property bool wallpaperPopupOpen: false
 
     function openWallpaperPopup() {
@@ -29,6 +30,14 @@ Scope {
 
         function unpin() {
             root.networkPinned = false;
+        }
+    }
+
+    IpcHandler {
+        target: "ping"
+
+        function toggle() {
+            root.pingActive = !root.pingActive;
         }
     }
 

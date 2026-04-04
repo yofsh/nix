@@ -5,7 +5,7 @@ import "../config" as AppConfig
 
 Item {
     id: root
-    implicitWidth: iconText.implicitWidth + artWrapper.width + infoWrapper.width + 4
+    implicitWidth: iconText.implicitWidth + artWrapper.width + infoWrapper.width
     implicitHeight: parent ? parent.height : 30
     visible: root.playerName !== ""
     clip: true
@@ -67,7 +67,7 @@ Item {
 
     Rectangle {
         anchors.fill: parent
-        radius: 8
+        radius: 0
         color: root.progress >= 0 ? Qt.rgba(1, 1, 1, 0.08) : (root.hovered ? Qt.rgba(0.047, 0.686, 0.286, 0.15) : "transparent")
         clip: true
 
@@ -80,7 +80,7 @@ Item {
             anchors.top: parent.top
             anchors.bottom: parent.bottom
             width: root.progress >= 0 ? parent.width * root.progress : 0
-            radius: parent.radius
+            radius: 0
             color: Qt.rgba(0.047, 0.686, 0.286, 0.25)
             visible: root.progress >= 0
 

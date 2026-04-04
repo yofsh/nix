@@ -128,14 +128,14 @@ PanelWindow {
     Process {
         id: previewProc
         property string wallpaperPath: ""
-        command: ["swww", "img", wallpaperPath, "--resize", "crop", "--transition-type", AppConfig.Config.wallpaper.previewTransitionType, "--transition-duration", AppConfig.Config.wallpaper.previewTransitionDuration, "--transition-fps", AppConfig.Config.wallpaper.previewTransitionFps]
+        command: ["awww", "img", wallpaperPath, "--resize", "crop", "--transition-type", AppConfig.Config.wallpaper.previewTransitionType, "--transition-duration", AppConfig.Config.wallpaper.previewTransitionDuration, "--transition-fps", AppConfig.Config.wallpaper.previewTransitionFps]
         running: false
     }
 
     Process {
         id: applyProc
         property string wallpaperPath: ""
-        command: ["wallpaper", "-s", "set", wallpaperPath]
+        command: ["bash", "-c", "wallpaper -s set \"$1\"", "--", wallpaperPath]
         running: false
     }
 

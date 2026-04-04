@@ -1,6 +1,7 @@
 import QtQuick
 import Quickshell.Io
 import "../helpers" as Helpers
+import "../state" as AppState
 
 Item {
     id: root
@@ -17,7 +18,7 @@ Item {
     property real txRateNum: 0
     property bool hovered: false
     property bool pinned: false
-    property bool pingActive: false
+    property bool pingActive: AppState.ShellState.pingActive
     property bool expanded: hovered || pinned
     onPinnedChanged: if (pinned) infoProc.running = true
     property string netInfo: ""
@@ -371,7 +372,7 @@ Item {
     MouseArea {
         anchors.fill: parent
         hoverEnabled: true
-        onClicked: root.pingActive = !root.pingActive
+        onClicked: AppState.ShellState.pingActive = !AppState.ShellState.pingActive
         onEntered: {
             root.hovered = true;
             infoProc.running = true;

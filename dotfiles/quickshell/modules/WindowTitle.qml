@@ -33,8 +33,8 @@ Item {
         }
 
         // Truncate to 20 chars
-        if (title.length > 20) {
-            title = title.substring(0, 20) + "…";
+        if (title.length > 26) {
+            title = title.substring(0, 26) + "…";
         }
 
         return title;
@@ -46,7 +46,7 @@ Item {
 
         Item {
             anchors.left: parent.left
-            anchors.leftMargin: 20
+            anchors.leftMargin: 0
             anchors.verticalCenter: parent.verticalCenter
             width: 200
             height: parent.height

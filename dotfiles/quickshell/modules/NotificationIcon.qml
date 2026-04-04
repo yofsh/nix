@@ -3,7 +3,7 @@ import "../helpers" as Helpers
 
 Item {
     id: root
-    implicitWidth: notifText.implicitWidth + 12
+    implicitWidth: notifText.implicitWidth
     implicitHeight: parent ? parent.height : 30
 
     property int count: 0

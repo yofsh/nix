@@ -127,7 +127,6 @@ Scope {
                     Modules.Yts {}
                     Modules.Media {}
                     Modules.Backlight {}
-                    Modules.Volume {}
                     Modules.Network { id: networkModule; pinned: AppState.ShellState.networkPinned }
                     Modules.PingGw { active: networkModule.pingActive }
                     Modules.Ping { active: networkModule.pingActive }
@@ -141,6 +140,7 @@ Scope {
                     Modules.HeadsetBattery {}
                     Modules.Language {}
                     Modules.NotificationIcon { count: notifPopup.activeCount; dnd: notifPopup.dnd; onDndChanged: notifPopup.dnd = dnd }
+                    Modules.Volume {}
                     Modules.SysTray {}
                 }
             }
