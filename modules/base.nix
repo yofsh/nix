@@ -3,7 +3,10 @@
   imports = [ ./networking.nix ./shell.nix ];
 
   nixpkgs.config = { allowUnfree = true; };
-  nix.settings.experimental-features = [ "nix-command" "flakes" ];
+  nix.settings = {
+    experimental-features = [ "nix-command" "flakes" ];
+    trusted-users = [ "root" "@wheel" ];
+  };
 
   boot.tmp.useTmpfs = true;
 

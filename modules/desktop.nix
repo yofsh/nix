@@ -65,7 +65,7 @@ in
     hyprlock
     hypridle
     # hyprpaper
-    swww
+    awww
     brightnessctl
     ddcutil
     xdg-desktop-portal-hyprland
@@ -114,6 +114,7 @@ in
   boot.kernelModules = [ "i2c-dev" ];
   hardware.i2c.enable = true;
 
+  security.pam.services.hyprlock = {};
   security.polkit.enable = true;
   services.fstrim.enable = true;
   security.rtkit.enable = true;

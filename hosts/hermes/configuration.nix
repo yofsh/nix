@@ -27,6 +27,7 @@
         bind_hosts = [ "0.0.0.0" ];
         port = 53;
         upstream_dns = [
+          "[/lan/]192.168.8.1"
           "https://dns.cloudflare.com/dns-query"
           "https://dns.google/dns-query"
         ];

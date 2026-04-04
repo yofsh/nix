@@ -2,7 +2,6 @@
 
   environment.systemPackages = [
     pkgs.nvtopPackages.nvidia
-    (pkgs.whisper-cpp.override { cudaSupport = true; })
   ];
 
   services.xserver.videoDrivers = [ "nvidia" ];
@@ -17,17 +16,11 @@
 
   hardware.nvidia = {
     modesetting.enable = true;
-    powerManagement.enable = true;
+    powerManagement.enable = false;
     powerManagement.finegrained = false;
     open = true;
     nvidiaSettings = true;
     package = config.boot.kernelPackages.nvidiaPackages.stable;
-  };
-
-  # Ollama with NVIDIA GPU acceleration
-  services.ollama = {
-    enable = true;
-    package = pkgs.ollama-cuda;
   };
 
   # Docker with NVIDIA Container Toolkit (CDI)
