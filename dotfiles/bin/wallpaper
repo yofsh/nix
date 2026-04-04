@@ -1,10 +1,5 @@
 #!/usr/bin/env bash
 
-UNSPLASH_ACCESS_KEY=$(< /run/secrets/unsplash-key 2>/dev/null)
-if [ -z "$UNSPLASH_ACCESS_KEY" ]; then
-	echo "Error: Unsplash API key not found at /run/secrets/unsplash-key" >&2
-	exit 1
-fi
 WALLPAPER_DIR="$HOME/pics/wallpapers"
 HISTORY="/tmp/wallpaper_history"
 POS="/tmp/wallpaper_pos"
@@ -22,8 +17,8 @@ if ! read -r WIDTH _ < <(hyprctl monitors -j | jq -r 'max_by(.width * .height) |
 	WIDTH=1920
 fi
 
-# Ensure swww daemon is running
-pgrep -x swww-daemon >/dev/null || swww-daemon 2>/dev/null &
+# Ensure awww daemon is running
+pgrep -x awww-daemon >/dev/null || awww-daemon 2>/dev/null &
 
 # Notification helper: notify <urgency> <icon> <title> [body]
 notify() {
@@ -56,7 +51,7 @@ local_info() {
 }
 
 _apply() {
-	swww img "$1" --resize crop --transition-type any --transition-duration 0.4 --transition-fps 240
+	awww img "$1" --resize crop --transition-type any --transition-duration 0.4 --transition-fps 240
 	ln -sf "$1" "$HOME/.current-wallpaper"
 }
 
@@ -77,8 +72,15 @@ download_one() {
 	local query="$1"
 	local dest="$2"
 
+	local access_key
+	access_key=$(cat /run/secrets/unsplash-key 2>/dev/null)
+	if [ -z "$access_key" ]; then
+		DL_ERROR="Unsplash API key not found at /run/secrets/unsplash-key"
+		return 1
+	fi
+
 	local headers_file="/tmp/wallpaper_headers_$$"
-	local url="https://api.unsplash.com/photos/random?client_id=${UNSPLASH_ACCESS_KEY}&orientation=landscape"
+	local url="https://api.unsplash.com/photos/random?client_id=${access_key}&orientation=landscape"
 	local encoded_query http_status err_msg api_errors
 	if [ -n "$query" ]; then
 		encoded_query=$(printf '%s' "$query" | jq -sRr @uri)
@@ -227,7 +229,7 @@ case "$1" in
 	;;
 "auto")
 	# Auto-rotate wallpapers (daemon mode)
-	pgrep -x swww-daemon >/dev/null || swww-daemon 2>/dev/null &
+	pgrep -x awww-daemon >/dev/null || awww-daemon 2>/dev/null &
 	sleep 1
 	# Restore last wallpaper if available
 	if [ -L "$HOME/.current-wallpaper" ] && [ -f "$HOME/.current-wallpaper" ]; then
