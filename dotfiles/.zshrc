@@ -322,6 +322,8 @@ function _showbuffers() {
 zle -N showbuffers _showbuffers
 bindkey "^[o" showbuffers
 
+chpwd() { echo "$PWD" > ~/.cache/last-dir }
+
 eval "$(starship init zsh)"
 eval "$(zoxide init zsh)"
 
