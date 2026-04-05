@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+# Generate wallpaper thumbnails for QuickShell gallery
+# Usage: wallpaper-thumbs <directory> [width]
+# Outputs: original_path\tthumb_path per file
+
+DIR="$1"
+WIDTH="${2:-600}"
+CACHE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/quickshell/wallpaper-thumbs"
+mkdir -p "$CACHE_DIR"
+
+find "$DIR" -type f \( -name '*.jpg' -o -name '*.png' -o -name '*.webp' \) -print0 | \
+while IFS= read -r -d '' path; do
+    hash=$(printf '%s' "$path" | md5sum | cut -d' ' -f1)
+    thumb="${CACHE_DIR}/${hash}.jpg"
+    if [[ -f "$thumb" && "$thumb" -nt "$path" ]]; then
+        printf '%s\t%s\n' "$path" "$thumb"
+        continue
+    fi
+    magick "$path" -thumbnail "${WIDTH}x" -quality 80 "$thumb" 2>/dev/null && \
+        printf '%s\t%s\n' "$path" "$thumb"
+done

@@ -25,6 +25,7 @@ PanelWindow {
     signal dismissed()
 
     property var wallpapers: []
+    property var thumbMap: ({})
     property string currentWallpaper: ""
     property string originalWallpaper: ""
     property int selectedIndex: -1
@@ -33,6 +34,7 @@ PanelWindow {
         if (popupOpen) {
             scanProc.running = true;
             currentProc.running = true;
+            thumbGenProc.running = true;
         } else {
             selectedIndex = -1;
         }
@@ -139,6 +141,24 @@ PanelWindow {
         running: false
     }
 
+    Process {
+        id: thumbGenProc
+        command: ["bash", "-c", "wallpaper-thumbs \"" + AppConfig.Config.wallpaper.directory + "\" 600"]
+        running: false
+        stdout: StdioCollector {
+            onStreamFinished: {
+                var map = {};
+                var lines = this.text.trim().split("\n");
+                for (var i = 0; i < lines.length; i++) {
+                    var parts = lines[i].split("\t");
+                    if (parts.length >= 2)
+                        map[parts[0]] = parts[1];
+                }
+                root.thumbMap = map;
+            }
+        }
+    }
+
     Item {
         anchors.fill: parent
         focus: true
@@ -211,7 +231,7 @@ PanelWindow {
                         Image {
                             id: thumb
                             anchors.fill: parent
-                            source: "file://" + entry.path
+                            source: "file://" + (root.thumbMap[entry.path] || entry.path)
                             sourceSize.width: Math.round(root.cardWidth * 1.3)
                             asynchronous: true
                             fillMode: Image.PreserveAspectCrop

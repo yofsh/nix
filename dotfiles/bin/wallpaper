@@ -244,6 +244,11 @@ case "$1" in
 		now=$(date +%s)
 		age=$((now - last_change))
 		if [ "$age" -ge "$interval" ]; then
+			# Skip if screen is locked
+			if loginctl show-session "$(loginctl show-user "$USER" -p Display --value)" -p LockedHint --value 2>/dev/null | grep -q "yes"; then
+				sleep 30
+				continue
+			fi
 			wallpaper -s next
 			sleep 30
 		else
