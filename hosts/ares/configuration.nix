@@ -11,6 +11,7 @@
     ./../../modules/zenpower5.nix
     ./../../modules/syncthing.nix
     ./../../modules/transmission.nix
+    ./../../modules/mt7927.nix
   ];
   networking.hostName = "ares";
   networking.interfaces.enp113s0.wakeOnLan.enable = true;
@@ -31,7 +32,11 @@
 
   # NCT6799D Super I/O chip - fan speed monitoring
   boot.kernelModules = [ "nct6775" ];
-  boot.kernelParams = [ "acpi_enforce_resources=lax" "pcie_aspm=off" ];
+  boot.kernelParams = [
+    "acpi_enforce_resources=lax"
+    "pcie_aspm=off"
+    "cfg80211.ieee80211_regdom=DE" # 6GHz needs persistent regdom, not beacon hints
+  ];
 
   environment.systemPackages = [ pkgs.android-tools pkgs.hyperhdr pkgs.monique ];
 }
