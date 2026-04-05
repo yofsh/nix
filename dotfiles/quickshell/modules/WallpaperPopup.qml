@@ -188,37 +188,33 @@ PanelWindow {
                 anchors.fill: parent
                 anchors.margins: 8
                 orientation: ListView.Vertical
-                spacing: 28
+                spacing: 8
                 clip: true
                 model: root.wallpapers.length
                 currentIndex: root.selectedIndex
 
-                preferredHighlightBegin: (height - root.cardHeight) / 2
-                preferredHighlightEnd: (height + root.cardHeight) / 2
+                preferredHighlightBegin: (height - root.cardHeight * 1.3) / 2
+                preferredHighlightEnd: (height + root.cardHeight * 1.3) / 2
                 highlightRangeMode: ListView.StrictlyEnforceRange
-                highlightMoveDuration: 250
+                highlightMoveDuration: 0
                 cacheBuffer: 5000
 
                 delegate: Item {
                     id: card
                     required property int index
                     width: gallery.width
-                    height: root.cardHeight
+                    height: isFocused ? root.cardHeight * 1.3 : root.cardHeight * 0.7
 
                     property var entry: root.wallpapers[index]
                     property bool isFocused: index === root.selectedIndex
 
                     z: isFocused ? 2 : (cardMouse.containsMouse ? 1.5 : 1)
-                    scale: isFocused ? 1.3 : (cardMouse.containsMouse ? 1.08 : 1.0)
-
-                    Behavior on scale {
-                        NumberAnimation { duration: 200; easing.type: Easing.OutCubic }
-                    }
+                    scale: cardMouse.containsMouse && !isFocused ? 1.05 : 1.0
 
                     Item {
                         anchors.centerIn: parent
-                        width: root.cardWidth
-                        height: root.cardHeight
+                        width: parent.height * root.screenRatio
+                        height: parent.height
                         clip: true
 
                         Rectangle {
@@ -265,10 +261,12 @@ PanelWindow {
                 color: Qt.rgba(1, 1, 1, 0.2)
                 visible: gallery.contentHeight > gallery.height
 
+                property real trackHeight: gallery.height * 0.8
+                property real trackOffset: gallery.y + gallery.height * 0.1
                 property real scrollRatio: gallery.contentY / (gallery.contentHeight - gallery.height)
 
                 height: 40
-                y: gallery.y + scrollRatio * (gallery.height - height)
+                y: trackOffset + scrollRatio * (trackHeight - height)
             }
         }
     }
