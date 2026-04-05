@@ -6,12 +6,14 @@ import "../helpers" as Helpers
 
 Item {
     id: root
-    implicitWidth: 220
+    implicitWidth: hovered ? Math.max(212, titleText.implicitWidth + 12) : 212
     implicitHeight: parent ? parent.height : 30
 
     property var screen: null
 
-    property string displayTitle: {
+    property bool hovered: false
+
+    property string fullTitle: {
         var toplevel = Hyprland.activeToplevel;
         if (!toplevel) return "";
 
@@ -19,7 +21,6 @@ Item {
         if (root.screen) {
             var mon = Hyprland.monitorFor(root.screen);
             if (mon && mon.activeWorkspace) {
-                // If the focused workspace is not on our monitor, show nothing
                 var fMon = Hyprland.focusedMonitor;
                 if (fMon && fMon.id !== mon.id) return "";
             }
@@ -32,12 +33,14 @@ Item {
             title = title.replace(" — Mozilla Firefox", "") + " - 🌎";
         }
 
-        // Truncate to 20 chars
-        if (title.length > 26) {
-            title = title.substring(0, 26) + "…";
-        }
-
         return title;
+    }
+
+    property string displayTitle: {
+        if (root.hovered) return root.fullTitle;
+        if (root.fullTitle.length > 32)
+            return root.fullTitle.substring(0, 32);
+        return root.fullTitle;
     }
 
     Item {
@@ -54,19 +57,23 @@ Item {
             Text {
                 id: titleText
                 anchors.verticalCenter: parent.verticalCenter
-                width: 200
+                width: root.hovered ? implicitWidth : 200
                 text: root.displayTitle
                 color: Helpers.Colors.windowTitle
-                font.family: "DejaVuSansM Nerd Font"
+                font.family: "DejaVu Sans"
                 font.pixelSize: 12
-                elide: Text.ElideRight
+                elide: Text.ElideNone
+                clip: true
             }
         }
     }
 
     MouseArea {
         anchors.fill: parent
+        hoverEnabled: true
         acceptedButtons: Qt.LeftButton | Qt.RightButton | Qt.MiddleButton
+        onEntered: root.hovered = true
+        onExited: root.hovered = false
         onClicked: function(mouse) {
             if (mouse.button === Qt.LeftButton) {
                 copyProc.command = ["bash", "-c", "VAR=$(hyprctl activewindow -j | jq -r .title) && wl-copy \"$VAR\" && notify-send -u low -t 2000 'Window title' \"$VAR\""];

@@ -113,7 +113,7 @@ Item {
 
             Item {
                 required property var modelData
-                width: Math.max(24, wsLabel.implicitWidth + 4)
+                width: Math.max(18, wsLabel.implicitWidth + 2)
                 height: root.height
 
                 Rectangle {
@@ -133,10 +133,12 @@ Item {
 
                 Text {
                     id: wsLabel
-                    anchors.centerIn: parent
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    anchors.verticalCenter: parent.verticalCenter
+                    anchors.verticalCenterOffset: modelData.isSpecial ? 1 : 0
                     text: modelData.label
                     font.family: "DejaVuSansM Nerd Font"
-                    font.pixelSize: 12
+                    font.pixelSize: modelData.isSpecial ? 14 : 13
                     font.bold: true
                     horizontalAlignment: Text.AlignHCenter
                     color: {

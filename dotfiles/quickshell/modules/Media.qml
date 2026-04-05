@@ -18,6 +18,7 @@ Item {
     property int trackLengthMicros: 0
     property real trackPositionSeconds: 0
     property bool hovered: false
+    property bool expanded: false
     property bool isPlaying: root.playStatus === "Playing"
     property real progress: root.trackLengthMicros > 0
         ? Math.max(0, Math.min(1, (root.trackPositionSeconds * 1000000) / root.trackLengthMicros)) : -1
@@ -68,7 +69,7 @@ Item {
     Rectangle {
         anchors.fill: parent
         radius: 0
-        color: root.progress >= 0 ? Qt.rgba(1, 1, 1, 0.08) : (root.hovered ? Qt.rgba(0.047, 0.686, 0.286, 0.15) : "transparent")
+        color: root.progress >= 0 ? Qt.rgba(1, 1, 1, 0.08) : (root.expanded ? Qt.rgba(0.047, 0.686, 0.286, 0.15) : "transparent")
         clip: true
 
         Behavior on color {
@@ -116,7 +117,7 @@ Item {
             id: artWrapper
             anchors.verticalCenter: parent.verticalCenter
             height: root.implicitHeight
-            width: root.hovered && root.artUrl !== "" ? height : 0
+            width: root.expanded && root.artUrl !== "" ? height : 0
             clip: true
 
             Behavior on width {
@@ -136,7 +137,7 @@ Item {
             id: infoWrapper
             anchors.verticalCenter: parent.verticalCenter
             height: infoText.implicitHeight
-            width: root.hovered ? infoMeasure.implicitWidth + 4 : 0
+            width: root.expanded ? infoMeasure.implicitWidth + 4 : 0
             clip: true
 
             Behavior on width {
@@ -162,8 +163,8 @@ Item {
         acceptedButtons: Qt.LeftButton | Qt.RightButton | Qt.MiddleButton
         property real scrollAccum: 0
 
-        onEntered: root.hovered = true
-        onExited: root.hovered = false
+        onEntered: { root.hovered = true; hoverDelay.restart() }
+        onExited: { root.hovered = false; hoverDelay.stop(); root.expanded = false }
 
         onClicked: function(mouse) {
             if (!root.playerName) return;
@@ -188,6 +189,12 @@ Item {
             scrollAccum = 0;
             controlProc.running = true;
         }
+    }
+
+    Timer {
+        id: hoverDelay
+        interval: 400
+        onTriggered: if (root.hovered) root.expanded = true
     }
 
     Process {

@@ -100,7 +100,31 @@ Item {
 
     property bool isWifi: netOutput && netOutput.split("|")[0] === "wifi"
     property bool isEthernet: netOutput && netOutput.split("|")[0] === "ethernet"
-    property bool isConnected: isWifi || isEthernet
+    property string connectionStatus: {
+        if (!netOutput) return "";
+        var parts = netOutput.split("|");
+        return parts[3] || "";
+    }
+    property bool showStatus: connectionStatus !== "" && connectionStatus !== "connected"
+    property bool isConnected: (isWifi || isEthernet) && !showStatus
+
+    property string connectingName: {
+        if (!netOutput) return "";
+        var parts = netOutput.split("|");
+        return parts[4] || "";
+    }
+
+    property color statusColor: {
+        if (connectionStatus === "preparing") return "#ffa726";      // orange
+        if (connectionStatus === "configuring") return "#ffa726";    // orange
+        if (connectionStatus === "authenticating") return "#ab47bc"; // purple
+        if (connectionStatus === "getting-ip") return "#42a5f5";     // blue
+        if (connectionStatus === "verifying") return "#42a5f5";      // blue
+        if (connectionStatus === "deactivating") return "#ef5350";   // red
+        if (connectionStatus === "failed") return "#ef5350";         // red
+        if (connectionStatus === "unavailable") return "#757575";    // gray
+        return Helpers.Colors.disconnected;
+    }
 
     property color signalColor: {
         var s = signalStrength;
@@ -120,139 +144,22 @@ Item {
         return String.fromCodePoint(0xF0928);                        // nf-md-wifi_strength_4
     }
 
+    function statusIconText() {
+        if (connectionStatus === "preparing") return String.fromCodePoint(0xF04E6);     // nf-md-swap_horizontal
+        if (connectionStatus === "configuring") return String.fromCodePoint(0xF0493);   // nf-md-tune
+        if (connectionStatus === "authenticating") return String.fromCodePoint(0xF0341); // nf-md-lock_open
+        if (connectionStatus === "getting-ip") return String.fromCodePoint(0xF0A5F);    // nf-md-ip_network
+        if (connectionStatus === "verifying") return String.fromCodePoint(0xF04E6);     // nf-md-swap_horizontal
+        if (connectionStatus === "deactivating") return String.fromCodePoint(0xF05AA);  // nf-md-wifi_off
+        if (connectionStatus === "failed") return String.fromCodePoint(0xF0029);        // nf-md-alert
+        if (connectionStatus === "unavailable") return String.fromCodePoint(0xF05AA);   // nf-md-wifi_off
+        return String.fromCodePoint(0xF092E);                                           // nf-md-wifi_strength_off_outline
+    }
+
     Row {
         id: netRow
         anchors.verticalCenter: parent.verticalCenter
         spacing: 2
-
-        // Hover info (IP + network name)
-        Item {
-            id: infoWrapper
-            anchors.verticalCenter: parent.verticalCenter
-            height: infoRow.implicitHeight
-            width: root.expanded ? infoMeasure.implicitWidth + 4 : 0
-            clip: true
-
-            Behavior on width {
-                NumberAnimation { duration: 200; easing.type: Easing.OutCubic }
-            }
-
-            Row {
-                id: infoRow
-                anchors.verticalCenter: parent.verticalCenter
-                anchors.left: parent.left
-                anchors.leftMargin: 4
-                spacing: 4
-
-                Text {
-                    anchors.verticalCenter: parent.verticalCenter
-                    text: root.wifiName
-                    color: Helpers.Colors.textDefault
-                    font.family: "DejaVuSansM Nerd Font"
-                    font.pixelSize: 10
-                }
-
-                Text {
-                    anchors.verticalCenter: parent.verticalCenter
-                    text: root.netIp
-                    color: Helpers.Colors.textMuted
-                    font.family: "DejaVuSansM Nerd Font"
-                    font.pixelSize: 10
-                }
-
-                Text {
-                    anchors.verticalCenter: parent.verticalCenter
-                    visible: root.isWifi && root.wifiBand !== ""
-                    text: root.wifiBand
-                    color: root.wifiBand === "6G" ? "#bb86fc" : root.wifiBand === "5G" ? "#42a5f5" : "#8d6e63"
-                    font.family: "DejaVuSansM Nerd Font"
-                    font.pixelSize: 10
-                }
-
-                Text {
-                    anchors.verticalCenter: parent.verticalCenter
-                    visible: root.isWifi && root.wifiGen !== ""
-                    text: root.wifiGen
-                    color: root.genColor
-                    font.family: "DejaVuSansM Nerd Font"
-                    font.pixelSize: 10
-                    font.bold: true
-                }
-
-                Text {
-                    anchors.verticalCenter: parent.verticalCenter
-                    visible: root.isWifi
-                    text: root.signalStrength + "%"
-                    color: root.signalColor
-                    font.family: "DejaVuSansM Nerd Font"
-                    font.pixelSize: 10
-                }
-
-                Text {
-                    anchors.verticalCenter: parent.verticalCenter
-                    visible: root.mlo
-                    text: "MLO"
-                    color: "#bb86fc"
-                    font.family: "DejaVuSansM Nerd Font"
-                    font.pixelSize: 10
-                }
-
-                Column {
-                    anchors.verticalCenter: parent.verticalCenter
-                    spacing: -2
-
-                    Text {
-                        text: "↑" + Math.round(root.maxTxKb)
-                        color: "#ff9800"
-                        font.family: "DejaVuSansM Nerd Font"
-                        font.pixelSize: 10
-                    }
-
-                    Text {
-                        text: "↓" + Math.round(root.maxRxKb)
-                        color: "#ff9800"
-                        font.family: "DejaVuSansM Nerd Font"
-                        font.pixelSize: 10
-                    }
-                }
-            }
-        }
-
-        // Network icon with signal bar background
-        Item {
-            id: netIconWrapper
-            anchors.verticalCenter: parent.verticalCenter
-            width: netIcon.implicitWidth + 6
-            height: root.implicitHeight
-
-            Rectangle {
-                visible: root.isWifi
-                width: parent.width
-                height: parent.height
-                radius: 1
-                color: Qt.rgba(1, 1, 1, 0.1)
-            }
-
-            Rectangle {
-                visible: root.isWifi
-                anchors.bottom: parent.bottom
-                width: parent.width
-                height: parent.height * (root.signalStrength / 100)
-                radius: 1
-                color: root.signalColor
-                opacity: 0.5
-            }
-
-            Text {
-                id: netIcon
-                anchors.centerIn: parent
-                text: root.netIconText()
-                color: root.isConnected ? Helpers.Colors.textDefault : Helpers.Colors.disconnected
-                opacity: 0.5
-                font.family: "DejaVuSansM Nerd Font"
-                font.pixelSize: 13
-            }
-        }
 
         // Graph with overlaid traffic numbers
         Item {
@@ -358,6 +265,158 @@ Item {
                 }
             }
         }
+
+        // Hover info (IP + network name)
+        Item {
+            id: infoWrapper
+            anchors.verticalCenter: parent.verticalCenter
+            height: infoRow.implicitHeight
+            width: root.expanded ? infoMeasure.implicitWidth + 4 : 0
+            clip: true
+
+            Behavior on width {
+                NumberAnimation { duration: 200; easing.type: Easing.OutCubic }
+            }
+
+            Row {
+                id: infoRow
+                anchors.verticalCenter: parent.verticalCenter
+                anchors.left: parent.left
+                anchors.leftMargin: 4
+                spacing: 4
+
+                Text {
+                    anchors.verticalCenter: parent.verticalCenter
+                    text: root.wifiName
+                    color: Helpers.Colors.textDefault
+                    font.family: "DejaVuSansM Nerd Font"
+                    font.pixelSize: 10
+                }
+
+                Text {
+                    anchors.verticalCenter: parent.verticalCenter
+                    text: root.netIp
+                    color: Helpers.Colors.textMuted
+                    font.family: "DejaVuSansM Nerd Font"
+                    font.pixelSize: 10
+                }
+
+                Text {
+                    anchors.verticalCenter: parent.verticalCenter
+                    visible: root.isWifi && root.wifiBand !== ""
+                    text: root.wifiBand
+                    color: root.wifiBand === "6G" ? "#bb86fc" : root.wifiBand === "5G" ? "#42a5f5" : "#8d6e63"
+                    font.family: "DejaVuSansM Nerd Font"
+                    font.pixelSize: 10
+                }
+
+                Text {
+                    anchors.verticalCenter: parent.verticalCenter
+                    visible: root.isWifi && root.wifiGen !== ""
+                    text: root.wifiGen
+                    color: root.genColor
+                    font.family: "DejaVuSansM Nerd Font"
+                    font.pixelSize: 10
+                    font.bold: true
+                }
+
+                Text {
+                    anchors.verticalCenter: parent.verticalCenter
+                    visible: root.isWifi
+                    text: root.signalStrength + "%"
+                    color: root.signalColor
+                    font.family: "DejaVuSansM Nerd Font"
+                    font.pixelSize: 10
+                }
+
+                Text {
+                    anchors.verticalCenter: parent.verticalCenter
+                    visible: root.mlo
+                    text: "MLO"
+                    color: "#bb86fc"
+                    font.family: "DejaVuSansM Nerd Font"
+                    font.pixelSize: 10
+                }
+
+                Column {
+                    anchors.verticalCenter: parent.verticalCenter
+                    spacing: -2
+
+                    Text {
+                        text: "↑" + Math.round(root.maxTxKb)
+                        color: "#ff9800"
+                        font.family: "DejaVuSansM Nerd Font"
+                        font.pixelSize: 10
+                    }
+
+                    Text {
+                        text: "↓" + Math.round(root.maxRxKb)
+                        color: "#ff9800"
+                        font.family: "DejaVuSansM Nerd Font"
+                        font.pixelSize: 10
+                    }
+                }
+            }
+        }
+
+        // Signal strength bar (4px vertical strip)
+        Item {
+            anchors.verticalCenter: parent.verticalCenter
+            width: 4
+            height: root.implicitHeight
+            visible: root.isWifi
+
+            Rectangle {
+                width: parent.width
+                height: parent.height
+                radius: 1
+                color: Qt.rgba(1, 1, 1, 0.1)
+            }
+
+            Rectangle {
+                anchors.bottom: parent.bottom
+                width: parent.width
+                height: parent.height * (root.signalStrength / 100)
+                radius: 1
+                color: root.signalColor
+                opacity: 0.5
+            }
+        }
+
+        // Network icon
+        Text {
+            id: netIcon
+            anchors.verticalCenter: parent.verticalCenter
+            text: root.netIconText()
+            color: root.isConnected ? Helpers.Colors.textDefault : Helpers.Colors.disconnected
+            opacity: 0.5
+            font.family: "DejaVuSansM Nerd Font"
+            font.pixelSize: 16
+        }
+
+        // Status icon + network name (non-connected states)
+        Row {
+            anchors.verticalCenter: parent.verticalCenter
+            visible: root.showStatus
+            spacing: 3
+
+            Text {
+                anchors.verticalCenter: parent.verticalCenter
+                text: root.statusIconText()
+                color: root.statusColor
+                font.family: "DejaVuSansM Nerd Font"
+                font.pixelSize: 12
+            }
+
+            Text {
+                anchors.verticalCenter: parent.verticalCenter
+                visible: root.connectingName !== ""
+                text: root.connectingName
+                color: root.statusColor
+                font.family: "DejaVuSansM Nerd Font"
+                font.pixelSize: 10
+            }
+        }
     }
 
     // Hidden text to measure target width
@@ -404,7 +463,9 @@ Item {
             "  if echo \"$LINK\" | grep -qE '^MLD |Link [0-9]+ BSSID'; then MLO='MLO'; else MLO=''; fi",
             "  echo \"${SSID}|${IP}|${GEN}|${BAND}|${MLO}\"",
             "else",
-            "  echo \"Ethernet|${IP}\"",
+            "  SPEED=$(cat /sys/class/net/$AIFACE/speed 2>/dev/null || echo '')",
+            "  [ -n \"$SPEED\" ] && SPEED=\"${SPEED}M\" || SPEED='ETH'",
+            "  echo \"${SPEED}|${IP}\"",
             "fi"
         ].join("\n")]
         running: false
@@ -429,18 +490,37 @@ Item {
         id: netProc
         command: ["bash", "-c", [
             "WIFACE=$(ls /sys/class/net/ 2>/dev/null | grep -E '^wl' | head -1)",
-            "if [ -n \"$WIFACE\" ] && [ \"$(cat /sys/class/net/$WIFACE/operstate 2>/dev/null)\" = 'up' ]; then",
-            "  DBM=$(iw dev $WIFACE link 2>/dev/null | grep -oP 'signal: \\K-?\\d+')",
-            "  if [ -n \"$DBM\" ]; then",
-            "    if [ \"$DBM\" -gt -40 ]; then SIGNAL=100",
-            "    elif [ \"$DBM\" -lt -80 ]; then SIGNAL=0",
-            "    else SIGNAL=$(( (DBM + 80) * 25 / 10 )); fi",
-            "  else SIGNAL=0; fi",
-            "  echo \"wifi|${SIGNAL}|${WIFACE}\"",
+            "if [ -n \"$WIFACE\" ]; then",
+            "  OPSTATE=$(cat /sys/class/net/$WIFACE/operstate 2>/dev/null)",
+            "  if [ \"$OPSTATE\" = 'up' ]; then",
+            "    DBM=$(iw dev $WIFACE link 2>/dev/null | grep -oP 'signal: \\K-?\\d+')",
+            "    if [ -n \"$DBM\" ]; then",
+            "      if [ \"$DBM\" -gt -40 ]; then SIGNAL=100",
+            "      elif [ \"$DBM\" -lt -80 ]; then SIGNAL=0",
+            "      else SIGNAL=$(( (DBM + 80) * 25 / 10 )); fi",
+            "    else SIGNAL=0; fi",
+            "    echo \"wifi|${SIGNAL}|${WIFACE}|connected\"",
+            "  else",
+            "    STATE_NUM=$(nmcli -g GENERAL.STATE device show $WIFACE 2>/dev/null | head -1 | grep -oP '^\\d+')",
+            "    CONN=$(nmcli -g GENERAL.CONNECTION device show $WIFACE 2>/dev/null | head -1)",
+            "    case \"$STATE_NUM\" in",
+            "      20) STATUS='unavailable' ;;",
+            "      30) STATUS='disconnected' ;;",
+            "      40) STATUS='preparing' ;;",
+            "      50) STATUS='configuring' ;;",
+            "      60) STATUS='authenticating' ;;",
+            "      70) STATUS='getting-ip' ;;",
+            "      80|90) STATUS='verifying' ;;",
+            "      110) STATUS='deactivating' ;;",
+            "      120) STATUS='failed' ;;",
+            "      *) STATUS='disconnected' ;;",
+            "    esac",
+            "    echo \"wifi|0|${WIFACE}|${STATUS}|${CONN}\"",
+            "  fi",
             "elif EIFACE=$(ls /sys/class/net/ 2>/dev/null | grep -E '^(eth|enp)' | head -1) && [ -n \"$EIFACE\" ] && [ \"$(cat /sys/class/net/$EIFACE/operstate 2>/dev/null)\" = 'up' ]; then",
-            "  echo \"ethernet||${EIFACE}\"",
+            "  echo \"ethernet||${EIFACE}|connected\"",
             "else",
-            "  echo 'disconnected||'",
+            "  echo 'disconnected|||disconnected'",
             "fi"
         ].join("\n")]
         running: true

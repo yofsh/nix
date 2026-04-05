@@ -132,7 +132,7 @@ Scope {
                     Modules.Ping { active: networkModule.pingActive }
                     Modules.Memory {}
                     Modules.Cpu {}
-                    Modules.Temperature {}
+                    Modules.Temperature { id: temperatureModule }
                     Modules.Battery { id: batteryModule }
                     Modules.AirPods {}
 
@@ -147,8 +147,15 @@ Scope {
 
             Modules.OsdPopup { screen: barWindow.screen; barHeight: barWindow.implicitHeight }
             Modules.FingerprintPopup { screen: barWindow.screen; barHeight: barWindow.implicitHeight; polkitActive: polkitPopup.active }
+            Modules.TemperaturePopup { id: temperaturePopup; screen: barWindow.screen; barHeight: barWindow.implicitHeight; popupOpen: temperatureModule.popupOpen }
             Modules.BatteryPopup { id: batteryPopup; screen: barWindow.screen; barHeight: barWindow.implicitHeight; popupOpen: batteryModule.popupOpen }
             Modules.NotificationPopup { id: notifPopup; screen: barWindow.screen; barHeight: barWindow.implicitHeight }
+
+            HyprlandFocusGrab {
+                windows: [barWindow, temperaturePopup]
+                active: temperatureModule.popupOpen
+                onCleared: temperatureModule.popupOpen = false
+            }
 
             HyprlandFocusGrab {
                 windows: [barWindow, batteryPopup]

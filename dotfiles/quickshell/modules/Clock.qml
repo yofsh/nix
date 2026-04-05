@@ -3,21 +3,36 @@ import "../helpers" as Helpers
 
 Item {
     id: root
-    implicitWidth: clockText.implicitWidth + 8
-    implicitHeight: parent ? parent.height : 30
+    implicitWidth: Math.max(timeLine.implicitWidth, dateLine.implicitWidth) + 10
+    implicitHeight: parent ? parent.height : 22
 
     property bool altFormat: false
-    property string timeStr: ""
 
-    Text {
-        id: clockText
-        anchors.verticalCenter: parent.verticalCenter
-        anchors.horizontalCenter: parent.horizontalCenter
-        color: Helpers.Colors.textDefault
-        font.family: "DejaVuSansM Nerd Font"
-        font.pixelSize: 12
-        font.bold: true
-        text: root.timeStr
+    property string timeStr: ""
+    property string dateStr: ""
+
+    Column {
+        anchors.centerIn: parent
+        spacing: -2
+
+        Text {
+            id: timeLine
+            anchors.horizontalCenter: parent.horizontalCenter
+            color: Helpers.Colors.textDefault
+            font.family: "DejaVuSansM Nerd Font"
+            font.pixelSize: 11
+            font.bold: true
+            text: root.timeStr
+        }
+
+        Text {
+            id: dateLine
+            anchors.horizontalCenter: parent.horizontalCenter
+            color: Helpers.Colors.textMuted
+            font.family: "DejaVuSansM Nerd Font"
+            font.pixelSize: 9
+            text: root.dateStr
+        }
     }
 
     Timer {
@@ -31,9 +46,11 @@ Item {
                 var onejan = new Date(now.getFullYear(), 0, 1);
                 var dayOfYear = Math.ceil((now - onejan) / 86400000);
                 var weekNum = Math.ceil((dayOfYear + onejan.getDay()) / 7);
-                root.timeStr = "W" + weekNum + " " + Qt.formatDateTime(now, "ddd dd MMM HH:mm:ss");
+                root.timeStr = Qt.formatDateTime(now, "HH:mm:ss");
+                root.dateStr = "W" + weekNum + " " + Qt.formatDateTime(now, "ddd dd MMM");
             } else {
-                root.timeStr = Qt.formatDateTime(now, "ddd dd MMM HH:mm");
+                root.timeStr = Qt.formatDateTime(now, "HH:mm");
+                root.dateStr = Qt.formatDateTime(now, "ddd dd MMM");
             }
         }
     }
