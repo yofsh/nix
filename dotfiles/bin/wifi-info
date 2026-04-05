@@ -1,0 +1,329 @@
+#!/usr/bin/env python3
+"""Display detailed info about the current Wi-Fi connection."""
+
+import subprocess
+import sys
+import re
+
+
+# ── ANSI colors (from wifi-scan) ────────────────────────────────────────────
+class C:
+    RST = "\033[0m"
+    BOLD = "\033[1m"
+    DIM = "\033[2m"
+    RED = "\033[91m"
+    GREEN = "\033[92m"
+    YELLOW = "\033[93m"
+    BLUE = "\033[94m"
+    MAGENTA = "\033[95m"
+    CYAN = "\033[96m"
+    WHITE = "\033[97m"
+    GRAY = "\033[90m"
+
+
+def run(cmd):
+    try:
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=5)
+        return r.stdout.strip()
+    except (subprocess.CalledProcessError, FileNotFoundError, subprocess.TimeoutExpired):
+        return ""
+
+
+def get_iface():
+    out = run(["iw", "dev"])
+    m = re.findall(r"Interface\s+(\S+)", out)
+    return m[0] if m else None
+
+
+def signal_bar(dbm):
+    if dbm >= -50:
+        blocks, color = "█████", C.GREEN
+    elif dbm >= -55:
+        blocks, color = "████░", C.GREEN
+    elif dbm >= -60:
+        blocks, color = "███░░", C.GREEN
+    elif dbm >= -67:
+        blocks, color = "██░░░", C.YELLOW
+    elif dbm >= -75:
+        blocks, color = "█░░░░", C.RED
+    else:
+        blocks, color = "░░░░░", C.RED
+    return f"{color}{blocks}{C.RST}"
+
+
+def quality_label(dbm):
+    if dbm >= -50:
+        return f"{C.GREEN}Excellent{C.RST}"
+    if dbm >= -60:
+        return f"{C.GREEN}Good{C.RST}"
+    if dbm >= -67:
+        return f"{C.YELLOW}Fair{C.RST}"
+    if dbm >= -75:
+        return f"{C.RED}Weak{C.RST}"
+    return f"{C.RED}Poor{C.RST}"
+
+
+def band_label(freq):
+    if freq >= 5925:
+        return f"{C.MAGENTA}6 GHz{C.RST}"
+    if freq >= 5000:
+        return f"{C.CYAN}5 GHz{C.RST}"
+    return f"{C.YELLOW}2.4 GHz{C.RST}"
+
+
+def wifi_gen(bitrate_str, freq):
+    if "EHT" in bitrate_str:
+        return f"{C.MAGENTA}Wi-Fi 7{C.RST} {C.DIM}(802.11be){C.RST}" if freq >= 5925 else f"{C.MAGENTA}Wi-Fi 7{C.RST} {C.DIM}(802.11be){C.RST}"
+    if "HE" in bitrate_str:
+        tag = "Wi-Fi 6E" if freq >= 5925 else "Wi-Fi 6"
+        return f"{C.CYAN}{tag}{C.RST} {C.DIM}(802.11ax){C.RST}"
+    if "VHT" in bitrate_str:
+        return f"{C.GREEN}Wi-Fi 5{C.RST} {C.DIM}(802.11ac){C.RST}"
+    if "MCS" in bitrate_str:
+        return f"{C.YELLOW}Wi-Fi 4{C.RST} {C.DIM}(802.11n){C.RST}"
+    return f"{C.DIM}Legacy{C.RST}"
+
+
+def format_bitrate(mbps):
+    if mbps >= 1000:
+        return f"{C.GREEN}{C.BOLD}{mbps / 1000:.1f} Gbps{C.RST}"
+    return f"{C.WHITE}{C.BOLD}{mbps:.0f} Mbps{C.RST}"
+
+
+def format_retries(retries, total):
+    if total == 0:
+        return f"{C.DIM}─{C.RST}"
+    # Counter overflow detection (near 2^32 = driver bug)
+    if retries > total * 10 or retries > 4_000_000_000:
+        return f"{C.DIM}─  (counter overflow){C.RST}"
+    pct = retries / total * 100
+    if pct < 5:
+        color = C.GREEN
+    elif pct < 15:
+        color = C.YELLOW
+    else:
+        color = C.RED
+    return f"{color}{pct:.1f}%{C.RST} {C.DIM}({retries}/{total}){C.RST}"
+
+
+def format_time(secs):
+    if secs >= 86400:
+        d = secs // 86400
+        h = (secs % 86400) // 3600
+        return f"{d}d {h}h"
+    if secs >= 3600:
+        h = secs // 3600
+        m = (secs % 3600) // 60
+        return f"{h}h {m}m"
+    if secs >= 60:
+        m = secs // 60
+        s = secs % 60
+        return f"{m}m {s}s"
+    return f"{secs}s"
+
+
+def main():
+    iface = sys.argv[1] if len(sys.argv) > 1 else get_iface()
+    if not iface:
+        print(f"{C.RED}No wireless interface found.{C.RST}", file=sys.stderr)
+        sys.exit(1)
+
+    # ── Gather data ──────────────────────────────────────────────────────
+    link = run(["iw", "dev", iface, "link"])
+    if "Not connected" in link or not link:
+        print(f"{C.RED}Not connected to any network.{C.RST}", file=sys.stderr)
+        sys.exit(1)
+
+    station = run(["sudo", "iw", "dev", iface, "station", "dump"])
+    info = run(["iw", "dev", iface, "info"])
+    reg = run(["sudo", "iw", "reg", "get"])
+
+    # ── Parse link ───────────────────────────────────────────────────────
+    bssid = ""
+    m = re.search(r"Connected to ([0-9a-f:]{17})", link)
+    if m:
+        bssid = m.group(1)
+
+    ssid = ""
+    m = re.search(r"SSID: (.+)", link)
+    if m:
+        ssid = m.group(1).strip()
+
+    freq = 0.0
+    m = re.search(r"freq: ([\d.]+)", link)
+    if m:
+        freq = float(m.group(1))
+
+    signal_dbm = None
+    m = re.search(r"signal: (-?\d+)", link)
+    if m:
+        signal_dbm = int(m.group(1))
+
+    rx_bytes = tx_bytes = 0
+    m = re.search(r"RX: (\d+) bytes", link)
+    if m:
+        rx_bytes = int(m.group(1))
+    m = re.search(r"TX: (\d+) bytes", link)
+    if m:
+        tx_bytes = int(m.group(1))
+
+    tx_bitrate_str = rx_bitrate_str = ""
+    tx_mbps = rx_mbps = 0.0
+    m = re.search(r"tx bitrate: ([\d.]+ \S+)(.+)", link)
+    if m:
+        tx_mbps = float(m.group(1).split()[0])
+        tx_bitrate_str = m.group(1) + m.group(2)
+    m = re.search(r"rx bitrate: ([\d.]+ \S+)(.+)", link)
+    if m:
+        rx_mbps = float(m.group(1).split()[0])
+        rx_bitrate_str = m.group(1) + m.group(2)
+
+    # ── Parse station dump ───────────────────────────────────────────────
+    signal_avg = None
+    m = re.search(r"signal avg:\s*(-?\d+)", station)
+    if m:
+        signal_avg = int(m.group(1))
+
+    signal_chains = ""
+    m = re.search(r"signal:\s*-?\d+ \[([^\]]+)\]", station)
+    if m:
+        signal_chains = m.group(1)
+
+    tx_retries = tx_packets = tx_failed = 0
+    m = re.search(r"tx retries:\s*(\d+)", station)
+    if m:
+        tx_retries = int(m.group(1))
+    m = re.search(r"tx packets:\s*(\d+)", station)
+    if m:
+        tx_packets = int(m.group(1))
+    m = re.search(r"tx failed:\s*(\d+)", station)
+    if m:
+        tx_failed = int(m.group(1))
+
+    beacon_loss = 0
+    m = re.search(r"beacon loss:\s*(\d+)", station)
+    if m:
+        beacon_loss = int(m.group(1))
+
+    connected_time = 0
+    m = re.search(r"connected time:\s*(\d+)", station)
+    if m:
+        connected_time = int(m.group(1))
+
+    # ── Parse interface info ─────────────────────────────────────────────
+    channel = ""
+    width = ""
+    m = re.search(r"channel (\d+) \([\d.]+ MHz\), width: (\d+ MHz)", info)
+    if m:
+        channel = m.group(1)
+        width = m.group(2)
+
+    txpower = ""
+    m = re.search(r"txpower ([\d.]+) dBm", info)
+    if m:
+        txpower = m.group(1)
+
+    # ── Parse regdom ─────────────────────────────────────────────────────
+    regdom = ""
+    m = re.search(r"country (\w+):", reg)
+    if m:
+        regdom = m.group(1)
+
+    # ── Parse modulation from bitrate strings ────────────────────────────
+    def parse_modulation(br):
+        parts = {}
+        m = re.search(r"(\d+) MHz", br)
+        if m:
+            parts["width"] = m.group(1) + " MHz"
+        m = re.search(r"(EHT|HE|VHT|HT)-MCS (\d+)", br)
+        if m:
+            parts["type"] = m.group(1)
+            parts["mcs"] = m.group(2)
+        m = re.search(r"(?:EHT|HE|VHT)-NSS (\d+)", br)
+        if m:
+            parts["nss"] = m.group(1)
+        m = re.search(r"(?:EHT|HE|VHT)-GI (\d+)", br)
+        if m:
+            parts["gi"] = m.group(1)
+        return parts
+
+    tx_mod = parse_modulation(tx_bitrate_str)
+    rx_mod = parse_modulation(rx_bitrate_str)
+
+    # ── Format bytes ─────────────────────────────────────────────────────
+    def fmt_bytes(b):
+        if b >= 1_073_741_824:
+            return f"{b / 1_073_741_824:.1f} GB"
+        if b >= 1_048_576:
+            return f"{b / 1_048_576:.1f} MB"
+        if b >= 1024:
+            return f"{b / 1024:.1f} KB"
+        return f"{b} B"
+
+    # ── Display ──────────────────────────────────────────────────────────
+    W = 42  # label + value column width
+
+    gen = wifi_gen(tx_bitrate_str, freq)
+
+    print()
+    print(f"  {C.BOLD}{C.CYAN}📶 Wi-Fi Connection{C.RST}  {C.DIM}─  {iface}{C.RST}")
+    print(f"  {C.DIM}{'─' * 56}{C.RST}")
+
+    # Network
+    print(f"  {C.DIM}SSID{C.RST}        {C.WHITE}{C.BOLD}{ssid}{C.RST}")
+    print(f"  {C.DIM}BSSID{C.RST}       {C.WHITE}{bssid}{C.RST}")
+    print(f"  {C.DIM}Band{C.RST}        {band_label(freq)}  {C.DIM}ch{channel}{C.RST}  {C.DIM}({freq} MHz){C.RST}")
+    print(f"  {C.DIM}Width{C.RST}       {C.WHITE}{width}{C.RST}")
+    print(f"  {C.DIM}Generation{C.RST}  {gen}")
+    print(f"  {C.DIM}Regdom{C.RST}      {C.WHITE}{regdom}{C.RST}")
+
+    print(f"  {C.DIM}{'─' * 56}{C.RST}")
+
+    # Signal
+    if signal_dbm is not None:
+        print(f"  {C.DIM}Signal{C.RST}      {signal_bar(signal_dbm)}  {C.BOLD}{signal_dbm} dBm{C.RST}  {quality_label(signal_dbm)}")
+    if signal_avg is not None:
+        print(f"  {C.DIM}Average{C.RST}     {signal_bar(signal_avg)}  {C.BOLD}{signal_avg} dBm{C.RST}")
+    if signal_chains:
+        print(f"  {C.DIM}Chains{C.RST}      {C.WHITE}{signal_chains} dBm{C.RST}")
+
+    print(f"  {C.DIM}{'─' * 56}{C.RST}")
+
+    # Speed
+    print(f"  {C.DIM}TX rate{C.RST}     {format_bitrate(tx_mbps)}", end="")
+    if tx_mod.get("type"):
+        print(f"  {C.DIM}{tx_mod.get('type', '')}-MCS {tx_mod.get('mcs', '')}  NSS {tx_mod.get('nss', '')}  GI {tx_mod.get('gi', '')}{C.RST}", end="")
+    print()
+
+    print(f"  {C.DIM}RX rate{C.RST}     {format_bitrate(rx_mbps)}", end="")
+    if rx_mod.get("type"):
+        print(f"  {C.DIM}{rx_mod.get('type', '')}-MCS {rx_mod.get('mcs', '')}  NSS {rx_mod.get('nss', '')}  GI {rx_mod.get('gi', '')}{C.RST}", end="")
+    print()
+
+    print(f"  {C.DIM}{'─' * 56}{C.RST}")
+
+    # Reliability
+    print(f"  {C.DIM}TX retries{C.RST}  {format_retries(tx_retries, tx_packets)}")
+    if tx_failed:
+        print(f"  {C.DIM}TX failed{C.RST}   {C.RED}{tx_failed}{C.RST}")
+    if beacon_loss:
+        print(f"  {C.DIM}Beacons{C.RST}     {C.RED}{beacon_loss} lost{C.RST}")
+    else:
+        print(f"  {C.DIM}Beacons{C.RST}     {C.GREEN}0 lost{C.RST}")
+
+    print(f"  {C.DIM}{'─' * 56}{C.RST}")
+
+    # Traffic
+    print(f"  {C.DIM}TX total{C.RST}    {C.WHITE}{fmt_bytes(tx_bytes)}{C.RST}")
+    print(f"  {C.DIM}RX total{C.RST}    {C.WHITE}{fmt_bytes(rx_bytes)}{C.RST}")
+    print(f"  {C.DIM}Uptime{C.RST}      {C.WHITE}{format_time(connected_time)}{C.RST}")
+
+    if txpower:
+        print(f"  {C.DIM}{'─' * 56}{C.RST}")
+        print(f"  {C.DIM}TX power{C.RST}    {C.WHITE}{txpower} dBm{C.RST}  {C.DIM}(reported, may be inaccurate){C.RST}")
+
+    print()
+
+
+if __name__ == "__main__":
+    main()
