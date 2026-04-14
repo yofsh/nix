@@ -91,6 +91,32 @@ Item {
         }
     }
 
+    MouseArea {
+        anchors.fill: parent
+        onClicked: cancelProc.running = true
+    }
+
+    Process {
+        id: cancelProc
+        command: ["bash", "-c", [
+            "for mode in dictate claude; do",
+            "  pf=\"/tmp/voice_${mode}.pid\"",
+            "  [ -f \"$pf\" ] || continue",
+            "  pid=$(head -1 \"$pf\")",
+            "  kill \"$pid\" 2>/dev/null",
+            "  rm -f \"$pf\" \"/tmp/voice_${mode}.wav\"",
+            "done",
+            "spf=/tmp/voice_stream.pid",
+            "if [ -f \"$spf\" ]; then",
+            "  IFS=: read sp pp < \"$spf\"",
+            "  kill \"$sp\" \"$pp\" 2>/dev/null",
+            "  rm -f \"$spf\" /tmp/voice_stream.fifo",
+            "fi",
+            "rm -f /tmp/voice_transcribing"
+        ].join("\n")]
+        running: false
+    }
+
     Process {
         id: spectrumProc
         command: ["audio-spectrum"]

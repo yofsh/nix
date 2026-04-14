@@ -1,6 +1,7 @@
 import QtQuick
 import Quickshell.Io
 import "../helpers" as Helpers
+import "../state" as AppState
 
 Item {
     id: root
@@ -15,6 +16,18 @@ Item {
 
     property bool active: true
     property string target: "1.1.1.1"
+    property real pingInterval: AppState.ShellState.pingInterval
+
+    onPingIntervalChanged: {
+        if (pingProc.running) {
+            pingProc.running = false;
+            history = [];
+            currentPing = -1;
+            maxPing = 0;
+            graphCanvas.requestPaint();
+            pingProc.running = true;
+        }
+    }
     property int currentPing: -1  // -1 = no data yet, -2 = timeout
     property int maxPing: 0       // highest ping currently on graph
     property int maxHistory: 60
@@ -145,7 +158,7 @@ Item {
 
     Process {
         id: pingProc
-        command: ["ping", "-O", "-W", "2", "-i", "1", root.target]
+        command: ["ping", "-O", "-W", String(Math.max(root.pingInterval, 1)), "-i", String(root.pingInterval), root.target]
         running: root.active && root.target !== ""
         onRunningChanged: if (!running && root.active && root.target !== "") running = true
         stdout: SplitParser {

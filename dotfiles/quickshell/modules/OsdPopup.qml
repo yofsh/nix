@@ -22,7 +22,7 @@ PanelWindow {
     margins.top: barHeight
     implicitWidth: 200
     implicitHeight: 28
-    visible: osdVisible || slideAnim.running
+    visible: osdVisible
     color: "transparent"
 
     PwObjectTracker {
@@ -108,24 +108,12 @@ PanelWindow {
 
     Item {
         anchors.fill: parent
-        clip: true
 
         Item {
             id: popupContent
             width: parent.width
             height: parent.height
-            y: -parent.height
             opacity: AppConfig.Config.theme.surfaceOpacity
-
-            states: State {
-                name: "visible"; when: root.osdVisible
-                PropertyChanges { target: popupContent; y: 0 }
-            }
-
-            transitions: Transition {
-                id: slideAnim
-                NumberAnimation { properties: "y"; duration: AppConfig.Config.theme.popupSlideDuration; easing.type: Easing.OutCubic }
-            }
 
             Components.PopupSurface {
                 anchors.fill: parent

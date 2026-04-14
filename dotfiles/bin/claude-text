@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+
+request="${1:-}"
+mode="${2:-}"
+
+if [[ -z "$request" ]]; then
+  echo "Usage: claude-text <prompt> [replace]" >&2
+  exit 1
+fi
+
+notify() {
+  local title="$1"
+  local body="${2:-}"
+
+  printf '%s - %s\n' "$title" "$body"
+  notify-send -h "string:x-tag:claude-text" -t 60000 -i claude -u low "$title" "$body"
+}
+
+original=$(wl-paste -p)
+
+if [[ -z "$original" ]]; then
+  notify "Error" "No text selected"
+  exit 1
+fi
+
+notify "Translating" "$original"
+
+start=$SECONDS
+res=$(printf '%s\n\nText:\n%s' "$request" "$original" | claude -p)
+elapsed=$(( SECONDS - start ))
+
+if [[ "$mode" == "replace" ]]; then
+  wl-copy "$res"
+  wtype -M ctrl v
+  sleep 0.5
+  wl-copy "$original"
+  notify "Done (${elapsed}s)" "$res"
+  exit 0
+fi
+
+notify "Done (${elapsed}s)" "$res"

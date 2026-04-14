@@ -88,6 +88,14 @@ def is_transcribing():
     return os.path.exists(TRANSCRIBING_FLAG)
 
 
+def any_recording():
+    """Return the mode name of any active recording, or None."""
+    for m in ("dictate", "claude"):
+        if is_recording(m):
+            return m
+    return None
+
+
 def start_recording(mode, msg="Recording..."):
     if is_transcribing():
         notify("Still transcribing", "Wait for it to finish")
@@ -95,6 +103,10 @@ def start_recording(mode, msg="Recording..."):
     if is_recording(mode):
         notify("Already recording", "Press again to stop")
         return
+    other = any_recording()
+    if other and other != mode:
+        stop_recording(other)
+        notify(f"Stopped {other}", f"Switching to {mode}")
 
     notify(msg, "Speak now")
     proc = subprocess.Popen(
@@ -314,13 +326,8 @@ def cmd_stream(args):
             pass
         os.mkfifo(fifo)
 
-        stream_proc = subprocess.Popen(
-            ["whisper-stream", "-m", model, "--step", "0",
-             "--length", audio_len, "--vad-thold", vad_thold,
-             "--capture", capture_id, "--no-flash-attn", "-t", "4"],
-            stdout=open(fifo, "w"), stderr=subprocess.DEVNULL,
-        )
-
+        # Start the parser (FIFO reader) BEFORE the writer to avoid blocking
+        # on open(fifo, "w") — FIFOs block writers until a reader is present.
         parser_script = f"""
 in_block=false; block_text=""; last_text=""
 while IFS= read -r line; do
@@ -346,6 +353,15 @@ while IFS= read -r line; do
 done < {fifo}
 """
         parser_proc = subprocess.Popen(["bash", "-c", parser_script])
+
+        fifo_fd = os.open(fifo, os.O_WRONLY)
+        stream_proc = subprocess.Popen(
+            ["whisper-stream", "-m", model, "--step", "0",
+             "--length", audio_len, "--vad-thold", vad_thold,
+             "--capture", capture_id, "--no-flash-attn", "-t", "4"],
+            stdout=fifo_fd, stderr=subprocess.DEVNULL,
+        )
+        os.close(fifo_fd)
 
         with open(spid_file, "w") as f:
             f.write(f"{stream_proc.pid}:{parser_proc.pid}")

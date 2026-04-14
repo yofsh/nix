@@ -139,7 +139,7 @@ cmd_list() {
 		--bind="ctrl-y:execute-silent(echo 'https://www.youtube.com/watch?v='{1} | wl-copy)+abort" \
 		--bind="ctrl-d:execute(bash -c '\"$0\" delete --force {1}' \"$self\")+reload(\"$self\" _entries)" \
 		--bind="ctrl-t:execute(bash -c 'f={4}; tf=\"\${f%.md}_transcript.txt\"; [[ -f \"\$tf\" ]] && bat --paging=always --style=plain \"\$tf\" || echo \"No transcript found\"')" \
-		--bind="ctrl-a:execute(foot -e bash -c '\"$0\" ask {1}' \"$self\")" \
+		--bind="ctrl-a:become(\"$self\" ask-cc {1})" \
 		--bind="ctrl-r:execute(bash -c '\"$0\" retry {1}' \"$self\")" ||
 		true
 }
@@ -202,6 +202,55 @@ cmd_ask() {
 		fi
 		printf '\n'
 	done
+}
+
+# --- cmd_ask_cc: launch Claude Code session with transcript + summary preloaded ---
+
+cmd_ask_cc() {
+	local vid="${1:-}"
+
+	if [[ -z "$vid" ]]; then
+		local selected
+		selected=$(select_video_fzf) || return 1
+		vid=$(printf '%s' "$selected" | cut -d$'\t' -f1)
+	fi
+
+	local transcript_file summary_file title
+	transcript_file=$(find_existing_transcript "$vid")
+	if [[ -z "$transcript_file" || ! -f "$transcript_file" ]]; then
+		printf 'Error: No transcript found for video %s\n' "$vid" >&2
+		return 1
+	fi
+
+	summary_file=$(find_existing_summary "$vid")
+	if [[ -n "$summary_file" && -f "$summary_file" ]]; then
+		title=$(head -1 "$summary_file" | sed 's/^# //')
+	else
+		title="$vid"
+	fi
+
+	local prompt="Video: $title
+URL: https://www.youtube.com/watch?v=$vid
+
+# Transcript
+
+$(<"$transcript_file")"
+
+	if [[ -n "$summary_file" && -f "$summary_file" ]]; then
+		prompt+="
+
+# Summary
+
+$(<"$summary_file")"
+	fi
+
+	prompt+="
+
+---
+Answer follow-up questions about this video."
+
+	cd "$YTS_DIR" || return 1
+	exec claude --dangerously-skip-permissions "$prompt"
 }
 
 # --- cmd_transcript: view raw transcript ---

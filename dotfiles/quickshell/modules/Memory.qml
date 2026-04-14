@@ -9,6 +9,7 @@ Item {
 
     property int memPct: 0
     property int swapPct: 0
+    property bool popupOpen: false
 
     function parseMem() {
         var text = memFile.text();
@@ -52,6 +53,11 @@ Item {
             font.family: "DejaVuSansM Nerd Font"
             font.pixelSize: 10
         }
+    }
+
+    MouseArea {
+        anchors.fill: parent
+        onClicked: root.popupOpen = !root.popupOpen
     }
 
     FileView {

@@ -41,6 +41,7 @@ Commands:
   summarize, s [-l LANG] [URL]   Summarize a YouTube video (background)
   list, l                        Browse summaries (fzf)
   ask, a [-l LANG] [VIDEO_ID]    Ask follow-up questions about a video
+  ask-cc, ac [VIDEO_ID]          Open Claude Code session preloaded with transcript + summary
   transcript, tr [VID]  View raw transcript
   comments, cm [VID]    View/fetch YouTube comments
   status, st            Show active processing jobs
@@ -55,7 +56,7 @@ Keybindings (in list view):
   Ctrl-Y    Copy YouTube URL
   Ctrl-D    Delete summary
   Ctrl-T    View transcript
-  Ctrl-A    Ask follow-up (new terminal)
+  Ctrl-A    Open Claude Code session with transcript + summary
   Ctrl-R    Retry failed job
 
 Options:
@@ -123,6 +124,7 @@ case "$cmd" in
   summarize|s)   cmd_summarize "$@" ;;
   list|l|"")     cmd_list "$@" ;;      # default command
   ask|a)         cmd_ask "$@" ;;
+  ask-cc|ac)     cmd_ask_cc "$@" ;;
   transcript|tr) cmd_transcript "$@" ;;
   comments|cm)   cmd_comments "$@" ;;
   status|st)     cmd_status "$@" ;;

@@ -23,7 +23,7 @@ in
     })
 
     #GUI tools
-    ayugram-desktop
+    telegram-desktop
     obsidian
     foot
     mpv

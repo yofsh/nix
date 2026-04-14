@@ -26,3 +26,6 @@ OsdPopup 1.0 OsdPopup.qml
 TemperaturePopup 1.0 TemperaturePopup.qml
 WallpaperPopup 1.0 WallpaperPopup.qml
 PrivacyIndicators 1.0 PrivacyIndicators.qml
+Weather 1.0 Weather.qml
+WeatherPopup 1.0 WeatherPopup.qml
+SystemPopup 1.0 SystemPopup.qml

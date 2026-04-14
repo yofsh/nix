@@ -16,7 +16,6 @@
     powerOnBoot = true;
     settings = {
       General = {
-        Enable = "Source,Sink,Media,Socket";
         Experimental = true;
         KernelExperimental = "6fbaf188-05e0-496a-9885-d6ddfdb4e03e";
       };

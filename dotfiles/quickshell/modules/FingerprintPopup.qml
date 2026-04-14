@@ -23,7 +23,7 @@ PanelWindow {
     margins.top: barHeight
     implicitWidth: 240
     implicitHeight: 110
-    visible: popupVisible || slideAnim.running
+    visible: popupVisible
     color: "transparent"
 
     // --- D-Bus monitor process ---
@@ -164,24 +164,12 @@ PanelWindow {
     // --- Slide in/out animation ---
     Item {
         anchors.fill: parent
-        clip: true
 
         Item {
             id: popupContent
             width: parent.width
             height: parent.height
-            y: -parent.height
             opacity: AppConfig.Config.theme.surfaceOpacity
-
-            states: State {
-                name: "visible"; when: root.popupVisible
-                PropertyChanges { target: popupContent; y: 0 }
-            }
-
-            transitions: Transition {
-                id: slideAnim
-                NumberAnimation { properties: "y"; duration: AppConfig.Config.theme.popupSlideDuration; easing.type: Easing.OutCubic }
-            }
 
             Components.PopupSurface {
                 anchors.fill: parent

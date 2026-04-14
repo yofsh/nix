@@ -62,9 +62,10 @@ while true; do
 	if $SHOW_TITLE; then
 		date +"%Y-%m-%d %H:%M:%S,%3N"
 		echo
-		grc --colour=on "${COMMAND[@]}" | head -n "$((LINES - 3))"
+		grc --colour=on "${COMMAND[@]}" | head -n "$((LINES - 3))" | sed "s/$/\x1b[K/"
 	else
-		grc --colour=on "${COMMAND[@]}" | head -n "$((LINES - 1))"
+		grc --colour=on "${COMMAND[@]}" | head -n "$((LINES - 1))" | sed "s/$/\x1b[K/"
 	fi
+	tput ed
 	sleep "$INTERVAL"
 done

@@ -315,11 +315,17 @@ def main():
                 print("No wireless interfaces found.", file=sys.stderr)
                 sys.exit(1)
 
+        # Trigger a NetworkManager rescan before reading cache
+        subprocess.run(
+            ["nmcli", "device", "wifi", "rescan"],
+            capture_output=True, timeout=10,
+        )
+
         text = ""
         for iface in ifaces:
             try:
                 result = subprocess.run(
-                    ["sudo", "iw", "dev", iface, "scan"],
+                    ["iw", "dev", iface, "scan", "dump"],
                     capture_output=True, text=True, check=True,
                 )
                 text += result.stdout

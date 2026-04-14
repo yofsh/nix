@@ -5,7 +5,7 @@ QtObject {
     readonly property QtObject theme: QtObject {
         readonly property string fontFamily: "DejaVuSansM Nerd Font"
         readonly property int barHeight: 22
-        readonly property int surfaceRadius: 16
+        readonly property int surfaceRadius: 0
         readonly property int cardRadiusSmall: 8
         readonly property real surfaceOpacity: 0.8
         readonly property real surfaceOpacityStrong: 0.85
@@ -127,5 +127,20 @@ QtObject {
         readonly property string claudePidFile: "/tmp/voice_claude.pid"
         readonly property string streamPidFile: "/tmp/voice_stream.pid"
         readonly property string transcribingFlag: "/tmp/voice_transcribing"
+    }
+
+    readonly property QtObject weather: QtObject {
+        readonly property string city: "Blanes"
+        readonly property real latitude: 41.67419
+        readonly property real longitude: 2.79036
+        readonly property int refreshInterval: 900000  // 15 minutes
+        readonly property string haUrl: "http://192.168.8.30:8123"
+        readonly property string haToken: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiI1ZWNiOWFlNDBjMmM0NWQwOTA5YmJjNWMzNDkwZWRmYyIsImlhdCI6MTc2NjU4MTkxMiwiZXhwIjoyMDgxOTQxOTEyfQ.HfZ8z2PZTocK8YH8P5QzbkUD7yB8_-2AUVyKdjhc5iU"
+        readonly property var haSensors: [
+            { entityId: "sensor.atc_ee61_temperature", label: "Balcony", color: "#4caf50" },
+            { entityId: "sensor.atc_fbd5_temperature", label: "Outdoor", color: "#42a5f5" }
+        ]
+        readonly property string haRainSensor: "sensor.zb_outdoor_1_rainwater"
+        readonly property int haHistoryDays: 4
     }
 }

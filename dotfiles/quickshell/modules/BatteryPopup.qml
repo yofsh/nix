@@ -16,7 +16,7 @@ PanelWindow {
     margins.top: barHeight
     implicitWidth: 1260
     implicitHeight: 180
-    visible: popupOpen || slideAnim.running
+    visible: popupOpen
     color: "transparent"
 
     property var historyData: []   // [{time, pct, state}]
@@ -118,24 +118,12 @@ PanelWindow {
 
     Item {
         anchors.fill: parent
-        clip: true
 
         Item {
             id: popupContent
             width: parent.width
             height: parent.height
-            y: -parent.height
             opacity: AppConfig.Config.theme.surfaceOpacityStrong
-
-            states: State {
-                name: "visible"; when: root.popupOpen
-                PropertyChanges { target: popupContent; y: 0 }
-            }
-
-            transitions: Transition {
-                id: slideAnim
-                NumberAnimation { properties: "y"; duration: AppConfig.Config.theme.popupSlideDuration; easing.type: Easing.OutCubic }
-            }
 
             Components.PopupSurface {
                 anchors.fill: parent

@@ -130,9 +130,10 @@ Scope {
                     Modules.Network { id: networkModule; pinned: AppState.ShellState.networkPinned }
                     Modules.PingGw { active: networkModule.pingActive }
                     Modules.Ping { active: networkModule.pingActive }
-                    Modules.Memory {}
+                    Modules.Memory { id: memoryModule }
                     Modules.Cpu {}
                     Modules.Temperature { id: temperatureModule }
+                    Modules.Weather { id: weatherModule }
                     Modules.Battery { id: batteryModule }
                     Modules.AirPods {}
 
@@ -149,18 +150,60 @@ Scope {
             Modules.FingerprintPopup { screen: barWindow.screen; barHeight: barWindow.implicitHeight; polkitActive: polkitPopup.active }
             Modules.TemperaturePopup { id: temperaturePopup; screen: barWindow.screen; barHeight: barWindow.implicitHeight; popupOpen: temperatureModule.popupOpen }
             Modules.BatteryPopup { id: batteryPopup; screen: barWindow.screen; barHeight: barWindow.implicitHeight; popupOpen: batteryModule.popupOpen }
+            Modules.WeatherPopup { id: weatherPopup; screen: barWindow.screen; barHeight: barWindow.implicitHeight; popupOpen: weatherModule.popupOpen }
+            Modules.SystemPopup { id: systemPopup; screen: barWindow.screen; barHeight: barWindow.implicitHeight; popupOpen: memoryModule.popupOpen }
             Modules.NotificationPopup { id: notifPopup; screen: barWindow.screen; barHeight: barWindow.implicitHeight }
+
+            Connections {
+                target: AppState.ShellState
+                function onSensorsPopupOpenChanged() {
+                    temperatureModule.popupOpen = AppState.ShellState.sensorsPopupOpen;
+                }
+                function onBatteryPopupOpenChanged() {
+                    batteryModule.popupOpen = AppState.ShellState.batteryPopupOpen;
+                }
+                function onWeatherPopupOpenChanged() {
+                    weatherModule.popupOpen = AppState.ShellState.weatherPopupOpen;
+                }
+                function onSystemPopupOpenChanged() {
+                    memoryModule.popupOpen = AppState.ShellState.systemPopupOpen;
+                }
+            }
 
             HyprlandFocusGrab {
                 windows: [barWindow, temperaturePopup]
                 active: temperatureModule.popupOpen
-                onCleared: temperatureModule.popupOpen = false
+                onCleared: {
+                    temperatureModule.popupOpen = false;
+                    AppState.ShellState.sensorsPopupOpen = false;
+                }
             }
 
             HyprlandFocusGrab {
                 windows: [barWindow, batteryPopup]
                 active: batteryModule.popupOpen
-                onCleared: batteryModule.popupOpen = false
+                onCleared: {
+                    batteryModule.popupOpen = false;
+                    AppState.ShellState.batteryPopupOpen = false;
+                }
+            }
+
+            HyprlandFocusGrab {
+                windows: [barWindow, weatherPopup]
+                active: weatherModule.popupOpen
+                onCleared: {
+                    weatherModule.popupOpen = false;
+                    AppState.ShellState.weatherPopupOpen = false;
+                }
+            }
+
+            HyprlandFocusGrab {
+                windows: [barWindow, systemPopup]
+                active: memoryModule.popupOpen
+                onCleared: {
+                    memoryModule.popupOpen = false;
+                    AppState.ShellState.systemPopupOpen = false;
+                }
             }
 
             Modules.WallpaperPopup {
@@ -180,34 +223,21 @@ Scope {
             PanelWindow {
                 id: submapPopup
                 screen: barWindow.screen
-                anchors.top: true
+                anchors.bottom: true
                 exclusionMode: ExclusionMode.Ignore
-                margins.top: barWindow.implicitHeight
                 implicitWidth: submapPopupCol.width + 32
                 implicitHeight: submapPopupCol.height + 16
-                visible: barWindow.submapName !== "" || submapAnim.running
+                visible: barWindow.submapName !== ""
                 color: "transparent"
 
                 Item {
                     anchors.fill: parent
-                    clip: true
 
                     Item {
                         id: submapContent
                         width: parent.width
                         height: parent.height
-                        y: -parent.height
                         opacity: AppConfig.Config.theme.surfaceOpacity
-
-                        states: State {
-                            name: "visible"; when: barWindow.submapName !== ""
-                            PropertyChanges { target: submapContent; y: 0 }
-                        }
-
-                        transitions: Transition {
-                            id: submapAnim
-                            NumberAnimation { properties: "y"; duration: AppConfig.Config.theme.popupSlideDuration; easing.type: Easing.OutCubic }
-                        }
 
                         Components.PopupSurface {
                             anchors.fill: parent

@@ -134,9 +134,9 @@ def main():
         print(f"{C.RED}Not connected to any network.{C.RST}", file=sys.stderr)
         sys.exit(1)
 
-    station = run(["sudo", "iw", "dev", iface, "station", "dump"])
+    station = run(["iw", "dev", iface, "station", "dump"])
     info = run(["iw", "dev", iface, "info"])
-    reg = run(["sudo", "iw", "reg", "get"])
+    reg = run(["iw", "reg", "get"])
 
     # ── Parse link ───────────────────────────────────────────────────────
     bssid = ""
