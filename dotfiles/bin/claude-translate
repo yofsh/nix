@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+
+preset="${1:-}"
+mode="${2:-}"
+
+if [[ -z "$preset" ]]; then
+  echo "Usage: claude-translate <en|ru|es|fix|formal> [replace]" >&2
+  exit 1
+fi
+
+common="use lowercase, use comma instead of semicolons, prefer joining sentences with commas over splitting with periods when still readable"
+es_rules="no accents except ñ or when omitting changes meaning, no inverted punctuation marks, lowercase first letter of sentences"
+
+case "$preset" in
+  en)     prompt="Translate to English, output only the translation, $common" ;;
+  ru)     prompt="Translate to Russian, output only the translation, $common" ;;
+  es)     prompt="Translate to Spanish, output only the translation, $es_rules, $common" ;;
+  fix)    prompt="Fix grammar and show updated text, keep original text structure, $common" ;;
+  formal) prompt="Make this text more formal, $common" ;;
+  *)      echo "Unknown preset: $preset" >&2; exit 1 ;;
+esac
+
+exec claude-text "$prompt" "$mode"
