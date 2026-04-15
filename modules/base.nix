@@ -116,6 +116,7 @@
         "nginx"
         "lpadmin"
         "i2c"
+        "bluetooth"
       ];
       packages = with pkgs; [ ];
       openssh.authorizedKeys.keys = [
