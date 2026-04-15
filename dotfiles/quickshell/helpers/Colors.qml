@@ -37,4 +37,10 @@ QtObject {
     // Submap
     readonly property color submapFg: AppConfig.Config.theme.colors.submapFg
     readonly property color submapBg: AppConfig.Config.theme.colors.submapBg
+
+    // Multimeter (Pokit)
+    readonly property color multimeter: AppConfig.Config.theme.colors.multimeter
+    readonly property color multimeterActive: AppConfig.Config.theme.colors.multimeterActive
+    readonly property color multimeterError: AppConfig.Config.theme.colors.multimeterError
+    readonly property color multimeterIdle: AppConfig.Config.theme.colors.multimeterIdle
 }

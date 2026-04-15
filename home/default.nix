@@ -22,6 +22,9 @@ in
   ++ lib.optionals (hostname == "athena") [
     ./touchpad.nix
     ./laptop.nix
+  ]
+  ++ lib.optionals (hostname == "ares" || hostname == "athena") [
+    ./pokit.nix
   ];
 
   nixpkgs.config.allowUnfree = true;

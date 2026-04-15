@@ -38,5 +38,5 @@
     "cfg80211.ieee80211_regdom=DE" # 6GHz needs persistent regdom, not beacon hints
   ];
 
-  environment.systemPackages = [ pkgs.android-tools pkgs.hyperhdr pkgs.monique ];
+  environment.systemPackages = [ pkgs.android-tools pkgs.hyperhdr pkgs.monique pkgs.dokit ];
 }

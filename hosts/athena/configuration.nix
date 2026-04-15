@@ -28,7 +28,7 @@
     # causing the proxy to see no sensors and exit. Retrigger udev first.
     serviceConfig.ExecStartPre = "${pkgs.systemd}/bin/udevadm trigger --subsystem-match=iio";
   };
-  environment.systemPackages = [ pkgs.iio-hyprland ];
+  environment.systemPackages = [ pkgs.iio-hyprland pkgs.dokit ];
 
   sops.secrets."testkey" = {
     owner = config.users.users.fobos.name;

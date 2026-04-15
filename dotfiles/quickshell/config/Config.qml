@@ -60,6 +60,11 @@ QtObject {
 
             readonly property color submapFg: "#222"
             readonly property color submapBg: "#eee"
+
+            readonly property color multimeter: "#f9e2af"
+            readonly property color multimeterActive: "#a6e3a1"
+            readonly property color multimeterError: "#f38ba8"
+            readonly property color multimeterIdle: Qt.rgba(1, 1, 1, 0.35)
         }
     }
 

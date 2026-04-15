@@ -29,3 +29,6 @@ PrivacyIndicators 1.0 PrivacyIndicators.qml
 Weather 1.0 Weather.qml
 WeatherPopup 1.0 WeatherPopup.qml
 SystemPopup 1.0 SystemPopup.qml
+PokitPro 1.0 PokitPro.qml
+PokitProPopup 1.0 PokitProPopup.qml
+PokitProService 1.0 PokitProService.qml

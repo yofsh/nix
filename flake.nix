@@ -43,7 +43,18 @@
     let
       system = "x86_64-linux";
 
-      pkgs = nixpkgs.legacyPackages.${system};
+      # Common overlay — Pokit-related local packages. Shared between the
+      # NixOS configurations for ares/athena and the standalone
+      # homeConfigurations that pick up the same pkgs overlay.
+      pokitOverlay = final: prev: {
+        dokit = prev.callPackage ./modules/dokit.nix { };
+        pokitd = prev.callPackage ./modules/pokitd { dokit = final.dokit; };
+      };
+
+      pkgs = import nixpkgs {
+        inherit system;
+        overlays = [ pokitOverlay ];
+      };
 
     in {
 
@@ -77,7 +88,10 @@
           {
             nixpkgs.overlays = [
               inputs.quickshell.overlays.default
-              (_: prev: { monique = prev.callPackage ./packages/monique.nix { }; })
+              pokitOverlay
+              (_: prev: {
+                monique = prev.callPackage ./packages/monique.nix { };
+              })
             ];
           }
         ];
@@ -89,7 +103,12 @@
         modules = [
           ./hosts/athena/configuration.nix
           sops-nix.nixosModules.sops
-          { nixpkgs.overlays = [ inputs.quickshell.overlays.default ]; }
+          {
+            nixpkgs.overlays = [
+              inputs.quickshell.overlays.default
+              pokitOverlay
+            ];
+          }
         ];
       };
 

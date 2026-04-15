@@ -14,6 +14,7 @@ Scope {
     id: root
 
     Modules.PolkitPopup { id: polkitPopup; barHeight: AppConfig.Config.theme.barHeight }
+    Modules.PokitProService { id: pokitService }
 
     Variants {
         model: Quickshell.screens
@@ -136,6 +137,7 @@ Scope {
                     Modules.Weather { id: weatherModule }
                     Modules.Battery { id: batteryModule }
                     Modules.AirPods {}
+                    Modules.PokitPro { service: pokitService }
 
                     Modules.Clock {}
                     Modules.HeadsetBattery {}
@@ -153,6 +155,13 @@ Scope {
             Modules.WeatherPopup { id: weatherPopup; screen: barWindow.screen; barHeight: barWindow.implicitHeight; popupOpen: weatherModule.popupOpen }
             Modules.SystemPopup { id: systemPopup; screen: barWindow.screen; barHeight: barWindow.implicitHeight; popupOpen: memoryModule.popupOpen }
             Modules.NotificationPopup { id: notifPopup; screen: barWindow.screen; barHeight: barWindow.implicitHeight }
+            Modules.PokitProPopup {
+                id: pokitPopup
+                screen: barWindow.screen
+                barHeight: barWindow.implicitHeight
+                service: pokitService
+                popupOpen: pokitService.popupShouldShow
+            }
 
             Connections {
                 target: AppState.ShellState
@@ -204,6 +213,12 @@ Scope {
                     memoryModule.popupOpen = false;
                     AppState.ShellState.systemPopupOpen = false;
                 }
+            }
+
+            HyprlandFocusGrab {
+                windows: [barWindow, pokitPopup]
+                active: pokitPopup.popupOpen && !AppState.ShellState.pokitPopupPinned
+                onCleared: AppState.ShellState.pokitPopupDismissed = true
             }
 
             Modules.WallpaperPopup {
