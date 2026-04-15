@@ -4,21 +4,21 @@ set -euo pipefail
 
 device=$(kdeconnect-cli --list-available --id-only | head -n1)
 if [ -z "$device" ]; then
-  notify-send -a "KDE Connect" "No reachable device" "Pair or wake your phone first."
+  notify-send -a "KDE Connect" -i kdeconnect "No reachable device" "Pair or wake your phone first."
   exit 1
 fi
 
 content=$(wl-paste 2>/dev/null || true)
 if [ -z "$content" ]; then
-  notify-send -a "KDE Connect" "Clipboard is empty"
+  notify-send -a "KDE Connect" -i kdeconnect "Clipboard is empty"
   exit 1
 fi
 
 if [[ "$content" =~ ^https?:// ]] && [[ ! "$content" =~ [[:space:]] ]]; then
   kdeconnect-cli -d "$device" --share "$content"
-  notify-send -a "KDE Connect" "Link sent to mobile" "$content"
+  notify-send -a "KDE Connect" -i kdeconnect "Link sent to mobile" "$content"
 else
   kdeconnect-cli -d "$device" --share-text "$content"
   preview=$(printf '%s' "$content" | head -c 120)
-  notify-send -a "KDE Connect" "Text sent to mobile" "$preview"
+  notify-send -a "KDE Connect" -i kdeconnect "Text sent to mobile" "$preview"
 fi
