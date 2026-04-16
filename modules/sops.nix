@@ -23,4 +23,10 @@
   sops.secrets."openrouter-key" = {
     owner = config.users.users.fobos.name;
   };
+  sops.secrets."google-oauth-id" = {
+    owner = config.users.users.fobos.name;
+  };
+  sops.secrets."google-oauth-secret" = {
+    owner = config.users.users.fobos.name;
+  };
 }

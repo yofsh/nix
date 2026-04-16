@@ -29,3 +29,5 @@ PrivacyIndicators 1.0 PrivacyIndicators.qml
 Weather 1.0 Weather.qml
 WeatherPopup 1.0 WeatherPopup.qml
 SystemPopup 1.0 SystemPopup.qml
+Khal 1.0 Khal.qml
+KhalPopup 1.0 KhalPopup.qml

@@ -138,6 +138,7 @@ Scope {
                     Modules.AirPods {}
 
                     Modules.Clock {}
+                    Modules.Khal {}
                     Modules.HeadsetBattery {}
                     Modules.Language {}
                     Modules.NotificationIcon { count: notifPopup.activeCount; dnd: notifPopup.dnd; onDndChanged: notifPopup.dnd = dnd }
@@ -152,6 +153,7 @@ Scope {
             Modules.BatteryPopup { id: batteryPopup; screen: barWindow.screen; barHeight: barWindow.implicitHeight; popupOpen: batteryModule.popupOpen }
             Modules.WeatherPopup { id: weatherPopup; screen: barWindow.screen; barHeight: barWindow.implicitHeight; popupOpen: weatherModule.popupOpen }
             Modules.SystemPopup { id: systemPopup; screen: barWindow.screen; barHeight: barWindow.implicitHeight; popupOpen: memoryModule.popupOpen }
+            Modules.KhalPopup { id: khalPopup; screen: barWindow.screen; barHeight: barWindow.implicitHeight; popupOpen: AppState.ShellState.khalPopupOpen }
             Modules.NotificationPopup { id: notifPopup; screen: barWindow.screen; barHeight: barWindow.implicitHeight }
 
             Connections {
@@ -204,6 +206,12 @@ Scope {
                     memoryModule.popupOpen = false;
                     AppState.ShellState.systemPopupOpen = false;
                 }
+            }
+
+            HyprlandFocusGrab {
+                windows: [barWindow, khalPopup]
+                active: AppState.ShellState.khalPopupOpen
+                onCleared: AppState.ShellState.khalPopupOpen = false
             }
 
             Modules.WallpaperPopup {

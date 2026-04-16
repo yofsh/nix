@@ -13,6 +13,7 @@ Scope {
     property bool wallpaperPopupOpen: false
     property bool weatherPopupOpen: false
     property bool systemPopupOpen: false
+    property bool khalPopupOpen: false
 
     function openWallpaperPopup() {
         root.wallpaperPopupOpen = true;
@@ -85,6 +86,22 @@ Scope {
 
         function toggle() {
             root.systemPopupOpen = !root.systemPopupOpen;
+        }
+    }
+
+    IpcHandler {
+        target: "khal"
+
+        function toggle() {
+            root.khalPopupOpen = !root.khalPopupOpen;
+        }
+
+        function open() {
+            root.khalPopupOpen = true;
+        }
+
+        function close() {
+            root.khalPopupOpen = false;
         }
     }
 

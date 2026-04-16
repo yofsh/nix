@@ -5,3 +5,6 @@ result
 CLAUDE.md
 __pycache__/
 dotfiles/television/cable/
+dotfiles/khal/config
+dotfiles/vdirsyncer/config
+dotfiles/quickshell/calendar-map.json

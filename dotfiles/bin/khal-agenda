@@ -1,0 +1,298 @@
+#!/usr/bin/env python3
+"""Emit enriched khal agenda as JSON for the Quickshell Khal popup.
+
+Fields per event:
+  title, start, end, calendar, location, allDay, uid,
+  description (cleaned, short),
+  meetingLink (first detected Meet/Zoom/Teams/Webex URL),
+  attendees ({accepted, declined, tentative, needsAction, total}),
+    unique by e-mail, parsed from the master VEVENT in the underlying .ics.
+"""
+
+from __future__ import annotations
+
+import json
+import re
+import subprocess
+import sys
+from functools import lru_cache
+from pathlib import Path
+
+CAL_ROOT = Path.home() / ".calendars"
+RANGE = "today"
+SPAN = "7d"
+
+KHAL_FIELDS = [
+    "title", "start", "end", "calendar", "description",
+    "location", "all-day", "uid",
+]
+
+LINK_PATTERNS = [
+    re.compile(r"https://meet\.google\.com/[A-Za-z0-9_\-?=&]+"),
+    re.compile(r"https://[A-Za-z0-9.\-]*zoom\.us/[A-Za-z0-9_\-?=&/.]+"),
+    re.compile(r"https://teams\.(?:microsoft|live)\.com/[^\s\"<>]+"),
+    re.compile(r"https://[A-Za-z0-9.\-]*webex\.com/[^\s\"<>]+"),
+]
+
+# Lines that are pure boilerplate added by Google Meet / Calendar invites.
+BOILERPLATE_PREFIXES = (
+    "-::", "join with google meet", "or dial:", "more phone numbers:",
+    "learn more about meet", "please do not edit",
+)
+
+
+def run_khal() -> list[dict]:
+    cmd = ["khal", "list"]
+    for f in KHAL_FIELDS:
+        cmd += ["--json", f]
+    cmd += [RANGE, SPAN]
+    out = subprocess.run(cmd, capture_output=True, text=True, check=False).stdout
+    events: list[dict] = []
+    for line in out.splitlines():
+        line = line.strip()
+        if not line or line == "[]":
+            continue
+        try:
+            events.extend(json.loads(line))
+        except json.JSONDecodeError:
+            continue
+    return events
+
+
+@lru_cache(maxsize=None)
+def read_ics_all(calendar: str, uid: str) -> tuple[str, ...]:
+    """Return every ICS text under `calendar` whose base UID matches `uid`.
+
+    Google-synced recurring events commonly split the master and each
+    RECURRENCE-ID override into separate .ics files. Attendees can differ
+    across those files (e.g. people added mid-series show up only in later
+    overrides), so we union them rather than trusting any single file.
+    """
+    base = uid.split("_R", 1)[0]
+    if not base:
+        return ()
+    matches: list[str] = []
+    for account in CAL_ROOT.iterdir():
+        if not account.is_dir():
+            continue
+        cal_dir = account / calendar
+        if not cal_dir.is_dir():
+            continue
+        for ics in cal_dir.glob("*.ics"):
+            try:
+                text = ics.read_text(errors="ignore")
+            except OSError:
+                continue
+            if f"UID:{base}" in text:
+                matches.append(text)
+    return tuple(matches)
+
+
+def extract_meeting_link(desc: str) -> str:
+    if not desc:
+        return ""
+    for p in LINK_PATTERNS:
+        m = p.search(desc)
+        if m:
+            return m.group(0)
+    return ""
+
+
+def clean_description(desc: str, limit: int = 240) -> str:
+    if not desc:
+        return ""
+    out: list[str] = []
+    for line in desc.splitlines():
+        s = line.strip()
+        if not s:
+            continue
+        low = s.lower()
+        if any(low.startswith(p) for p in BOILERPLATE_PREFIXES):
+            continue
+        if "meet.google.com" in low:
+            continue
+        if "google.com/a/users" in low:
+            continue
+        out.append(s)
+    text = " ".join(out)
+    if len(text) > limit:
+        text = text[: limit - 1].rstrip() + "…"
+    return text
+
+
+ZERO_ATTENDEES = {
+    "accepted": 0, "declined": 0, "tentative": 0, "needsAction": 0, "total": 0,
+}
+
+
+def unfold(text: str) -> list[str]:
+    """Join RFC 5545 continuation lines (lines starting with space or tab)."""
+    out: list[str] = []
+    for line in text.splitlines():
+        if line.startswith((" ", "\t")) and out:
+            out[-1] += line[1:]
+        else:
+            out.append(line)
+    return out
+
+
+def _collect_vevents(ics_texts: tuple[str, ...]) -> list[dict]:
+    """Return a list of {recurrence_id, is_override, organizer, attendees[]}."""
+    out: list[dict] = []
+    for ics in ics_texts:
+        lines = unfold(ics)
+        cur: dict | None = None
+        for ln in lines:
+            if ln == "BEGIN:VEVENT":
+                cur = {
+                    "recurrence_id": "",
+                    "is_override": False,
+                    "organizer": "",
+                    "attendees": [],
+                }
+            elif ln == "END:VEVENT":
+                if cur is not None:
+                    out.append(cur)
+                    cur = None
+            elif cur is not None:
+                if ln.startswith("ATTENDEE"):
+                    cur["attendees"].append(ln)
+                elif ln.startswith("ORGANIZER") and not cur["organizer"]:
+                    m = re.search(r"mailto:([^\s,;]+)", ln, re.IGNORECASE)
+                    if m:
+                        cur["organizer"] = m.group(1).lower()
+                elif ln.startswith("RECURRENCE-ID"):
+                    cur["is_override"] = True
+                    m = re.search(r":([0-9T]+)$", ln)
+                    if m:
+                        cur["recurrence_id"] = m.group(1)
+    return out
+
+
+# When an attendee appears in multiple VEVENTs (master + overrides), prefer the
+# strongest RSVP ever seen — Google counts them as "yes" if they accepted even
+# one instance of the series.
+_STATUS_PRIORITY = {"ACCEPTED": 3, "DECLINED": 2, "TENTATIVE": 1, "NEEDS-ACTION": 0}
+
+
+# Google inserts this address as ORGANIZER on system-generated events
+# (birthdays, holidays, …). It's not a real person; ignore it.
+_PLACEHOLDER_ORGANIZERS = frozenset({
+    "unknownorganizer@calendar.google.com",
+})
+
+
+def _attendee_email(line: str) -> str:
+    m = re.search(r"mailto:([^\s,;]+)", line, re.IGNORECASE)
+    return m.group(1).lower() if m else ""
+
+
+def _attendee_status(line: str) -> str:
+    m = re.search(r"PARTSTAT=([A-Z\-]+)", line)
+    return (m.group(1) if m else "NEEDS-ACTION").upper()
+
+
+def parse_attendees(ics_texts: tuple[str, ...]) -> dict:
+    """Compute Google-UI–like attendee counts for a (possibly recurring) event.
+
+    Roster (who counts as a guest) = attendees of the latest RECURRENCE-ID
+    override, falling back to the master VEVENT. This excludes people who
+    were only invited to a past one-off occurrence.
+
+    Status (accepted/declined/…) = strongest RSVP that person ever gave
+    anywhere in the series. A once-ACCEPTED attendee stays accepted, which
+    mirrors Google's roll-up.
+
+    Organizer is always counted as implicit ACCEPTED.
+    """
+    if not ics_texts:
+        return dict(ZERO_ATTENDEES)
+
+    vevents = _collect_vevents(ics_texts)
+    if not vevents:
+        return dict(ZERO_ATTENDEES)
+
+    # Roster — latest override by RECURRENCE-ID, else master.
+    overrides = [v for v in vevents if v["is_override"]]
+    if overrides:
+        overrides.sort(key=lambda v: v["recurrence_id"], reverse=True)
+        roster_src = overrides[0]
+    else:
+        roster_src = next((v for v in vevents if not v["is_override"]), vevents[0])
+
+    roster: list[str] = []
+    seen: set[str] = set()
+    for ln in roster_src["attendees"]:
+        email = _attendee_email(ln)
+        if email and email not in seen:
+            seen.add(email)
+            roster.append(email)
+
+    organizer_email = roster_src["organizer"] or next(
+        (v["organizer"] for v in vevents if v["organizer"]), ""
+    )
+    if organizer_email in _PLACEHOLDER_ORGANIZERS:
+        organizer_email = ""
+    if organizer_email and organizer_email not in seen:
+        seen.add(organizer_email)
+        roster.append(organizer_email)
+
+    # Strongest status ever seen, across every VEVENT.
+    best: dict[str, str] = {}
+    for v in vevents:
+        for ln in v["attendees"]:
+            email = _attendee_email(ln)
+            if email not in seen:
+                continue
+            status = _attendee_status(ln)
+            prev = best.get(email)
+            if prev is None or _STATUS_PRIORITY[status] > _STATUS_PRIORITY[prev]:
+                best[email] = status
+
+    if organizer_email:
+        best[organizer_email] = "ACCEPTED"
+
+    counts = {"accepted": 0, "declined": 0, "tentative": 0, "needsAction": 0}
+    for email in roster:
+        status = best.get(email, "NEEDS-ACTION")
+        if status == "ACCEPTED":
+            counts["accepted"] += 1
+        elif status == "DECLINED":
+            counts["declined"] += 1
+        elif status == "TENTATIVE":
+            counts["tentative"] += 1
+        else:
+            counts["needsAction"] += 1
+
+    return {**counts, "total": len(roster)}
+
+
+def enrich(e: dict) -> dict:
+    ics_texts = read_ics_all(e.get("calendar", ""), e.get("uid", ""))
+    desc_raw = e.get("description", "") or ""
+    return {
+        "title": (e.get("title") or "").strip(),
+        "start": e.get("start", ""),
+        "end": e.get("end", ""),
+        "calendar": e.get("calendar", ""),
+        "location": e.get("location", ""),
+        "allDay": e.get("all-day") == "True",
+        "uid": e.get("uid", ""),
+        "description": clean_description(desc_raw),
+        "meetingLink": extract_meeting_link(desc_raw),
+        "attendees": parse_attendees(ics_texts),
+    }
+
+
+def main() -> int:
+    try:
+        events = [enrich(e) for e in run_khal()]
+    except Exception as exc:
+        print(json.dumps({"error": str(exc), "events": []}))
+        return 1
+    json.dump(events, sys.stdout, ensure_ascii=False)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

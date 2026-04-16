@@ -1,0 +1,34 @@
+[calendars]
+
+[[personal]]
+path = ~/.calendars/personal/*
+type = discover
+color = '#ff3b30'
+
+[[work]]
+path = ~/.calendars/work/*
+type = discover
+color = '#ff9500'
+
+[[yofsh]]
+path = ~/.calendars/yofsh/*
+type = discover
+color = '#3b82f6'
+
+[locale]
+local_timezone = Europe/Madrid
+default_timezone = Europe/Madrid
+timeformat = %H:%M
+dateformat = %Y-%m-%d
+longdateformat = %Y-%m-%d %a
+datetimeformat = %Y-%m-%d %H:%M
+longdatetimeformat = %Y-%m-%d %H:%M
+firstweekday = 0
+
+[default]
+default_calendar = <your-email>
+timedelta = 14d
+
+[view]
+agenda_event_format = {calendar-color}{start-end-time-style} {title} {repeat-symbol}{alarm-symbol} [{calendar}]{reset}
+event_format = {calendar-color}{start-end-time-style} {title} {repeat-symbol}{alarm-symbol} [{calendar}]{reset}

@@ -1,0 +1,5 @@
+{
+    "your-personal@gmail.com":  { "icon": "\uF015", "color": "#ff3b30", "label": "personal" },
+    "your-work@company.com":    { "icon": "\uF0B1", "color": "#ff9500", "label": "work" },
+    "your-other@domain.com":    { "icon": "\uF007", "color": "#3b82f6", "label": "other" }
+}

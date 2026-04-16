@@ -1,0 +1,59 @@
+[general]
+status_path = "~/.local/share/vdirsyncer/status/"
+
+# --- Personal account ---
+[pair personal]
+a = "personal_remote"
+b = "personal_local"
+collections = ["from a"]
+conflict_resolution = "a wins"
+metadata = ["color", "displayname"]
+
+[storage personal_remote]
+type = "google_calendar"
+token_file = "~/.local/share/vdirsyncer/personal.token"
+client_id.fetch = ["command", "cat", "/run/secrets/google-oauth-id"]
+client_secret.fetch = ["command", "cat", "/run/secrets/google-oauth-secret"]
+
+[storage personal_local]
+type = "filesystem"
+path = "~/.calendars/personal/"
+fileext = ".ics"
+
+# --- Work account ---
+[pair work]
+a = "work_remote"
+b = "work_local"
+collections = ["from a"]
+conflict_resolution = "a wins"
+metadata = ["color", "displayname"]
+
+[storage work_remote]
+type = "google_calendar"
+token_file = "~/.local/share/vdirsyncer/work.token"
+client_id.fetch = ["command", "cat", "/run/secrets/google-oauth-id"]
+client_secret.fetch = ["command", "cat", "/run/secrets/google-oauth-secret"]
+
+[storage work_local]
+type = "filesystem"
+path = "~/.calendars/work/"
+fileext = ".ics"
+
+# --- yofsh account ---
+[pair yofsh]
+a = "yofsh_remote"
+b = "yofsh_local"
+collections = ["from a"]
+conflict_resolution = "a wins"
+metadata = ["color", "displayname"]
+
+[storage yofsh_remote]
+type = "google_calendar"
+token_file = "~/.local/share/vdirsyncer/yofsh.token"
+client_id.fetch = ["command", "cat", "/run/secrets/google-oauth-id"]
+client_secret.fetch = ["command", "cat", "/run/secrets/google-oauth-secret"]
+
+[storage yofsh_local]
+type = "filesystem"
+path = "~/.calendars/yofsh/"
+fileext = ".ics"

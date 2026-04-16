@@ -33,6 +33,8 @@ in
   home.packages = [
     pkgs.libnotify
     pkgs.playerctl
+    pkgs.khal
+    pkgs.vdirsyncer
     inputs.claude-code.packages.${pkgs.system}.claude-code
     inputs.claude-code.packages.${pkgs.system}.codex
     inputs.claude-code.packages.${pkgs.system}.opencode
@@ -91,6 +93,8 @@ in
     '';
 
     "foot/foot.ini".source = link "${dotfiles}/foot/foot.ini";
+    "vdirsyncer/config".source = link "${dotfiles}/vdirsyncer/config";
+    "khal/config".source = link "${dotfiles}/khal/config";
     "tridactyl/tridactylrc".source = link "${dotfiles}/firefox/tridactylrc";
     "nvim".source = link "${dotfiles}/nvim";
     "yazi".source = link "${dotfiles}/yazi";
