@@ -220,7 +220,7 @@ PanelWindow {
 
     function makeEntry(nid, realId, notif, tag, arrivedAt, hidden) {
         var s = resolveStyle(notif.summary || "", notif.body || "", notif.appName || "", notif.urgency);
-        var t = s.timeout === -1 && notif.expireTimeout > 0 ? notif.expireTimeout : s.timeout;
+        var t = notif.expireTimeout >= 0 ? notif.expireTimeout : s.timeout;
         return {
             nid: nid,
             realId: realId,
