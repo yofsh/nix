@@ -1,0 +1,27 @@
+{
+  "network": {
+    "gatewayTarget": "router-hostname"
+  },
+  "backlight": {
+    "devicePath": "/sys/class/backlight/intel_backlight"
+  },
+  "wallpaper": {
+    "directory": "$HOME/pics/wallpapers",
+    "currentLink": "$HOME/.current-wallpaper"
+  },
+  "weather": {
+    "city": "Your City",
+    "latitude": 0,
+    "longitude": 0,
+    "haUrl": "http://127.0.0.1:8123",
+    "haToken": "replace-me",
+    "haSensors": [
+      {
+        "entityId": "sensor.example_temperature",
+        "label": "Outdoor",
+        "color": "#42a5f5"
+      }
+    ],
+    "haRainSensor": "sensor.example_rain"
+  }
+}

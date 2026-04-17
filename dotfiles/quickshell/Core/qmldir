@@ -1,0 +1,13 @@
+singleton ConfigService 1.0 ConfigService.qml
+singleton ModuleRegistry 1.0 ModuleRegistry.qml
+singleton PopupService 1.0 PopupService.qml
+singleton ScreenService 1.0 ScreenService.qml
+BarHost 1.0 BarHost.qml
+ModuleContext 1.0 ModuleContext.qml
+ModuleScanner 1.0 ModuleScanner.qml
+PackagePopupLoader 1.0 PackagePopupLoader.qml
+PackageServiceLoader 1.0 PackageServiceLoader.qml
+PackageWidgetLoader 1.0 PackageWidgetLoader.qml
+PopupController 1.0 PopupController.qml
+ServiceHost 1.0 ServiceHost.qml
+ShellRoot 1.0 ShellRoot.qml

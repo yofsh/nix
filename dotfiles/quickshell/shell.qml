@@ -1,7 +1,5 @@
 //@ pragma IconTheme Papirus
 //@ pragma UseQApplication
-import Quickshell
+import "Core" as Core
 
-Scope {
-    Bar {}
-}
+Core.ShellRoot {}

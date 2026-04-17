@@ -1,0 +1,4 @@
+NotificationPopup 1.0 NotificationPopup.qml
+OsdPopup 1.0 OsdPopup.qml
+FingerprintPopup 1.0 FingerprintPopup.qml
+PolkitPopup 1.0 PolkitPopup.qml

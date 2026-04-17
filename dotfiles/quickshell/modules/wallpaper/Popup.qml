@@ -1,0 +1,283 @@
+import Quickshell
+import Quickshell.Io
+import Quickshell.Wayland
+import QtQuick
+import "../../config" as AppConfig
+
+PanelWindow {
+    id: root
+    property var context: null
+    property int barHeight: AppConfig.Config.theme.barHeight
+    property bool popupOpen: false
+
+    function closePopup() {
+        revertAndClose();
+    }
+
+    onDismissed: {
+        if (context)
+            context.closePopup();
+    }
+
+    anchors.top: true
+    anchors.bottom: true
+    exclusionMode: ExclusionMode.Ignore
+    property real screenRatio: screen ? screen.width / screen.height : 16/9
+    property real cardHeight: screen ? Math.floor((screen.height - 30 - 28 * 8) / 7) : 100
+    property real cardWidth: cardHeight * screenRatio
+    implicitWidth: cardWidth * 1.3 + 40
+    visible: popupOpen
+    color: "transparent"
+
+    WlrLayershell.namespace: "quickshell-wallpaper"
+    WlrLayershell.keyboardFocus: popupOpen ? WlrKeyboardFocus.Exclusive : WlrKeyboardFocus.None
+
+    signal dismissed()
+
+    property var wallpapers: []
+    property var thumbMap: ({})
+    property string currentWallpaper: ""
+    property string originalWallpaper: ""
+    property int selectedIndex: -1
+
+    onPopupOpenChanged: {
+        if (popupOpen) {
+            scanProc.running = true;
+            currentProc.running = true;
+            thumbGenProc.running = true;
+        } else {
+            selectedIndex = -1;
+        }
+    }
+
+    function previewWallpaper(path) {
+        previewProc.wallpaperPath = path;
+        previewProc.running = true;
+    }
+
+    function commitSelection() {
+        if (selectedIndex < 0 || selectedIndex >= wallpapers.length) return;
+        var path = wallpapers[selectedIndex].path;
+        currentWallpaper = path;
+        originalWallpaper = path;
+        applyProc.wallpaperPath = path;
+        applyProc.running = true;
+        dismissed();
+    }
+
+    function revertAndClose() {
+        if (originalWallpaper && originalWallpaper !== currentWallpaper) {
+            previewWallpaper(originalWallpaper);
+            currentWallpaper = originalWallpaper;
+        }
+        dismissed();
+    }
+
+    function moveSelection(delta) {
+        if (wallpapers.length === 0) return;
+        if (selectedIndex < 0) {
+            for (var i = 0; i < wallpapers.length; i++) {
+                if (wallpapers[i].path === currentWallpaper) {
+                    selectedIndex = i;
+                    return;
+                }
+            }
+            selectedIndex = 0;
+        } else {
+            selectedIndex = Math.max(0, Math.min(wallpapers.length - 1, selectedIndex + delta));
+        }
+        var path = wallpapers[selectedIndex].path;
+        currentWallpaper = path;
+        previewWallpaper(path);
+    }
+
+    Process {
+        id: scanProc
+        command: ["bash", "-c", "find \"" + AppConfig.Config.wallpaper.directory + "\" -type f \\( -name '*.jpg' -o -name '*.png' -o -name '*.webp' \\) -printf '%T@\\t%p\\n'"]
+        running: false
+        stdout: StdioCollector {
+            onStreamFinished: {
+                var lines = this.text.trim().split("\n");
+                var items = [];
+                for (var i = 0; i < lines.length; i++) {
+                    var parts = lines[i].split("\t");
+                    if (parts.length < 2) continue;
+                    items.push({mtime: parseFloat(parts[0]), path: parts[1]});
+                }
+                items.sort(function(a, b) { return b.mtime - a.mtime; });
+                root.wallpapers = items;
+                scrollTimer.restart();
+            }
+        }
+    }
+
+    Process {
+        id: currentProc
+        command: ["bash", "-c", "readlink -f \"" + AppConfig.Config.wallpaper.currentLink + "\""]
+        running: false
+        stdout: StdioCollector {
+            onStreamFinished: {
+                var wp = this.text.trim();
+                root.currentWallpaper = wp;
+                root.originalWallpaper = wp;
+            }
+        }
+    }
+
+    Timer {
+        id: scrollTimer
+        interval: 50
+        onTriggered: {
+            for (var i = 0; i < root.wallpapers.length; i++) {
+                if (root.wallpapers[i].path === root.currentWallpaper) {
+                    root.selectedIndex = i;
+                    return;
+                }
+            }
+        }
+    }
+
+    Process {
+        id: previewProc
+        property string wallpaperPath: ""
+        command: ["awww", "img", wallpaperPath, "--resize", "crop", "--transition-type", AppConfig.Config.wallpaper.previewTransitionType, "--transition-duration", AppConfig.Config.wallpaper.previewTransitionDuration, "--transition-fps", AppConfig.Config.wallpaper.previewTransitionFps]
+        running: false
+    }
+
+    Process {
+        id: applyProc
+        property string wallpaperPath: ""
+        command: ["bash", "-c", "wallpaper -s set \"$1\"", "--", wallpaperPath]
+        running: false
+    }
+
+    Process {
+        id: thumbGenProc
+        command: ["bash", "-c", "wallpaper-thumbs \"" + AppConfig.Config.wallpaper.directory + "\" 600"]
+        running: false
+        stdout: StdioCollector {
+            onStreamFinished: {
+                var map = {};
+                var lines = this.text.trim().split("\n");
+                for (var i = 0; i < lines.length; i++) {
+                    var parts = lines[i].split("\t");
+                    if (parts.length >= 2)
+                        map[parts[0]] = parts[1];
+                }
+                root.thumbMap = map;
+            }
+        }
+    }
+
+    Item {
+        anchors.fill: parent
+        focus: true
+
+        Keys.onPressed: function(event) {
+            if (event.key === Qt.Key_Down || event.key === Qt.Key_J || event.key === Qt.Key_Right || event.key === Qt.Key_L) {
+                root.moveSelection(1);
+                event.accepted = true;
+            } else if (event.key === Qt.Key_Up || event.key === Qt.Key_K || event.key === Qt.Key_Left || event.key === Qt.Key_H) {
+                root.moveSelection(-1);
+                event.accepted = true;
+            } else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
+                root.commitSelection();
+                event.accepted = true;
+            } else if (event.key === Qt.Key_Escape) {
+                root.revertAndClose();
+                event.accepted = true;
+            }
+        }
+
+        Item {
+            id: popupContent
+            anchors.fill: parent
+
+            ListView {
+                id: gallery
+                anchors.fill: parent
+                anchors.margins: 8
+                orientation: ListView.Vertical
+                spacing: 8
+                clip: true
+                model: root.wallpapers.length
+                currentIndex: root.selectedIndex
+
+                preferredHighlightBegin: (height - root.cardHeight * 1.3) / 2
+                preferredHighlightEnd: (height + root.cardHeight * 1.3) / 2
+                highlightRangeMode: ListView.StrictlyEnforceRange
+                highlightMoveDuration: 0
+                cacheBuffer: 5000
+
+                delegate: Item {
+                    id: card
+                    required property int index
+                    width: gallery.width
+                    height: isFocused ? root.cardHeight * 1.3 : root.cardHeight * 0.7
+
+                    property var entry: root.wallpapers[index]
+                    property bool isFocused: index === root.selectedIndex
+
+                    z: isFocused ? 2 : (cardMouse.containsMouse ? 1.5 : 1)
+                    scale: cardMouse.containsMouse && !isFocused ? 1.05 : 1.0
+
+                    Item {
+                        anchors.centerIn: parent
+                        width: parent.height * root.screenRatio
+                        height: parent.height
+                        clip: true
+
+                        Rectangle {
+                            anchors.fill: parent
+                            radius: AppConfig.Config.theme.cardRadiusSmall
+                            color: Qt.rgba(1, 1, 1, 0.05)
+                            visible: thumb.status !== Image.Ready
+                        }
+
+                        Image {
+                            id: thumb
+                            anchors.fill: parent
+                            source: "file://" + (root.thumbMap[entry.path] || entry.path)
+                            sourceSize.width: Math.round(root.cardWidth * 1.3)
+                            asynchronous: true
+                            fillMode: Image.PreserveAspectCrop
+                            smooth: true
+                        }
+                    }
+
+                    MouseArea {
+                        id: cardMouse
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: {
+                            root.currentWallpaper = entry.path;
+                            root.originalWallpaper = entry.path;
+                            applyProc.wallpaperPath = entry.path;
+                            applyProc.running = true;
+                            root.dismissed();
+                        }
+                    }
+                }
+            }
+
+            // Scroll indicator
+            Rectangle {
+                id: scrollIndicator
+                anchors.right: gallery.right
+                anchors.rightMargin: 2
+                width: 3
+                radius: 1.5
+                color: Qt.rgba(1, 1, 1, 0.2)
+                visible: gallery.contentHeight > gallery.height
+
+                property real trackHeight: gallery.height * 0.8
+                property real trackOffset: gallery.y + gallery.height * 0.1
+                property real scrollRatio: gallery.contentY / (gallery.contentHeight - gallery.height)
+
+                height: 40
+                y: trackOffset + scrollRatio * (trackHeight - height)
+            }
+        }
+    }
+}
