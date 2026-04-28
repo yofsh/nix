@@ -7,4 +7,5 @@ __pycache__/
 dotfiles/television/cable/
 dotfiles/khal/config
 dotfiles/vdirsyncer/config
-dotfiles/quickshell/calendar-map.json
+dotfiles/quickshell/modules/khal/calendar-map.json
+dotfiles/quickshell/config/private.json

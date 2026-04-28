@@ -1,13 +1,13 @@
 pragma Singleton
 
 import QtQuick
-import "../Core" as Core
+import "../core" as Core
 
 QtObject {
     readonly property var theme: Core.ConfigService.section("theme", {
         fontFamily: "DejaVuSansM Nerd Font",
         barHeight: 22,
-        surfaceRadius: 0,
+        surfaceRadius: 14,
         cardRadiusSmall: 8,
         surfaceOpacity: 0.8,
         surfaceOpacityStrong: 0.85,
@@ -60,8 +60,8 @@ QtObject {
             wsEmpty: "#33ffffff",
             wsInactive: "#b3ffffff",
             wsUrgent: "#cc6666",
-            submapFg: "#222222",
-            submapBg: "#eeeeee"
+            submapFg: "#ffb74d",
+            submapBg: "#33ff8c00"
         }
     })
 

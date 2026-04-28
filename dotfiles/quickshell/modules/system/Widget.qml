@@ -4,7 +4,7 @@ import "../../helpers" as Helpers
 
 Item {
     id: root
-    implicitWidth: memColumn.width + 4
+    implicitWidth: memColumn.width + 8
     implicitHeight: parent ? parent.height : 30
 
     property int memPct: 0
@@ -34,7 +34,7 @@ Item {
 
     Column {
         id: memColumn
-        anchors.verticalCenter: parent.verticalCenter
+        anchors.centerIn: parent
         spacing: -2
         width: Math.max(memText.implicitWidth, swapText.implicitWidth)
 
@@ -57,6 +57,7 @@ Item {
 
     MouseArea {
         anchors.fill: parent
+        cursorShape: Qt.PointingHandCursor
         onClicked: root.popupOpen = !root.popupOpen
     }
 

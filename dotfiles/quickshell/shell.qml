@@ -1,5 +1,5 @@
 //@ pragma IconTheme Papirus
 //@ pragma UseQApplication
-import "Core" as Core
+import "core" as Core
 
 Core.ShellRoot {}

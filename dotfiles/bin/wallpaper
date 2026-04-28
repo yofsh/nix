@@ -108,10 +108,17 @@ download_one() {
 	fi
 
 	# Extract metadata
+	IMG_ID=$(echo "$response" | jq -r ".id")
 	IMG_WIDTH=$(echo "$response" | jq -r ".width")
 	IMG_HEIGHT=$(echo "$response" | jq -r ".height")
 	IMG_AUTHOR=$(echo "$response" | jq -r ".user.name")
 	IMG_DESC=$(echo "$response" | jq -r ".description // .alt_description // empty" | head -c 50)
+
+	# Check for duplicate
+	if compgen -G "$WALLPAPER_DIR/*_${IMG_ID}."* >/dev/null 2>&1; then
+		DL_ERROR="duplicate"
+		return 1
+	fi
 
 	curl -s -L -o "$dest" "${URL}&w=${WIDTH}"
 
@@ -296,11 +303,14 @@ case "$1" in
 	fi
 
 	for ((i = 1; i <= MAX_RETRIES; i++)); do
-		dest="$WALLPAPER_DIR/${query:-random}_$(date +%s%N).jpg"
+		dest="$WALLPAPER_DIR/${query:-random}_tmp_$(date +%s%N).jpg"
 
 		if download_one "$query" "$dest"; then
 			if [ "$IMG_WIDTH" -ge "$WIDTH" ]; then
-				set_wallpaper "$dest"
+				# Rename to include Unsplash photo ID for dedup
+				final="$WALLPAPER_DIR/${query:-random}_${IMG_ID}.jpg"
+				mv "$dest" "$final"
+				set_wallpaper "$final"
 				title="Wallpaper set!"
 				[ -n "$rate_remaining" ] && title="Wallpaper set! 🔑$rate_remaining"
 				notify low preferences-desktop-wallpaper "$title" "$IMG_INFO"
@@ -310,6 +320,10 @@ case "$1" in
 				rm -f "$dest"
 			fi
 		else
+			if [ "$DL_ERROR" = "duplicate" ]; then
+				notify low folder-download "Wallpaper" "Duplicate, retry $i/$MAX_RETRIES..."
+				continue
+			fi
 			notify critical dialog-error "Wallpaper failed" "$DL_ERROR"
 			exit 1
 		fi

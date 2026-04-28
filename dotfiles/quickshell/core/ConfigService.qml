@@ -8,8 +8,8 @@ import "Merge.js" as Merge
 Scope {
     id: root
 
-    property string shellConfigPath: Qt.resolvedUrl("../Config/shell.json").toString().replace("file://", "")
-    property string privateConfigPath: Qt.resolvedUrl("../Config/private.json").toString().replace("file://", "")
+    property string shellConfigPath: Qt.resolvedUrl("../config/shell.json").toString().replace("file://", "")
+    property string privateConfigPath: Qt.resolvedUrl("../config/private.json").toString().replace("file://", "")
 
     property var shellData: ({})
     property var privateData: ({})

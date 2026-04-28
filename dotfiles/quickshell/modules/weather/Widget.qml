@@ -141,6 +141,7 @@ Item {
         anchors.fill: parent
         hoverEnabled: true
         acceptedButtons: Qt.LeftButton
+        cursorShape: Qt.PointingHandCursor
         onClicked: {
             if (root.context)
                 root.context.togglePopup();

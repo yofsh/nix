@@ -1,7 +1,7 @@
 import QtQuick
 import Quickshell.Io
 import "../../helpers" as Helpers
-import "../../Core" as Core
+import "../../core" as Core
 
 Item {
     id: root

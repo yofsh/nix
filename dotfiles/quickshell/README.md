@@ -6,14 +6,13 @@ Convention-based module system. No manifests, no boilerplate.
 
 - `Core/`: runtime (config loading, module discovery, popup control, service hosting)
 - `modules/`: built-in modules, each in its own directory
-- `Plugins/`: drop-in third-party modules (same structure as `modules/`)
 - `popups/`: system-level popups (notifications, OSD, fingerprint, polkit)
-- `Config/shell.json`: public config (committed)
-- `Config/private.json`: local private overrides (gitignored)
+- `config/shell.json`: public config (committed)
+- `config/private.json`: local private overrides (gitignored)
 
 ## Module Format
 
-Each module is a directory under `modules/` or `Plugins/`. The directory name is the module ID.
+Each module is a directory under `modules/`. The directory name is the module ID.
 
 Well-known filenames:
 
@@ -43,7 +42,7 @@ Only create `Service.qml` when the module has custom IPC beyond popup control (e
 
 ## Config
 
-Bar layout is driven by `Config/shell.json`:
+Bar layout is driven by `config/shell.json`:
 
 ```json
 {
@@ -68,10 +67,58 @@ Widgets, services, and popups can declare a `property var context` to receive:
 - `context.service`
 - `context.openPopup()` / `context.closePopup()` / `context.togglePopup()`
 
-## Adding a Plugin
+## Example Plugin
 
-1. Create `Plugins/<id>/` with `Widget.qml`, `Popup.qml`, and/or `Service.qml`
-2. Add the module ID to `Config/shell.json`
-3. Restart Quickshell
+A minimal counter module showing Widget + Service with config:
 
-See [`Plugins/example-counter`](./Plugins/example-counter/README.md) for a working example.
+**Widget.qml**
+```qml
+import QtQuick
+
+Item {
+    id: root
+    property var context
+    readonly property var service: context ? context.service : null
+    readonly property var theme: context ? context.theme : ({})
+    readonly property var config: context ? context.config : ({})
+
+    implicitWidth: label.implicitWidth + 4
+    implicitHeight: parent ? parent.height : 22
+
+    Text {
+        id: label
+        anchors.verticalCenter: parent.verticalCenter
+        text: (root.config.label || "example") + ": " + (root.service ? root.service.value : 0)
+        color: theme.colors && theme.colors.textMuted ? theme.colors.textMuted : "white"
+        font.family: theme.fontFamily || "DejaVuSansM Nerd Font"
+        font.pixelSize: theme.fontSizeSmall || 10
+    }
+}
+```
+
+**Service.qml**
+```qml
+import Quickshell
+import QtQuick
+
+Scope {
+    id: root
+    property var context
+    property int value: 0
+
+    Timer {
+        interval: root.context ? (root.context.config.intervalMs || 1000) : 1000
+        running: true
+        repeat: true
+        onTriggered: root.value += 1
+    }
+}
+```
+
+**Config** (in `config/shell.json`):
+```json
+{
+  "bar": { "right": ["my-counter"] },
+  "modules": { "my-counter": { "enabled": true, "label": "ticks", "intervalMs": 500 } }
+}
+```

@@ -28,7 +28,7 @@ PanelWindow {
         right: true
     }
 
-    margins.top: 0
+    margins.top: 4
     color: "transparent"
     implicitHeight: theme.barHeight || 22
 
@@ -106,19 +106,27 @@ PanelWindow {
         anchors.centerIn: parent
         width: Math.max(contentRow.implicitWidth, contentRow.childrenRect.width) + 16
         height: parent.height
-        opacity: theme.surfaceOpacity || 0.8
 
         Rectangle {
             anchors.fill: parent
-            color: theme.surfaceColor || "#11000000"
-            radius: theme.surfaceRadius || 0
+            color: {
+                var src = Qt.color(barWindow.submapName !== "" ? Helpers.Colors.submapBg : (theme.surfaceColor || "#11000000"));
+                var op = theme.surfaceOpacity !== undefined ? theme.surfaceOpacity : 0.8;
+                return Qt.rgba(src.r, src.g, src.b, src.a * op);
+            }
+            antialiasing: true
+            radius: theme.barRadius !== undefined ? theme.barRadius : (theme.surfaceRadius || 0)
+            layer.enabled: true
+            layer.samples: 8
+            layer.smooth: true
+            Behavior on color { ColorAnimation { duration: 200 } }
         }
 
         Row {
             id: contentRow
             anchors.centerIn: parent
             spacing: theme.spacingDefault || 8
-            height: parent.height
+            height: parent.height - 4
 
             Row {
                 id: leftSection
@@ -222,10 +230,23 @@ PanelWindow {
                 id: submapContent
                 width: parent.width
                 height: parent.height
-                opacity: theme.surfaceOpacity || 0.8
+                clip: true
 
-                Components.PopupSurface {
-                    anchors.fill: parent
+                Rectangle {
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    anchors.top: parent.top
+                    height: parent.height + (theme.surfaceRadius || 0)
+                    color: {
+                        var src = Qt.color(Helpers.Colors.submapBg);
+                        var op = theme.surfaceOpacity !== undefined ? theme.surfaceOpacity : 0.8;
+                        return Qt.rgba(src.r, src.g, src.b, src.a * op);
+                    }
+                    radius: theme.surfaceRadius || 0
+                    antialiasing: true
+                    layer.enabled: true
+                    layer.samples: 8
+                    layer.smooth: true
                 }
 
                 Column {
@@ -236,7 +257,7 @@ PanelWindow {
                     Text {
                         anchors.horizontalCenter: parent.horizontalCenter
                         text: barWindow.submapName
-                        color: Helpers.Colors.textDefault
+                        color: Helpers.Colors.submapFg
                         font.family: theme.fontFamily || "DejaVuSansM Nerd Font"
                         font.pixelSize: theme.fontSizeDefault || 12
                         font.bold: true
@@ -252,7 +273,7 @@ PanelWindow {
                                 width: barWindow.submapComboWidth
                                 horizontalAlignment: Text.AlignRight
                                 text: modelData.combo
-                                color: Helpers.Colors.textDefault
+                                color: Helpers.Colors.submapFg
                                 font.family: theme.fontFamily || "DejaVuSansM Nerd Font"
                                 font.pixelSize: theme.fontSizeDefault || 12
                                 font.bold: true

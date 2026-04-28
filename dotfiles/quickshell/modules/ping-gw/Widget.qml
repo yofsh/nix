@@ -1,6 +1,6 @@
 import QtQuick
 import "../../config" as AppConfig
-import "../../Core" as Core
+import "../../core" as Core
 
 Item {
     id: root

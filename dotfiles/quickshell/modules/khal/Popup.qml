@@ -10,41 +10,16 @@ import "../../config" as AppConfig
 PanelWindow {
     id: root
 
+    property var context: null
+    readonly property var service: context ? context.service : null
+
     // ─────────────── Config ───────────────
 
-    readonly property int spanDays: 7                       // how far forward the popup shows
+    readonly property int spanDays: 14                      // how far forward the popup shows
     readonly property int refreshIntervalMs: 60 * 1000      // auto-refresh while open
     readonly property int popupWidth: 720
     readonly property int popupHeight: 620
-
-    // Per-calendar icon/color loaded from calendar-map.json
-    property var calendarMap: ({})
     readonly property var defaultCalendar: ({ icon: "\uF073", color: Helpers.Colors.textMuted, label: "" })
-
-    FileView {
-        id: calendarMapFile
-        path: Qt.resolvedUrl("../../calendar-map.json").toString().replace("file://", "")
-        blockLoading: true
-        watchChanges: true
-        onFileChanged: { this.reload(); root.loadCalendarMap(); }
-    }
-
-    Component.onCompleted: loadCalendarMap()
-
-    function loadCalendarMap() {
-        var text = calendarMapFile.text();
-        if (!text || text.trim() === "") return;
-        try {
-            var data = JSON.parse(text);
-            var map = {};
-            for (var key in data) {
-                map[key] = { icon: data[key].icon, color: data[key].color, label: data[key].label || "" };
-            }
-            root.calendarMap = map;
-        } catch (e) {
-            console.warn("KhalPopup: failed to parse calendar-map.json", e);
-        }
-    }
 
     // Status styling
     readonly property color upcomingColor: "#0caf49"        // future events — accent
@@ -84,7 +59,7 @@ PanelWindow {
     }
 
     function calendarInfo(cal) {
-        return calendarMap[cal] || defaultCalendar;
+        return service ? service.calendarInfo(cal) : defaultCalendar;
     }
 
     function formatTimeRange(e) {
@@ -178,6 +153,10 @@ PanelWindow {
         return days[d.getDay()] + ", " + months[d.getMonth()] + " " + d.getDate();
     }
 
+    // Collapse multiple same-day, same-calendar all-day events (e.g. holidays)
+    // into one row so noisy calendars don't flood the agenda.
+    readonly property bool groupAllDayByCalendar: true
+
     // Group events by date → [{date, label, items: [...]}]
     property var groupedEvents: {
         var groups = [];
@@ -191,6 +170,51 @@ PanelWindow {
                 groups.push(byDate[date]);
             }
             byDate[date].items.push(e);
+        }
+        if (!groupAllDayByCalendar) return groups;
+
+        for (var g = 0; g < groups.length; g++) {
+            var items = groups[g].items;
+            var byCal = {};
+            var order = [];
+            var timed = [];
+            for (var j = 0; j < items.length; j++) {
+                var ev = items[j];
+                if (ev.allDay) {
+                    if (!byCal[ev.calendar]) {
+                        byCal[ev.calendar] = [];
+                        order.push(ev.calendar);
+                    }
+                    byCal[ev.calendar].push(ev);
+                } else {
+                    timed.push(ev);
+                }
+            }
+            var collapsed = [];
+            for (var k = 0; k < order.length; k++) {
+                var cal = order[k];
+                var evs = byCal[cal];
+                if (evs.length === 1) {
+                    collapsed.push(evs[0]);
+                } else {
+                    var titles = evs.map(function(x) { return x.title || "(untitled)"; });
+                    collapsed.push({
+                        title: titles.join(" · "),
+                        start: evs[0].start,
+                        end: evs[0].end,
+                        calendar: cal,
+                        location: "",
+                        allDay: true,
+                        uid: "group-" + cal + "-" + groups[g].date,
+                        description: "",
+                        meetingLink: "",
+                        attendees: { total: 0, accepted: 0, declined: 0, tentative: 0, needsAction: 0 },
+                        grouped: true,
+                        groupCount: evs.length
+                    });
+                }
+            }
+            groups[g].items = collapsed.concat(timed);
         }
         return groups;
     }

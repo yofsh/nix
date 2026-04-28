@@ -1,10 +1,13 @@
 import QtQuick
 import Quickshell.Io
 import "../../helpers" as Helpers
+import "../../config" as AppConfig
 
 Item {
     id: root
     property var context: null
+    readonly property var service: context ? context.service : null
+    onServiceChanged: if (service) pickCurrent()
 
     // ─────────────── Config ───────────────
 
@@ -24,7 +27,6 @@ Item {
     readonly property string notifyActionLabel: "Open meeting"
 
     // Visuals
-    readonly property string fontFamily: "DejaVuSansM Nerd Font"
     readonly property int fontSizeIcon: 12
     readonly property int fontSizeText: 11
     readonly property int rowSpacing: 5
@@ -33,36 +35,6 @@ Item {
     // Status colors
     readonly property color inProgressColor: "#f53c3c"             // event running
     readonly property color soonColor: "#ff9800"                   // start ≤soonThresholdMs
-
-    // Per-calendar icon + color loaded from calendar-map.json. Fallback used for unknown calendars.
-    property var calendarMap: ({})
-    readonly property string fallbackIcon: "\uF073"                // fa-calendar
-
-    FileView {
-        id: calendarMapFile
-        path: Qt.resolvedUrl("../../calendar-map.json").toString().replace("file://", "")
-        blockLoading: true
-        watchChanges: true
-        onFileChanged: { this.reload(); root.loadCalendarMap(); }
-    }
-
-    Component.onCompleted: loadCalendarMap()
-
-    function loadCalendarMap() {
-        var text = calendarMapFile.text();
-        if (!text || text.trim() === "") return;
-        try {
-            var data = JSON.parse(text);
-            var map = {};
-            for (var key in data) {
-                map[key] = { icon: data[key].icon, color: data[key].color };
-            }
-            root.calendarMap = map;
-            root.pickCurrent();
-        } catch (e) {
-            console.warn("Khal: failed to parse calendar-map.json", e);
-        }
-    }
 
     // Meeting link patterns (first match wins)
     readonly property var meetingLinkPatterns: [
@@ -74,7 +46,7 @@ Item {
 
     // ───────────── End config ─────────────
 
-    implicitWidth: row.implicitWidth + horizontalPadding
+    implicitWidth: row.implicitWidth + horizontalPadding * 2
     implicitHeight: parent ? parent.height : 22
 
     property var events: []
@@ -84,10 +56,9 @@ Item {
     property string pendingLink: ""
 
     function calendarInfo(cal) {
-        var m = calendarMap[cal];
-        if (m) return m;
-        return { icon: fallbackIcon, color: Helpers.Colors.textMuted };
+        return service ? service.calendarInfo(cal) : service_fallback;
     }
+    readonly property var service_fallback: ({ icon: "\uF073", color: Helpers.Colors.textMuted, label: "" })
 
     function parseTime(s) {
         if (!s) return NaN;
@@ -243,14 +214,14 @@ Item {
 
     Row {
         id: row
-        anchors.verticalCenter: parent.verticalCenter
+        anchors.centerIn: parent
         spacing: root.rowSpacing
 
         Text {
             anchors.verticalCenter: parent.verticalCenter
-            text: root.current ? root.calendarInfo(root.current.calendar).icon : root.fallbackIcon
+            text: root.current ? root.calendarInfo(root.current.calendar).icon : root.service_fallback.icon
             color: root.current ? root.calendarInfo(root.current.calendar).color : Helpers.Colors.textMuted
-            font.family: root.fontFamily
+            font.family: AppConfig.Config.theme.fontFamily
             font.pixelSize: root.fontSizeIcon
         }
 
@@ -259,7 +230,7 @@ Item {
             anchors.verticalCenter: parent.verticalCenter
             text: root.current ? (root.current.title || "").trim() : ""
             color: Helpers.Colors.textDefault
-            font.family: root.fontFamily
+            font.family: AppConfig.Config.theme.fontFamily
             font.pixelSize: root.fontSizeText
             elide: Text.ElideRight
             maximumLineCount: 1
@@ -269,7 +240,7 @@ Item {
             anchors.verticalCenter: parent.verticalCenter
             text: root.statusText()
             color: root.statusColor()
-            font.family: root.fontFamily
+            font.family: AppConfig.Config.theme.fontFamily
             font.pixelSize: root.fontSizeText
             font.bold: true
         }

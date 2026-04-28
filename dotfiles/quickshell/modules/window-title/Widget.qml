@@ -6,12 +6,21 @@ import "../../helpers" as Helpers
 
 Item {
     id: root
-    implicitWidth: hovered ? Math.max(212, titleText.implicitWidth + 12) : 212
+    implicitWidth: expanded ? Math.max(212, (appIcon.visible ? 22 : 0) + titleText.implicitWidth + 12) : 212
     implicitHeight: parent ? parent.height : 30
 
     property var screen: null
 
-    property bool hovered: false
+    property bool expanded: false
+
+    property var activeTl: Hyprland.activeToplevel
+
+    property string appId: {
+        if (!activeTl) return "";
+        if (activeTl.wayland && activeTl.wayland.appId) return activeTl.wayland.appId;
+        if (activeTl.lastIpcObject && activeTl.lastIpcObject.class) return activeTl.lastIpcObject.class;
+        return "";
+    }
 
     property string fullTitle: {
         var toplevel = Hyprland.activeToplevel;
@@ -37,27 +46,46 @@ Item {
     }
 
     property string displayTitle: {
-        if (root.hovered) return root.fullTitle;
+        if (root.expanded) return root.fullTitle;
         if (root.fullTitle.length > 32)
             return root.fullTitle.substring(0, 32);
         return root.fullTitle;
     }
 
+    property string iconSource: {
+        if (root.fullTitle === "") return "";
+        if (!root.appId) return "";
+        var entry = DesktopEntries.heuristicLookup(root.appId);
+        if (entry && entry.icon) return Quickshell.iconPath(entry.icon, true) ?? "";
+        return Quickshell.iconPath(root.appId.toLowerCase(), true) ?? "";
+    }
+
     Item {
-        width: parent.width
-        height: parent.height
+        anchors.fill: parent
+
+        Image {
+            id: appIcon
+            width: 16
+            height: 16
+            anchors.left: parent.left
+            anchors.verticalCenter: parent.verticalCenter
+            sourceSize.width: 16
+            sourceSize.height: 16
+            source: root.iconSource
+            visible: source !== "" && status === Image.Ready
+        }
 
         Item {
-            anchors.left: parent.left
-            anchors.leftMargin: 0
+            anchors.left: appIcon.visible ? appIcon.right : parent.left
+            anchors.leftMargin: appIcon.visible ? 6 : 0
             anchors.verticalCenter: parent.verticalCenter
-            width: 200
+            width: 200 - (appIcon.visible ? 22 : 0)
             height: parent.height
 
             Text {
                 id: titleText
                 anchors.verticalCenter: parent.verticalCenter
-                width: root.hovered ? implicitWidth : 200
+                width: root.expanded ? implicitWidth : parent.width
                 text: root.displayTitle
                 color: Helpers.Colors.windowTitle
                 font.family: "DejaVu Sans"
@@ -70,19 +98,12 @@ Item {
 
     MouseArea {
         anchors.fill: parent
-        hoverEnabled: true
-        acceptedButtons: Qt.LeftButton | Qt.RightButton | Qt.MiddleButton
-        onEntered: root.hovered = true
-        onExited: root.hovered = false
+        acceptedButtons: Qt.LeftButton | Qt.RightButton
         onClicked: function(mouse) {
             if (mouse.button === Qt.LeftButton) {
-                copyProc.command = ["bash", "-c", "VAR=$(hyprctl activewindow -j | jq -r .title) && wl-copy \"$VAR\" && notify-send -u low -t 2000 'Window title' \"$VAR\""];
-                copyProc.running = true;
+                root.expanded = !root.expanded;
             } else if (mouse.button === Qt.RightButton) {
-                copyProc.command = ["bash", "-c", "VAR=$(hyprctl activewindow -j | jq -r .class) && wl-copy \"$VAR\" && notify-send -u low -t 2000 'Window class' \"$VAR\""];
-                copyProc.running = true;
-            } else if (mouse.button === Qt.MiddleButton) {
-                copyProc.command = ["bash", "-c", "VAR=$(hyprctl activewindow) && wl-copy \"$VAR\" && notify-send -u low -t 2000 'Window hyprland info' \"$VAR\""];
+                copyProc.command = ["bash", "-c", "VAR=$(hyprctl activewindow -j | jq -r .title) && wl-copy \"$VAR\" && notify-send -u low -t 2000 'Window title' \"$VAR\""];
                 copyProc.running = true;
             }
         }

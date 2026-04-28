@@ -12,12 +12,13 @@ Item {
         screen: root.screen
     }
 
+    readonly property var pkg: Core.ModuleRegistry.packageById(root.moduleId)
     readonly property var theme: Core.ConfigService.section("theme", {})
     readonly property var loadedItem: loader.item
     readonly property bool interactive: {
         if (loadedItem && "interactive" in loadedItem)
             return !!loadedItem.interactive;
-        return true;
+        return pkg ? pkg.hasPopup : false;
     }
     readonly property bool hoverActive: interactive && hoverHandler.hovered && width > 0 && height > 0
 
@@ -44,8 +45,6 @@ Item {
         anchors.fill: parent
         radius: theme.interactiveHoverRadius || 4
         color: theme.interactiveHoverColor || "#14ffffff"
-        border.width: root.hoverActive ? 1 : 0
-        border.color: theme.interactiveHoverBorderColor || "#220caf49"
         opacity: root.hoverActive ? 1 : 0
         visible: opacity > 0
 
@@ -81,6 +80,7 @@ Item {
     HoverHandler {
         id: hoverHandler
         enabled: root.interactive
+        cursorShape: root.interactive ? Qt.PointingHandCursor : Qt.ArrowCursor
     }
 
     Component.onDestruction: Core.ModuleRegistry.unregisterWidgetInstance(moduleId, screenName())

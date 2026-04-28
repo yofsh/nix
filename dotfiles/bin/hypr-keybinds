@@ -118,6 +118,78 @@ def format_pretty(mods, key, description):
     return f"{combo} \u2014 {description}"
 
 
+def get_action_arrow(bind):
+    """Detect up/down action from bind's exec args or description."""
+    args = bind.get("args", "")
+    m = re.search(r'\bha\s+(up|down|open|close|next_preset)\b', args)
+    if m:
+        action = m.group(1)
+        if action in ("up", "open"):
+            return "▲"
+        if action in ("down", "close"):
+            return "▼"
+        if action == "next_preset":
+            return "⟳"
+    desc = bind.get("description", "").lower()
+    for word in ("brighter", "up", "open"):
+        if word in desc:
+            return "▲"
+    for word in ("dimmer", "down", "close"):
+        if word in desc:
+            return "▼"
+    if "preset" in desc:
+        return "⟳"
+    return ""
+
+
+def simplify_description(desc):
+    """Strip action words from description for grouped display."""
+    return re.sub(
+        r'\s*(toggle|on/off|brighter|dimmer|up|down|open|close)\s*$',
+        '', desc, flags=re.IGNORECASE
+    ).strip()
+
+
+def group_submap_binds(binds):
+    """Group binds sharing the same base key, merging modifier variants."""
+    from collections import OrderedDict
+
+    key_groups = OrderedDict()
+    for bind in binds:
+        key_groups.setdefault(bind["key"], []).append(bind)
+
+    result = []
+    for key, group in key_groups.items():
+        if len(group) == 1:
+            result.append(group[0])
+            continue
+
+        base = next((b for b in group if not b["mods"]), group[0])
+
+        hints = []
+        for b in group:
+            if not b["mods"]:
+                continue
+            arrow = get_action_arrow(b)
+            icons = " ".join(MOD_ICONS.get(m, m) for m in b["mods"].split())
+            hints.append(f"{icons} {arrow}" if arrow else icons)
+
+        display_key = KEY_NAMES.get(key, key.upper())
+        desc = simplify_description(base["description"])
+
+        if hints:
+            combo = f"[{' '.join(hints)}] {display_key}"
+        else:
+            combo = display_key
+
+        merged = dict(base)
+        merged["pretty"] = f"{combo} \u2014 {desc}"
+        merged["grouped"] = True
+        result.append(merged)
+
+    return result
+
+
 def strip_inline_comment(text):
     """Strip inline comment from args, returning (clean_args, comment_or_None).
 
@@ -495,7 +567,7 @@ def parse_config(config_path):
         }
         if data["activator"]:
             submap_entry["activator"] = data["activator"]
-        submap_entry["binds"] = data["binds"]
+        submap_entry["binds"] = group_submap_binds(data["binds"])
         submaps_list.append(submap_entry)
 
     return {"global": global_binds, "submaps": submaps_list}

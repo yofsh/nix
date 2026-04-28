@@ -8,7 +8,7 @@ Scope {
 
     property string quickshellRoot: Qt.resolvedUrl("..").toString().replace("file://", "")
     property string scanCommand: [
-        "for dir in \"" + root.quickshellRoot + "/modules/\"*/ \"" + root.quickshellRoot + "/Plugins/\"*/; do",
+        "for dir in \"" + root.quickshellRoot + "/modules/\"*/; do",
         "  [ -d \"$dir\" ] || continue",
         "  id=$(basename \"$dir\")",
         "  w=false; p=false; s=false",

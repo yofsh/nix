@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # ha - Control Home Assistant entities
 # Usage: ha <action> <entity_id>
-#   actions: toggle, up, down, scene
+#   actions: toggle, up, down, open, close, scene
 
 HA_URL="http://192.168.8.30:8123"
 HA_TOKEN=$(< /run/secrets/ha-token)
@@ -60,6 +60,36 @@ case $ACTION in
       pct=$((brightness * 100 / 255))
       [ $pct -eq 0 ] && pct=100
       notify -h "int:value:$pct" "$name" "ON · $pct%"
+    fi
+    ;;
+
+  next_preset)
+    # Cycle to next option on a select entity (e.g. WLED preset)
+    state=$(api "$HA_URL/api/states/$ENTITY")
+    name=$(echo "$state" | jq -r --arg entity "$ENTITY" '.attributes.friendly_name // $entity')
+    current=$(echo "$state" | jq -r '.state')
+    options=$(echo "$state" | jq -r '.attributes.options // []')
+    count=$(echo "$options" | jq 'length')
+
+    if [ "$count" -eq 0 ]; then
+      notify "$name" "No presets"
+    else
+      idx=$(echo "$options" | jq -r --arg c "$current" 'to_entries | map(select(.value == $c)) | .[0].key // -1')
+      next_idx=$(( (idx + 1) % count ))
+      next_val=$(echo "$options" | jq -r ".[$next_idx]")
+      api -X POST -d "{\"entity_id\":\"$ENTITY\",\"option\":\"$next_val\"}" "$HA_URL/api/services/select/select_option" >/dev/null &
+      notify "$name" "$next_val"
+    fi
+    ;;
+
+  open|close)
+    state=$(api "$HA_URL/api/states/$ENTITY")
+    name=$(echo "$state" | jq -r --arg entity "$ENTITY" '.attributes.friendly_name // $entity')
+    api -X POST -d "{\"entity_id\":\"$ENTITY\"}" "$HA_URL/api/services/cover/${ACTION}_cover" >/dev/null &
+    if [ "$ACTION" = "open" ]; then
+      notify "$name" "OPENING ▲"
+    else
+      notify "$name" "CLOSING ▼"
     fi
     ;;
 

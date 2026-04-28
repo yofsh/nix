@@ -20,7 +20,7 @@ from pathlib import Path
 
 CAL_ROOT = Path.home() / ".calendars"
 RANGE = "today"
-SPAN = "7d"
+SPAN = "14d"
 
 KHAL_FIELDS = [
     "title", "start", "end", "calendar", "description",
@@ -284,9 +284,31 @@ def enrich(e: dict) -> dict:
     }
 
 
+def dedupe_by_uid(events: list[dict]) -> list[dict]:
+    """Drop duplicates that share (uid, start, end).
+
+    Why: the same Google "Holidays" virtual calendar is often subscribed under
+    multiple accounts and surfaces in khal as distinct calendar IDs
+    (…@virtual, …@virtual1, …@virtual11), producing N copies of every holiday.
+    """
+    seen: set[tuple[str, str, str]] = set()
+    out: list[dict] = []
+    for e in events:
+        uid = e.get("uid", "")
+        if not uid:
+            out.append(e)
+            continue
+        key = (uid, e.get("start", ""), e.get("end", ""))
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(e)
+    return out
+
+
 def main() -> int:
     try:
-        events = [enrich(e) for e in run_khal()]
+        events = [enrich(e) for e in dedupe_by_uid(run_khal())]
     except Exception as exc:
         print(json.dumps({"error": str(exc), "events": []}))
         return 1

@@ -110,6 +110,7 @@ Item {
         anchors.fill: parent
         hoverEnabled: true
         acceptedButtons: Qt.LeftButton
+        cursorShape: Qt.PointingHandCursor
         onClicked: root.popupOpen = !root.popupOpen
     }
 }

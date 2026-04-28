@@ -193,7 +193,7 @@ Item {
 
     Timer {
         id: hoverDelay
-        interval: 400
+        interval: 300
         onTriggered: if (root.hovered) root.expanded = true
     }
 

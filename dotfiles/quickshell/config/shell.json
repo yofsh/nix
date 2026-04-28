@@ -1,8 +1,9 @@
 {
   "theme": {
     "fontFamily": "DejaVuSansM Nerd Font",
-    "barHeight": 22,
-    "surfaceRadius": 0,
+    "barHeight": 26,
+    "surfaceRadius": 14,
+    "barRadius": 6,
     "cardRadiusSmall": 8,
     "surfaceOpacity": 0.8,
     "surfaceOpacityStrong": 0.85,
@@ -55,8 +56,8 @@
       "wsEmpty": "#33ffffff",
       "wsInactive": "#b3ffffff",
       "wsUrgent": "#cc6666",
-      "submapFg": "#222222",
-      "submapBg": "#eeeeee"
+      "submapFg": "#ffb74d",
+      "submapBg": "#33ff8c00"
     }
   },
   "cpu": {

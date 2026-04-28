@@ -15,5 +15,6 @@ Item {
         anchors.topMargin: -root.topBleed
         color: root.surfaceColor
         radius: root.surfaceRadius
+        antialiasing: true
     }
 }

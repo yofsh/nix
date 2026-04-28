@@ -115,7 +115,7 @@ PanelWindow {
 
     FileView {
         id: rulesFile
-        path: Qt.resolvedUrl("../notif-rules.json")
+        path: Qt.resolvedUrl("notif-rules.json")
         blockLoading: true
         watchChanges: true
         onFileChanged: { this.reload(); root.loadRules(); }
