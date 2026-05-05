@@ -230,6 +230,8 @@ case "$1" in
 		_apply "$next_wal"
 	else
 		echo 0 > "$POS"
+		awww clear 000000
+		rm -f "$HOME/.current-wallpaper"
 	fi
 	rm -f "$wal"
 	notify low user-trash "Deleted" "$name"

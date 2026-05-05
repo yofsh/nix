@@ -5,7 +5,7 @@
 
 HA_URL="http://192.168.8.30:8123"
 HA_TOKEN=$(< /run/secrets/ha-token)
-STEP=25  # brightness step (0-255 scale, ~10%)
+STEP=12  # brightness step (0-255 scale, ~10%)
 ICON="go-home"
 
 ACTION="${1:-}"
@@ -35,31 +35,32 @@ case $ACTION in
       [ $new -lt 0 ] && new=0
     fi
 
-    pct=$((new * 100 / 255))
-
     if [ $new -eq 0 ]; then
-      api -X POST -d "{\"entity_id\":\"$ENTITY\"}" "$HA_URL/api/services/light/turn_off" >/dev/null &
+      api -X POST -d "{\"entity_id\":\"$ENTITY\"}" "$HA_URL/api/services/light/turn_off" >/dev/null
+      notify -h "int:value:0" "$name" "OFF"
     else
-      api -X POST -d "{\"entity_id\":\"$ENTITY\",\"brightness\":$new}" "$HA_URL/api/services/light/turn_on" >/dev/null &
+      resp=$(api -X POST -d "{\"entity_id\":\"$ENTITY\",\"brightness\":$new}" "$HA_URL/api/services/light/turn_on")
+      applied=$(echo "$resp" | jq -r --arg entity "$ENTITY" '[.[] | select(.entity_id == $entity)] | .[0].attributes.brightness // empty')
+      [ -z "$applied" ] && applied=$new
+      pct=$((applied * 100 / 255))
+      notify -h "int:value:$pct" "$name" "$pct%"
     fi
-
-    notify -h "int:value:$pct" "$name" "$pct%"
     ;;
 
   toggle)
     state=$(api "$HA_URL/api/states/$ENTITY")
-    current=$(echo "$state" | jq -r '.state')
     name=$(echo "$state" | jq -r --arg entity "$ENTITY" '.attributes.friendly_name // $entity')
-    brightness=$(echo "$state" | jq -r '(.attributes.brightness // 0) | floor')
 
-    api -X POST -d "{\"entity_id\":\"$ENTITY\"}" "$HA_URL/api/services/$DOMAIN/toggle" >/dev/null &
+    resp=$(api -X POST -d "{\"entity_id\":\"$ENTITY\"}" "$HA_URL/api/services/$DOMAIN/toggle")
+    new_state=$(echo "$resp" | jq -r --arg entity "$ENTITY" '[.[] | select(.entity_id == $entity)] | .[0].state // empty')
+    new_brightness=$(echo "$resp" | jq -r --arg entity "$ENTITY" '[.[] | select(.entity_id == $entity)] | .[0].attributes.brightness // 0')
 
-    if [ "$current" = "on" ]; then
-      notify -h "int:value:0" "$name" "OFF"
-    else
-      pct=$((brightness * 100 / 255))
+    if [ "$new_state" = "on" ]; then
+      pct=$((new_brightness * 100 / 255))
       [ $pct -eq 0 ] && pct=100
       notify -h "int:value:$pct" "$name" "ON · $pct%"
+    else
+      notify -h "int:value:0" "$name" "OFF"
     fi
     ;;
 

@@ -41,14 +41,14 @@ in
     pkgs.glow
 
     # Voice transcription
-    (pkgs.python312.withPackages (ps: [
-      ps.faster-whisper
-      ps.evdev
-    ]))
+    # (pkgs.python312.withPackages (ps: [
+    #   ps.faster-whisper
+    #   ps.evdev
+    # ]))
 
     inputs.hyprland-preview-share-picker.packages.${pkgs.system}.default
 
-    (pkgs.callPackage ../pkgs/glide-browser.nix { })
+    # (pkgs.callPackage ../pkgs/glide-browser.nix { })
   ];
 
   programs.home-manager.enable = true;
