@@ -13,6 +13,7 @@ PanelWindow {
 
     required property var screen
     property bool polkitActive: false
+    property var fingerprintMonitor: null
 
     readonly property var theme: Core.ConfigService.section("theme", {})
     readonly property var hostScreenInfo: screen
@@ -211,6 +212,7 @@ PanelWindow {
         screen: hostScreenInfo
         barHeight: barWindow.implicitHeight
         polkitActive: barWindow.polkitActive
+        fingerprintMonitor: barWindow.fingerprintMonitor
     }
 
     PanelWindow {

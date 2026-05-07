@@ -1,5 +1,6 @@
 import QtQuick
 import "." as Core
+import "../helpers" as Helpers
 
 QtObject {
     id: root
@@ -10,7 +11,7 @@ QtObject {
     readonly property var effectiveScreen: screen || Core.ScreenService.activeScreen
     readonly property string screenName: effectiveScreen && effectiveScreen.name ? effectiveScreen.name : "global"
     readonly property var theme: Core.ConfigService.section("theme", {})
-    readonly property var config: Core.ModuleRegistry.packageConfig(moduleId)
+    readonly property var config: Helpers.ModuleConfig.resolve(moduleId, Core.ModuleRegistry.packageConfig(moduleId, {}))
     readonly property var privateConfig: Core.ConfigService.packagePrivateConfig(moduleId)
     readonly property var service: {
         serviceRevision;

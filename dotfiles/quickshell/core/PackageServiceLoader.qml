@@ -2,6 +2,7 @@ import Quickshell
 import Quickshell.Io
 import QtQuick
 import "." as Core
+import "../helpers" as Helpers
 
 Item {
     id: root
@@ -29,6 +30,8 @@ Item {
                 return;
             if ("context" in item)
                 item.context = root.context;
+            if (Helpers.ModuleConfig.has(root.moduleId) && "config" in item)
+                item.config = Qt.binding(function() { return root.context.config; });
         }
 
         onLoaded: {

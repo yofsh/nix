@@ -10,6 +10,8 @@ Item {
     visible: root.playerName !== ""
     clip: true
 
+    property var context: null
+    property var config: Helpers.ModuleConfig.resolve("media")
     property string playerName: ""
     property string playStatus: ""
     property string trackArtist: ""
@@ -40,7 +42,7 @@ Item {
     }
 
     Timer {
-        interval: root.playerName !== "" ? 1000 : 3000
+        interval: root.playerName !== "" ? root.config.activeIntervalMs : root.config.idleIntervalMs
         running: true
         repeat: true
         onTriggered: root.refresh()

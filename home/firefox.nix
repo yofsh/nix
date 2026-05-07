@@ -4,6 +4,10 @@ in {
   programs.firefox = {
     enable = true;
     package = pkgs.firefox;
+    # home-manager 26.05 switched the default to ${xdg.configHome}/mozilla/firefox,
+    # but the nixpkgs wrapper still forces MOZ_LEGACY_PROFILES=1 so Firefox reads
+    # ~/.mozilla/firefox. Pin the legacy path so both agree.
+    configPath = ".mozilla/firefox";
     nativeMessagingHosts = [ pkgs.tridactyl-native ];
     profiles.${username} = {
       name = "${username}";

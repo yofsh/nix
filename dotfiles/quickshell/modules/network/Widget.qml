@@ -9,6 +9,9 @@ Item {
     implicitHeight: parent ? parent.height : 30
 
     property var context: null
+    property var config: Helpers.ModuleConfig.resolve("network")
+    readonly property int effectiveStatusIntervalMs: config.fastWhenExpanded && expanded ? Math.min(config.intervalMs, 1000) : config.intervalMs
+    readonly property int effectiveTrafficIntervalMs: config.fastWhenExpanded && expanded ? Math.min(config.trafficIntervalMs, 1000) : config.trafficIntervalMs
 
     property int pingServiceRevision: Core.ModuleRegistry.serviceRevision
     readonly property var pingService: {
@@ -59,6 +62,11 @@ Item {
     }
 
     property real prevTimestamp: 0
+
+    function refreshStatus() {
+        if (!netProc.running)
+            netProc.running = true;
+    }
 
     function parseTraffic() {
         if (!root.activeIface) return;
@@ -571,11 +579,19 @@ Item {
     }
 
     Timer {
-        interval: 1000
+        id: statusTimer
+        interval: root.effectiveStatusIntervalMs
+        running: true
+        repeat: true
+        onTriggered: root.refreshStatus()
+    }
+
+    Timer {
+        id: trafficTimer
+        interval: root.effectiveTrafficIntervalMs
         running: true
         repeat: true
         onTriggered: {
-            netProc.running = true;
             if (root.activeIface) {
                 rxFile.reload();
                 txFile.reload();

@@ -12,6 +12,7 @@ PanelWindow {
     id: root
     property int barHeight: AppConfig.Config.theme.barHeight
     readonly property bool active: agent.isActive
+    property var fingerprintMonitor: null
 
     property string polkitState: "hidden" // "fingerprint", "password", "success"
     property bool popupVisible: false
@@ -65,13 +66,13 @@ PanelWindow {
         }
     }
 
-    // --- D-Bus monitor for fingerprint visual feedback ---
-    Process {
-        id: dbusProc
-        command: ["dbus-monitor", "--system", "type='signal',interface='net.reactivated.Fprint.Device'"]
-        running: true
-        stdout: SplitParser {
-            onRead: data => root.parseFpLine(data)
+    Connections {
+        target: root.fingerprintMonitor
+        enabled: root.fingerprintMonitor !== null
+        ignoreUnknownSignals: true
+
+        function onFingerprintLine(data) {
+            root.parseFpLine(data)
         }
     }
 

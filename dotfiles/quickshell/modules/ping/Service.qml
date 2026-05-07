@@ -1,13 +1,15 @@
 import Quickshell
 import Quickshell.Io
 import QtQuick
+import "../../helpers" as Helpers
 
 Scope {
     id: root
 
     property var context
-    property bool active: false
-    property real pingInterval: 1
+    property var config: Helpers.ModuleConfig.resolve("ping")
+    property bool active: config.defaultActive
+    property real pingInterval: config.interval
 
     IpcHandler {
         target: "ping"

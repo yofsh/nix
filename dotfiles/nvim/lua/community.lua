@@ -12,5 +12,6 @@ return {
   -- { import = "astrocommunity.completion.supermaven-nvim" },
   { import = "astrocommunity.editing-support.codecompanion-nvim" },
   { import = "astrocommunity.ai.opencode-nvim" },
+  { import = "astrocommunity.colorscheme.github-nvim-theme" },
   -- import/override with your plugins folder
 }

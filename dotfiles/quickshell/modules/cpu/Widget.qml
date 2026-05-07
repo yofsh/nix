@@ -7,6 +7,8 @@ Item {
     id: root
     implicitWidth: graphCanvas.width
     implicitHeight: parent ? parent.height : 30
+    property var context: null
+    property var config: Helpers.ModuleConfig.resolve("cpu")
 
     // Previous CPU stats for delta calculation
     property var prevUser: 0
@@ -16,7 +18,7 @@ Item {
     property int userPercent: 0
     property int systemPercent: 0
 
-    // History for graph (60 samples = 60 seconds at 1s interval)
+    // History for graph.
     // Each entry: {user: %, sys: %}
     property int maxHistory: 60
     property var history: []
@@ -185,12 +187,22 @@ Item {
     }
 
     Timer {
-        interval: 1000
+        id: usageTimer
+        interval: root.config.intervalMs
         running: true
         repeat: true
         onTriggered: {
             statFile.reload();
             root.parseStat();
+        }
+    }
+
+    Timer {
+        id: freqTimer
+        interval: root.config.freqIntervalMs
+        running: true
+        repeat: true
+        onTriggered: {
             freq0.reload(); freq1.reload(); freq2.reload(); freq3.reload();
             freq4.reload(); freq5.reload(); freq6.reload(); freq7.reload();
             root.parseFreq();

@@ -14,9 +14,10 @@ Item {
     }
 
     property var context: null
-    property bool active: context && context.service ? context.service.active : true
+    property var config: Helpers.ModuleConfig.resolve("ping")
+    property bool active: context && context.service ? context.service.active : config.defaultActive
     property string target: "1.1.1.1"
-    property real pingInterval: context && context.service ? context.service.pingInterval : 1
+    property real pingInterval: context && context.service ? context.service.pingInterval : config.interval
 
     onPingIntervalChanged: {
         if (pingProc.running) {

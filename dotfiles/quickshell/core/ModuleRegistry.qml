@@ -28,10 +28,8 @@ Scope {
         return packages[id] || null;
     }
 
-    function packageConfig(id) {
-        var pkg = packageById(id);
-        var defaults = {};
-        return Core.ConfigService.packageConfig(id, defaults);
+    function packageConfig(id, defaults) {
+        return Core.ConfigService.packageConfig(id, defaults || {});
     }
 
     function entryUrl(id, entryName) {

@@ -11,6 +11,8 @@ Item {
     opacity: anyActive ? 1.0 : 0.0
     Behavior on opacity { NumberAnimation { duration: 400; easing.type: Easing.InOutQuad } }
 
+    property var context: null
+    property var config: Helpers.ModuleConfig.resolve("privacy-indicators")
     property bool micActive: false
     property bool camActive: false
     property bool screenActive: false
@@ -114,7 +116,7 @@ Item {
     }
 
     Timer {
-        interval: 2000
+        interval: root.config.intervalMs
         running: true
         repeat: true
         onTriggered: checkProc.running = true

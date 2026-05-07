@@ -1,5 +1,6 @@
 import QtQuick
 import "." as Core
+import "../helpers" as Helpers
 
 Item {
     id: root
@@ -37,6 +38,8 @@ Item {
 
         if ("context" in loader.item)
             loader.item.context = root.context;
+        if (Helpers.ModuleConfig.has(root.moduleId) && "config" in loader.item)
+            loader.item.config = Qt.binding(function() { return root.context.config; });
         if ("screen" in loader.item)
             loader.item.screen = root.screen;
     }

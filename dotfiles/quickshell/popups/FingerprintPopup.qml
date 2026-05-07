@@ -10,6 +10,7 @@ PanelWindow {
     id: root
     property int barHeight: AppConfig.Config.theme.barHeight
     property bool polkitActive: false
+    property var fingerprintMonitor: null
 
     // States: "hidden", "prompt", "success", "failure", "timeout"
     property string fpState: "hidden"
@@ -26,13 +27,13 @@ PanelWindow {
     visible: popupVisible
     color: "transparent"
 
-    // --- D-Bus monitor process ---
-    Process {
-        id: dbusProc
-        command: ["dbus-monitor", "--system", "type='signal',interface='net.reactivated.Fprint.Device'"]
-        running: true
-        stdout: SplitParser {
-            onRead: data => root.parseLine(data)
+    Connections {
+        target: root.fingerprintMonitor
+        enabled: root.fingerprintMonitor !== null
+        ignoreUnknownSignals: true
+
+        function onFingerprintLine(data) {
+            root.parseLine(data)
         }
     }
 

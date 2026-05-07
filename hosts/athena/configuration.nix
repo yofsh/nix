@@ -18,6 +18,7 @@
     # InfiRay P2 Pro thermal camera - allow non-root USB access
     SUBSYSTEM=="usb", ATTR{idVendor}=="0bda", ATTR{idProduct}=="5830", MODE="0660", GROUP="video"
   '';
+  services.udev.packages = [ pkgs.brightnessctl ];
 
 
   # IIO sensors (accelerometer, gyro, etc.) — needed for auto-rotation
@@ -29,6 +30,8 @@
     serviceConfig.ExecStartPre = "${pkgs.systemd}/bin/udevadm trigger --subsystem-match=iio";
   };
   environment.systemPackages = [ pkgs.iio-hyprland ];
+
+  virtualisation.docker.enable = true;
 
   sops.secrets."testkey" = {
     owner = config.users.users.fobos.name;
