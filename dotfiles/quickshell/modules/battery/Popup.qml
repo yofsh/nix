@@ -31,10 +31,13 @@ PanelWindow {
         }
     }
 
-    // Find and read the UPower charge history file (skip generic_id)
+    // Find and read the UPower charge history file. Prefer Primary-*
+    // (laptop battery); fall back to largest non-generic_id file so we
+    // don't end up reading a peripheral (keyboard/mouse/headset) which
+    // sorts alphabetically ahead of Primary- and has no useful data.
     Process {
         id: loadProc
-        command: ["bash", "-c", "f=$(ls /var/lib/upower/history-charge-*.dat 2>/dev/null | grep -v generic_id | head -1); [ -f \"$f\" ] && cat \"$f\" || echo ''"]
+        command: ["bash", "-c", "f=$(ls /var/lib/upower/history-charge-Primary-*.dat 2>/dev/null | head -1); [ -z \"$f\" ] && f=$(ls -S /var/lib/upower/history-charge-*.dat 2>/dev/null | grep -v generic_id | head -1); [ -f \"$f\" ] && cat \"$f\" || echo ''"]
         running: false
         stdout: StdioCollector {
             onStreamFinished: {
