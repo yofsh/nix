@@ -12,7 +12,16 @@ QtObject {
         surfaceOpacity: 0.8,
         surfaceOpacityStrong: 0.85,
         surfaceColor: "#11000000",
-        surfaceTopBleed: 16,
+        // 0 = popup surfaces keep all four corners rounded (no upward
+        // bleed under the bar). The bar-popup vertical gap is controlled
+        // separately by `popupTopGap` below.
+        surfaceTopBleed: 0,
+        // Distance between the bar's bottom edge and the top edge of a
+        // bar-anchored popup. Each popup uses
+        //   margins.top: barHeight + popupTopGap
+        // which keeps popups free-floating with a consistent breathing
+        // room regardless of the bar height.
+        popupTopGap: 12,
         popupSlideDuration: 150,
         interactiveHoverColor: "#14ffffff",
         interactiveHoverBorderColor: "#220caf49",

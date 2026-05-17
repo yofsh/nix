@@ -12,9 +12,11 @@
     ./../../modules/syncthing.nix
     ./../../modules/transmission.nix
     ./../../modules/mt7927.nix
+    ./../../modules/sunshine.nix
   ];
   networking.hostName = "ares";
   networking.interfaces.enp113s0.wakeOnLan.enable = true;
+  networking.firewall.allowedTCPPorts = [ 4200 4201 ];
 
   hardware.mediatek-mt7927 = {
     enable = true;

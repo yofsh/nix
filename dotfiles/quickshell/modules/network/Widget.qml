@@ -19,7 +19,8 @@ Item {
         return Core.ModuleRegistry.serviceInstance("ping");
     }
 
-    property string netOutput: ""
+    property string wifiOutput: ""
+    property string ethOutput: ""
     property string activeIface: ""
     property real prevRx: 0
     property real prevTx: 0
@@ -30,7 +31,9 @@ Item {
     property bool hovered: false
     property bool pinned: context && context.service ? context.service.pinned : false
     property bool pingActive: pingService ? pingService.active : false
-    property bool expanded: hovered || pinned
+    property bool expanded: hovered || pinned || popupOpen
+    // Popup state — left-click toggles, picked up by PackagePopupLoader.
+    property bool popupOpen: false
     onPinnedChanged: if (pinned) infoProc.running = true
     property string netInfo: ""
     property string wifiName: netInfo ? netInfo.split("|")[0] || "" : ""
@@ -108,25 +111,26 @@ Item {
     }
 
     property int signalStrength: {
-        if (!netOutput) return -1;
-        var parts = netOutput.split("|");
-        if (parts[0] !== "wifi" || !parts[1]) return -1;
+        if (!wifiOutput) return -1;
+        var parts = wifiOutput.split("|");
+        if (parts[3] !== "connected") return -1;
         return parseInt(parts[1]) || 0;
     }
 
-    property bool isWifi: netOutput && netOutput.split("|")[0] === "wifi"
-    property bool isEthernet: netOutput && netOutput.split("|")[0] === "ethernet"
+    property bool isWifi: wifiOutput && wifiOutput.split("|")[3] === "connected"
+    property bool isEthernet: ethOutput && ethOutput.split("|")[3] === "connected"
     property string connectionStatus: {
-        if (!netOutput) return "";
-        var parts = netOutput.split("|");
+        if (!wifiOutput) return "";
+        var parts = wifiOutput.split("|");
         return parts[3] || "";
     }
-    property bool showStatus: connectionStatus !== "" && connectionStatus !== "connected"
-    property bool isConnected: (isWifi || isEthernet) && !showStatus
+    // Suppress wifi connecting/disconnected status when ethernet provides connectivity
+    property bool showStatus: connectionStatus !== "" && connectionStatus !== "connected" && !isEthernet
+    property bool isConnected: isWifi || isEthernet
 
     property string connectingName: {
-        if (!netOutput) return "";
-        var parts = netOutput.split("|");
+        if (!wifiOutput) return "";
+        var parts = wifiOutput.split("|");
         return parts[4] || "";
     }
 
@@ -156,16 +160,7 @@ Item {
         return Helpers.Colors.textDefault;
     }
 
-    property string compactLabel: {
-        if (!root.isConnected || root.expanded)
-            return "";
-        if (root.isEthernet)
-            return "eth";
-        return "";
-    }
-
-    function netIconText() {
-        if (root.isEthernet) return String.fromCodePoint(0xF0200);   // nf-md-ethernet
+    function wifiIconText() {
         if (!root.isWifi) return String.fromCodePoint(0xF05AA);      // nf-md-wifi_off
         var s = root.signalStrength;
         if (s < 25) return String.fromCodePoint(0xF091F);            // nf-md-wifi_strength_1
@@ -404,26 +399,29 @@ Item {
             }
         }
 
-        // Network icon
+        // Ethernet icon (shown whenever an ethernet link is up)
         Text {
-            id: netIcon
+            id: ethIcon
             anchors.verticalCenter: parent.verticalCenter
-            text: root.netIconText()
-            color: root.iconColor
-            opacity: root.isConnected ? 0.9 : 0.6
+            visible: root.isEthernet
+            text: String.fromCodePoint(0xF0200)   // nf-md-ethernet
+            color: Helpers.Colors.textDefault
+            opacity: 0.9
             font.family: "DejaVuSansM Nerd Font"
             font.pixelSize: 16
         }
 
+        // WiFi icon — shown when WiFi is connected, or as a wifi_off fallback
+        // when nothing is connected and no wifi connecting-status is being shown.
         Text {
+            id: wifiIcon
             anchors.verticalCenter: parent.verticalCenter
-            visible: root.compactLabel !== ""
-            text: root.compactLabel
-            color: Helpers.Colors.textMuted
+            visible: root.isWifi || (!root.isEthernet && !root.showStatus)
+            text: root.wifiIconText()
+            color: root.iconColor
+            opacity: root.isConnected ? 0.9 : 0.6
             font.family: "DejaVuSansM Nerd Font"
-            font.pixelSize: 10
-            font.bold: true
-            opacity: 0.9
+            font.pixelSize: 16
         }
 
         // Status icon + network name (non-connected states)
@@ -463,11 +461,17 @@ Item {
     MouseArea {
         anchors.fill: parent
         hoverEnabled: true
-        onClicked: {
-            if (root.pingService)
-                root.pingService.active = !root.pingService.active;
-            else
-                root.pingActive = !root.pingActive;
+        acceptedButtons: Qt.LeftButton | Qt.RightButton
+        cursorShape: Qt.PointingHandCursor
+        onClicked: function(mouse) {
+            if (mouse.button === Qt.RightButton) {
+                if (root.pingService)
+                    root.pingService.active = !root.pingService.active;
+                else
+                    root.pingActive = !root.pingActive;
+            } else {
+                root.popupOpen = !root.popupOpen;
+            }
         }
         onEntered: {
             root.hovered = true;
@@ -527,6 +531,14 @@ Item {
         id: netProc
         command: ["bash", "-c", [
             "WIFACE=$(ls /sys/class/net/ 2>/dev/null | grep -E '^wl' | head -1)",
+            "EIFACE=$(ls /sys/class/net/ 2>/dev/null | grep -E '^(eth|enp|eno|ens)' | head -1)",
+            "HAS_OUTPUT=0",
+            "# Ethernet (only emitted when link is up)",
+            "if [ -n \"$EIFACE\" ] && [ \"$(cat /sys/class/net/$EIFACE/operstate 2>/dev/null)\" = 'up' ]; then",
+            "  echo \"ethernet||${EIFACE}|connected\"",
+            "  HAS_OUTPUT=1",
+            "fi",
+            "# WiFi (always emitted when interface exists, even disconnected, for status display)",
             "if [ -n \"$WIFACE\" ]; then",
             "  OPSTATE=$(cat /sys/class/net/$WIFACE/operstate 2>/dev/null)",
             "  if [ \"$OPSTATE\" = 'up' ]; then",
@@ -554,9 +566,9 @@ Item {
             "    esac",
             "    echo \"wifi|0|${WIFACE}|${STATUS}|${CONN}\"",
             "  fi",
-            "elif EIFACE=$(ls /sys/class/net/ 2>/dev/null | grep -E '^(eth|enp)' | head -1) && [ -n \"$EIFACE\" ] && [ \"$(cat /sys/class/net/$EIFACE/operstate 2>/dev/null)\" = 'up' ]; then",
-            "  echo \"ethernet||${EIFACE}|connected\"",
-            "else",
+            "  HAS_OUTPUT=1",
+            "fi",
+            "if [ \"$HAS_OUTPUT\" = '0' ]; then",
             "  echo 'disconnected|||disconnected'",
             "fi"
         ].join("\n")]
@@ -564,11 +576,25 @@ Item {
 
         stdout: StdioCollector {
             onStreamFinished: {
-                var out = this.text.trim();
-                root.netOutput = out;
-                var parts = out.split("|");
-                var iface = parts[2] || "";
-                if (iface && iface !== root.activeIface) {
+                var text = this.text.trim();
+                var lines = text.length ? text.split("\n") : [];
+                var newWifi = "";
+                var newEth = "";
+                for (var i = 0; i < lines.length; i++) {
+                    var line = lines[i];
+                    var kind = line.split("|")[0];
+                    if (kind === "wifi") newWifi = line;
+                    else if (kind === "ethernet") newEth = line;
+                    // "disconnected" fallback: leave both empty
+                }
+                root.wifiOutput = newWifi;
+                root.ethOutput = newEth;
+
+                // Pick the primary interface for traffic / info: prefer ethernet when up.
+                var iface = "";
+                if (newEth) iface = newEth.split("|")[2] || "";
+                else if (newWifi && newWifi.split("|")[3] === "connected") iface = newWifi.split("|")[2] || "";
+                if (iface !== root.activeIface) {
                     root.activeIface = iface;
                     root.prevRx = 0;
                     root.prevTx = 0;

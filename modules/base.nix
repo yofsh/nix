@@ -88,6 +88,7 @@
    services.tailscale = {
      enable = true;
      useRoutingFeatures = "client";
+     extraSetFlags = [ "--operator=fobos" ];
      extraUpFlags = [
        "--accept-routes"
        "--accept-dns=false"

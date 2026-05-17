@@ -55,7 +55,7 @@ PanelWindow {
     }
 
     exclusionMode: ExclusionMode.Ignore
-    margins.top: barHeight + AppConfig.Config.theme.spacingSmall
+    margins.top: barHeight + AppConfig.Config.theme.popupTopGap
     margins.right: AppConfig.Config.theme.spacingDefault
     margins.left: screen ? (screen.width - implicitWidth) / 2 + horizontalOffset : horizontalOffset
     margins.bottom: AppConfig.Config.theme.spacingDefault

@@ -3,6 +3,12 @@
   networking.networkmanager.enable = true;
   systemd.services.NetworkManager-wait-online.enable = false;
 
+  boot.kernelModules = [ "tcp_bbr" ];
+  boot.kernel.sysctl = {
+    "net.ipv4.tcp_congestion_control" = "bbr";
+    "net.ipv4.tcp_mtu_probing" = 1;
+  };
+
   networking.hosts = { "192.168.1.50" = [ "srv" ]; };
 
   services.resolved = {

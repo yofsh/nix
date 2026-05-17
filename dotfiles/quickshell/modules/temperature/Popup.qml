@@ -13,7 +13,7 @@ PanelWindow {
 
     anchors.top: true
     exclusionMode: ExclusionMode.Ignore
-    margins.top: barHeight
+    margins.top: barHeight + AppConfig.Config.theme.popupTopGap
     implicitWidth: popupGrid.width + 40
     implicitHeight: popupGrid.height + 32
     visible: popupOpen

@@ -21,7 +21,7 @@ PanelWindow {
 
     anchors.top: true
     exclusionMode: ExclusionMode.Ignore
-    margins.top: barHeight
+    margins.top: barHeight + AppConfig.Config.theme.popupTopGap
     implicitWidth: 200
     implicitHeight: 28
     visible: osdVisible

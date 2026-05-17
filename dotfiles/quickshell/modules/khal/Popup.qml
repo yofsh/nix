@@ -44,7 +44,7 @@ PanelWindow {
 
     anchors.top: true
     exclusionMode: ExclusionMode.Ignore
-    margins.top: barHeight
+    margins.top: barHeight + AppConfig.Config.theme.popupTopGap
     implicitWidth: popupWidth
     implicitHeight: popupHeight
     visible: popupOpen

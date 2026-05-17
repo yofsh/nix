@@ -26,6 +26,9 @@ QtObject {
         media: {
             activeIntervalMs: 2000,
             idleIntervalMs: 10000
+        },
+        transmission: {
+            intervalMs: 2000
         }
     })
 
