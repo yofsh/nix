@@ -27,7 +27,7 @@ notify() {
 			action=$(notify-send -a yts -i youtube -u "$urgency" \
 				--action="open_list=Open list" --wait "$title" "$body") || true
 			if [[ "$action" == "open_list" ]]; then
-				hyprctl dispatch exec "[float; size 1400 (monitor_h*0.8); center] foot -e yts list"
+				hyprctl dispatch 'hl.dsp.exec_cmd("[float; size 1400 (monitor_h*0.8); center] foot -e yts list")'
 			fi
 		) &
 	else

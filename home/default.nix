@@ -35,6 +35,7 @@ in
     pkgs.playerctl
     pkgs.khal
     pkgs.vdirsyncer
+    pkgs.mkchromecast
     inputs.claude-code.packages.${pkgs.system}.claude-code
     inputs.claude-code.packages.${pkgs.system}.codex
     inputs.claude-code.packages.${pkgs.system}.opencode

@@ -177,6 +177,9 @@ alias speed="librespeed-cli  --no-icmp --concurrent 10 --telemetry-level disable
 alias fast="xdg-open https://fast.com"
 alias gateway='xdg-open http://$(ip route | awk "/default/ {print \$3; exit}")'
 
+alias castscreen="mkchromecast -s --video --screencast --vcodec h264 --resolution 720p -b 6000 --fps 30"
+alias castaudio="mkchromecast -s --encoder-backend ffmpeg -c ogg -b 192"
+
 alias rsync-copy="rsync -avz --stats --info=progress2 -h"
 alias rsync-move="rsync -avz --stats --info=progress2 -h --remove-source-files"
 alias rsync-update="rsync -avzu --stats  --info=progress2 -h"
