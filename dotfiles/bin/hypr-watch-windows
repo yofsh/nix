@@ -28,10 +28,39 @@ run() {
   fi
 }
 
-floating()       { run "float" hyprctl dispatch setfloating "$1" }
-move_workspace() { run "move → $2" hyprctl dispatch movetoworkspacesilent "special:$2,$1" }
-resize()         { run "resize ${2}x${3}" hyprctl dispatch resizewindowpixel "exact $2 $3,$1" }
-center()         { run "center" hyprctl dispatch centerwindow "$1" }
+# Lua dispatch helper — escapes Lua expression for shell
+ldispatch() {
+  hyprctl dispatch "$1"
+}
+
+floating()       { run "float"            ldispatch "hl.dsp.window.float({ action = \"set\", window = \"$1\" })" }
+tiled()          { run "tile"             ldispatch "hl.dsp.window.float({ action = \"unset\", window = \"$1\" })" }
+move_workspace() { run "move → $2"        ldispatch "hl.dsp.window.move({ workspace = \"special:$2\", follow = false, window = \"$1\" })" }
+center()         { run "center"           ldispatch "hl.dsp.window.center({ window = \"$1\" })" }
+
+# Resolve a "1740" or "95%" value against a monitor's logical (scaled) dimension.
+# $1 = value, $2 = axis ("w" or "h"), $3 = window address
+resolve_dim() {
+  local value="$1" axis="$2" win="$3"
+  if [[ "$value" == *% ]]; then
+    local pct="${value%\%}"
+    local field; [[ "$axis" == "w" ]] && field="width" || field="height"
+    local mon
+    mon=$(hyprctl clients -j | jq -r --arg a "${win#address:}" '.[] | select(.address == $a) | .monitor')
+    hyprctl monitors -j | jq -r --arg m "$mon" --arg f "$field" --arg p "$pct" \
+      '.[] | select(.id == ($m|tonumber)) | (.[$f] / .scale * ($p|tonumber) / 100 | floor)'
+  else
+    echo "$value"
+  fi
+}
+
+resize() {
+  local window="$1" w="$2" h="$3"
+  local wpx hpx
+  wpx=$(resolve_dim "$w" w "$window")
+  hpx=$(resolve_dim "$h" h "$window")
+  run "resize ${w}x${h}" ldispatch "hl.dsp.window.resize({ x = $wpx, y = $hpx, relative = false, window = \"$window\" })"
+}
 
 is_pseudo() {
   local addr="${1#address:}"
@@ -47,14 +76,15 @@ pseudo() {
     echo "  ⏭️  pseudo already $state"
     return
   fi
-  run "pseudo $state" hyprctl dispatch pseudo "$window"
+  local action; [[ "$state" == "on" ]] && action="set" || action="unset"
+  run "pseudo $state" ldispatch "hl.dsp.window.pseudo({ action = \"$action\", window = \"$window\" })"
 }
 
 pseudo_resize() {
   local window="$1" w="$2" h="$3"
-  run "float" hyprctl dispatch setfloating "$window"
-  run "resize ${w}x${h}" hyprctl dispatch resizewindowpixel "exact $w $h,$window"
-  run "tile" hyprctl dispatch settiled "$window"
+  floating "$window"
+  resize "$window" "$w" "$h"
+  tiled "$window"
   pseudo "$window" on
 }
 

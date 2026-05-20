@@ -1,13 +1,14 @@
 #!/bin/sh
 
+# When an external monitor is plugged in, pull workspaces 1-6 back onto it.
+# Monitor name must match the value of $screen in hyprland.lua.
+SCREEN="DP-3"
+
 handle() {
 	case $1 in monitoradded*)
-		hyprctl dispatch moveworkspacetomonitor "1 1"
-		hyprctl dispatch moveworkspacetomonitor "2 1"
-		hyprctl dispatch moveworkspacetomonitor "3 1"
-		hyprctl dispatch moveworkspacetomonitor "4 1"
-		hyprctl dispatch moveworkspacetomonitor "5 1"
-		hyprctl dispatch moveworkspacetomonitor "6 1"
+		for ws in 1 2 3 4 5 6; do
+			hyprctl dispatch "hl.dsp.workspace.move({ workspace = \"$ws\", monitor = \"$SCREEN\" })"
+		done
 		;;
 	esac
 }

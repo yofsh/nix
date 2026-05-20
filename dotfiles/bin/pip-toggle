@@ -8,13 +8,14 @@ PINNED=$(echo "$WIN" | jq -r '.pinned')
 FLOATING=$(echo "$WIN" | jq -r '.floating')
 MONITOR=$(echo "$WIN" | jq -r '.monitor')
 
+ld() { hyprctl dispatch "$1" >/dev/null; }
+
 if [ "$PINNED" = "true" ]; then
     # Restore
-    hyprctl --batch "\
-        dispatch pin;\
-        setprop address:$ADDR no_focus 0;\
-        setprop address:$ADDR opacity 1.0"
-    [ "$FLOATING" = "true" ] && hyprctl dispatch togglefloating
+    ld "hl.dsp.window.pin()"
+    ld "hl.dsp.window.set_prop({ prop = \"no_focus\", value = 0, window = \"address:$ADDR\" })"
+    ld "hl.dsp.window.set_prop({ prop = \"opacity\", value = 1.0, window = \"address:$ADDR\" })"
+    [ "$FLOATING" = "true" ] && ld 'hl.dsp.window.float({ action = "toggle" })'
     notify-send -t 1500 "PiP off"
 else
     # Get monitor dimensions for positioning
@@ -25,12 +26,11 @@ else
     POS_X=$((MON_W - PIP_W - 20))
     POS_Y=20
 
-    [ "$FLOATING" = "false" ] && hyprctl dispatch togglefloating
-    hyprctl --batch "\
-        dispatch pin;\
-        dispatch resizeactive exact $PIP_W $PIP_H;\
-        dispatch movewindowpixel exact $POS_X $POS_Y,address:$ADDR;\
-        setprop address:$ADDR no_focus 1;\
-        setprop address:$ADDR opacity 0.85"
+    [ "$FLOATING" = "false" ] && ld 'hl.dsp.window.float({ action = "toggle" })'
+    ld "hl.dsp.window.pin()"
+    ld "hl.dsp.window.resize({ x = $PIP_W, y = $PIP_H, relative = false })"
+    ld "hl.dsp.window.move({ x = $POS_X, y = $POS_Y, relative = false, window = \"address:$ADDR\" })"
+    ld "hl.dsp.window.set_prop({ prop = \"no_focus\", value = 1, window = \"address:$ADDR\" })"
+    ld "hl.dsp.window.set_prop({ prop = \"opacity\", value = 0.85, window = \"address:$ADDR\" })"
     notify-send -t 1500 "PiP on (pinned, no focus)"
 fi
