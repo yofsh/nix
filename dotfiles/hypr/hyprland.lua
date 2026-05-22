@@ -12,14 +12,21 @@ local function read_hostname()
 end
 
 local LAPTOP_MON = { output = "eDP-1", mode = "2880x1800@120", position = "375x1440", scale = 1.6666, vrr = 1, bitdepth = 10 }
-local EXT_MON    = { output = "DP-3",  mode = "5120x1440@240", position = "0x0",      scale = 1.0,    vrr = 1, bitdepth = 10 }
-
-local hosts = {
-  ares   = { monitors = { LAPTOP_MON, EXT_MON }, primary = "DP-3",  secondary = "eDP-1" },
-  athena = { monitors = { LAPTOP_MON },          primary = "eDP-1", secondary = "eDP-1" },
+local EXT_MON    = {
+  output = "DP-3",
+  mode = "5120x1440@240",
+  position = "0x0",
+  scale = 1.0,
+  vrr = 1,
+  bitdepth = 10,
 }
 
-local host   = hosts[read_hostname()] or hosts.ares
+local hosts      = {
+  ares   = { monitors = { LAPTOP_MON, EXT_MON }, primary = "DP-3", secondary = "eDP-1" },
+  athena = { monitors = { LAPTOP_MON }, primary = "eDP-1", secondary = "eDP-1" },
+}
+
+local host       = hosts[read_hostname()] or hosts.ares
 for _, m in ipairs(host.monitors) do hl.monitor(m) end
 
 local screen = host.primary
@@ -200,15 +207,15 @@ hl.layout.register("deck", {
       local c, row
       if i <= cols then c, row = i, 1 else c, row = i - cols, 2 end
 
-      local has_pair = (cols + c) <= n  -- this column also has a row-2 window
+      local has_pair = (cols + c) <= n -- this column also has a row-2 window
       local x = area.x + (c - 1) * col_w
       local box
       if not has_pair then
         box = { x = x, y = area.y, width = col_w, height = area.height }
       elseif row == 1 then
-        box = { x = x, y = area.y,            width = col_w, height = half_h }
+        box = { x = x, y = area.y, width = col_w, height = half_h }
       else
-        box = { x = x, y = area.y + half_h,   width = col_w, height = half_h }
+        box = { x = x, y = area.y + half_h, width = col_w, height = half_h }
       end
       target:place(box)
     end
@@ -513,8 +520,8 @@ hl.bind("SUPER + SHIFT + F6", hl.dsp.exec_cmd("scale-screen +"), { description =
 -- Window management
 ------------------------------------------------------------------------
 
-hl.bind("SUPER + SHIFT + Q",        hl.dsp.window.close(), { description = "Close active window" })
-hl.bind("SUPER + SHIFT + CTRL + Q", hl.dsp.window.kill(),  { description = "Force kill active window" })
+hl.bind("SUPER + SHIFT + Q", hl.dsp.window.close(), { description = "Close active window" })
+hl.bind("SUPER + SHIFT + CTRL + Q", hl.dsp.window.kill(), { description = "Force kill active window" })
 hl.bind("SUPER + SHIFT + CTRL + ALT + Q", hl.dsp.exit(), { description = "Exit Hyprland" })
 hl.bind("SUPER + A", hl.dsp.window.float({ action = "toggle" }), { description = "Toggle floating" })
 hl.bind("SUPER + SHIFT + A", hl.dsp.window.pin(), { description = "Pin window" })
