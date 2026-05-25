@@ -35,6 +35,7 @@ in
 
     #TUI utils
     yazi
+    p7zip # for yazi archive extraction
     wifitui
     bluetuith
     netwatch

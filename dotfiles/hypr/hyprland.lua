@@ -20,9 +20,20 @@ local EXT_MON    = {
   vrr = 1,
   bitdepth = 10,
 }
+local TV_MON     = {
+  output = "HDMI-A-2",
+  mode = "3840x2160@143.99",
+  position = "0x0",
+  scale = 2,
+  vrr = 2,
+  bitdepth = 10,
+  cm = "hdredid",
+  sdrbrightness = 1.0,
+  sdrsaturation = 1.0,
+}
 
 local hosts      = {
-  ares   = { monitors = { LAPTOP_MON, EXT_MON }, primary = "DP-3", secondary = "eDP-1" },
+  ares   = { monitors = { LAPTOP_MON, EXT_MON, TV_MON }, primary = "DP-3", secondary = "eDP-1" },
   athena = { monitors = { LAPTOP_MON }, primary = "eDP-1", secondary = "eDP-1" },
 }
 
@@ -96,7 +107,7 @@ hl.config({
 
   render     = {
     cm_enabled  = true,
-    cm_auto_hdr = 1,
+    cm_auto_hdr = 2,
   },
 
   binds      = { workspace_back_and_forth = true },
@@ -115,7 +126,7 @@ hl.config({
   },
 
   xwayland   = {
-    force_zero_scaling   = true,
+    force_zero_scaling   = false,
     use_nearest_neighbor = false,
   },
 
@@ -605,8 +616,9 @@ hl.define_submap("Monitor", function()
   }) do
     hl.bind(m.key, hl.dsp.exec_cmd("qs ipc call " .. m.qs .. " toggle"), { description = m.desc })
   end
+  hl.bind("N", hl.dsp.exec_cmd("qs ipc call network togglePopup"), { description = "Network" })
   hl.bind("escape", function()
-    for _, w in ipairs({ "temperature", "battery", "weather", "system", "khal" }) do
+    for _, w in ipairs({ "temperature", "battery", "weather", "system", "khal", "network" }) do
       hl.dispatch(hl.dsp.exec_cmd("qs ipc call " .. w .. " close"))
     end
     hl.dispatch(hl.dsp.submap("reset"))
