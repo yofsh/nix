@@ -15,12 +15,188 @@ ec() {
   nvim nixos/configuration.nix
 }
 
-alias cc="claude --dangerously-skip-permissions"
+# Exclusive Claude/foot background colors for important project roots.
+# Deepest matching root wins. Keep colors as 6-char hex without '#'.
+typeset -gA FOOT_BG_DIR_COLORS=(
+  "$HOME/nix"     "211734"
+  "$HOME/servant" "342117"
+)
+
+_foot_bg_reserved_color() {
+  local color="${1:l}"
+  local reserved
+  for reserved in ${(v)FOOT_BG_DIR_COLORS}; do
+    [[ "$color" == "${reserved:l}" ]] && return 0
+  done
+  return 1
+}
+
+_foot_bg_predefined_for_dir() {
+  local dir="${${1:-$PWD}:A}" root best="" best_color=""
+  for root in ${(k)FOOT_BG_DIR_COLORS}; do
+    root="${root:A}"
+    if [[ "$dir" == "$root" || "$dir" == "$root"/* ]]; then
+      if (( ${#root} > ${#best} )); then
+        best="$root"
+        best_color="${FOOT_BG_DIR_COLORS[$root]}"
+      fi
+    fi
+  done
+  [[ -n "$best_color" ]] && print -r -- "$best_color"
+}
+
+_foot_bg_hashed_color_for_dir() {
+  local seed="${${1:-$PWD}:A}"
+  local dec=$((16#$(printf '%s' "$seed" | md5sum | cut -c1-8)))
+  local hue=$((dec % 360))
+  local v=50 frac r g b color tries=0
+
+  while (( tries < 360 )); do
+    frac=$(( (hue % 60) * v / 60 ))
+    case $((hue / 60)) in
+      0) r=$v;          g=$frac;       b=0 ;;
+      1) r=$((v-frac)); g=$v;          b=0 ;;
+      2) r=0;           g=$v;          b=$frac ;;
+      3) r=0;           g=$((v-frac)); b=$v ;;
+      4) r=$frac;       g=0;           b=$v ;;
+      5) r=$v;          g=0;           b=$((v-frac)) ;;
+    esac
+    color=$(printf '%02x%02x%02x' $((r+3)) $((g+3)) $((b+3)))
+    _foot_bg_reserved_color "$color" || { print -r -- "$color"; return; }
+    hue=$(((hue + 1) % 360))
+    tries=$((tries + 1))
+  done
+
+  print -r -- "$color"
+}
+
+_foot_bg_color_for_dir() {
+  _foot_bg_predefined_for_dir "$1" || _foot_bg_hashed_color_for_dir "$1"
+}
+
+_foot_bg_from_dir() { printf '\e]11;#%s\e\\' "$(_foot_bg_color_for_dir "${1:-$PWD}")" }
+_foot_bg_reset() { printf '\e]11;#050505\e\\' }
+
+_cc_run_claude_direct() {
+  _foot_bg_from_dir "$PWD"
+  claude --dangerously-skip-permissions "$@"
+  local status=$?
+  _foot_bg_reset
+  return $status
+}
+
+_cc_zellij_session_name() {
+  local dir="${${1:-$PWD}:A}"
+  local base="${dir:t}"
+  local hash="$(printf '%s' "$dir" | sha1sum | cut -c1-4)"
+  base="${base//[^A-Za-z0-9_.-]/-}"
+  print -r -- "${base:-root}-${hash}"
+}
+
+_cc_new_zellij_session_name() {
+  local base="$(_cc_zellij_session_name "${1:-$PWD}")"
+  local stamp="$(date '+%m-%d_%H:%M')"
+  local session="${base}_${stamp}"
+  local n=2
+  while _zellij_session_exists "$session" || _zellij_session_exited "$session"; do
+    session="${base}_${stamp}_$n"
+    n=$((n + 1))
+  done
+  print -r -- "$session"
+}
+
+_cc_git_aware_name() {
+  local dir="${${1:-$PWD}:A}"
+  local root repo rel name
+  root=$(git -C "$dir" rev-parse --show-toplevel 2>/dev/null)
+  if [[ -n "$root" ]]; then
+    repo="${root:t}"
+    rel="${dir#$root}"
+    rel="${rel#/}"
+    if [[ -n "$rel" ]]; then
+      name="$repo/$rel"
+    else
+      name="$repo"
+    fi
+  else
+    name="${dir:t}"
+  fi
+  print -r -- "${name:-/}"
+}
+
+_zellij_session_exists() {
+  local session="$1"
+  zellij list-sessions 2>/dev/null \
+    | sed 's/\x1b\[[0-9;]*m//g' \
+    | awk -v s="$session" '$1 == s && $0 !~ /\(EXITED/ { found=1 } END { exit !found }'
+}
+
+_zellij_session_exited() {
+  local session="$1"
+  zellij list-sessions 2>/dev/null \
+    | sed 's/\x1b\[[0-9;]*m//g' \
+    | awk -v s="$session" '$1 == s && $0 ~ /\(EXITED/ { found=1 } END { exit !found }'
+}
+
+_zellij_session_for_dir() {
+  local dir="${${1:-$PWD}:A}"
+  local session="$(_cc_zellij_session_name "$dir")"
+  local legacy="${dir:t}"
+
+  if _zellij_session_exists "$session"; then
+    print -r -- "$session"
+  elif _zellij_session_exists "$legacy"; then
+    # Backward-compatible with older zz sessions that used basename only.
+    print -r -- "$legacy"
+  else
+    print -r -- "$session"
+  fi
+}
+
+cc() {
+  if [[ -n "$ZELLIJ" ]]; then
+    _cc_run_claude_direct "$@"
+    return
+  fi
+
+  local dir="${PWD:A}"
+  local session="$(_cc_new_zellij_session_name "$dir")"
+  local tab_name="$(_cc_git_aware_name "$dir")"
+
+  zellij attach --create-background "$session" || return $?
+  zellij -s "$session" action new-tab --cwd "$dir" --name "$tab_name" --close-on-exit -- zsh -ic '_cc_run_claude_direct "$@"' cc-claude "$@" >/dev/null || return $?
+  zellij -s "$session" action close-tab-by-id 0 >/dev/null 2>&1
+  _foot_bg_from_dir "$dir"
+  zellij attach "$session"
+  local status=$?
+  _foot_bg_reset
+  return $status
+}
+
+_cc_list_active_zellij_sessions() {
+  # cc-zellij-list annotates each session with its attached-client count so the
+  # picker can tell live sessions apart from detached background ones.
+  cc-zellij-list
+}
+
+_cc_pick_zellij_session() {
+  _cc_list_active_zellij_sessions \
+    | fzf --ansi \
+        --prompt='cc attach> ' \
+        --header='Enter: attach · Ctrl-D: kill+delete session' \
+        --bind 'ctrl-d:execute-silent(zellij delete-session -f {1})+reload(cc-zellij-list || true)' \
+    | awk '{print $1}'
+}
+
+cca() {
+  local session="$(_cc_pick_zellij_session)"
+  [[ -n "$session" ]] || return 1
+  zellij attach "$session"
+}
+
+ccs() { cd ~/servant/ && cc "$@" }
+ccn() { cd ~/nix/ && cc "$@" }
 alias ccc="nix run github:numtide/llm-agents.nix#claude-code -- --dangerously-skip-permissions"
-
-
-alias ccs="cd ~/servant/ && claude --dangerously-skip-permissions"
-alias ccn="cd ~/nix/ && claude --dangerously-skip-permissions"
 
 alias ai="aichat"
 alias aic="aichat --role %code%"
@@ -38,8 +214,8 @@ zellij_list_layouts() {
 alias zls="zellij_list_layouts"
 
 zz() {
-  local session_name=$(basename "$PWD")
-  if zellij list-sessions 2>/dev/null | sed 's/\x1b\[[0-9;]*m//g' | awk '{print $1}' | grep -q "^$session_name$"; then
+  local session_name="$(_zellij_session_for_dir "$PWD")"
+  if _zellij_session_exists "$session_name"; then
     zellij attach "$session_name"
   else
     local kdl_files=(*.kdl(N))

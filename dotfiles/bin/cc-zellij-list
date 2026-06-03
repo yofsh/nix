@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+# Active zellij sessions annotated with their attached-client count.
+# Used by the `cca` picker so live sessions (someone attached) are easy to tell
+# apart from detached background ones with no users watching.
+# Session name stays the first field, so callers can still take `{1}`/`$1`.
+
+zellij list-sessions 2>/dev/null \
+  | sed 's/\x1b\[[0-9;]*m//g' \
+  | grep -v '(EXITED' \
+  | while IFS= read -r line; do
+      [[ -n $line ]] || continue
+      name=${line%% *}
+      clients=$(zellij -s "$name" action list-clients 2>/dev/null | tail -n +2 | grep -c .)
+      if (( clients > 0 )); then
+        label="user"; (( clients > 1 )) && label="users"
+        printf '%s  \033[32m● %d %s\033[0m\n' "$line" "$clients" "$label"
+      else
+        printf '%s  \033[90m○ detached\033[0m\n' "$line"
+      fi
+    done
