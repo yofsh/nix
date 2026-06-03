@@ -6,7 +6,6 @@ bind V openmpv
 command yts js tri.native.run(`yts summarize "${window.location.href}"`); 
 bind S yts
 
-
 bind EE js tri.excmds.source(); tri.excmds.fillcmdline_tmp(1000, "Config reloaded!!3!"); 
 bind yg composite js "git clone " + document.location.href.replace(/https?:\/\//,"git@").replace("/",":").replace(/$/,".git") | clipboard yank
 
