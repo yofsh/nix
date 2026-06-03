@@ -12,7 +12,7 @@ let
 in
 {
 
-  home.stateVersion = "26.05";
+  home.stateVersion = "26.11";
 
   imports = [
     ./xdg.nix
@@ -39,6 +39,7 @@ in
     inputs.claude-code.packages.${pkgs.system}.claude-code
     inputs.claude-code.packages.${pkgs.system}.codex
     inputs.claude-code.packages.${pkgs.system}.opencode
+    inputs.claude-code.packages.${pkgs.system}.pi
     pkgs.glow
 
     # Voice transcription

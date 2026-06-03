@@ -28,10 +28,20 @@
         port = 53;
         upstream_dns = [
           "[/lan/]192.168.8.1"
+          "[/local/]192.168.8.1"
           "https://dns.cloudflare.com/dns-query"
           "https://dns.google/dns-query"
         ];
         bootstrap_dns = [ "1.1.1.1" "8.8.8.8" ];
+        fallback_dns = [ "9.9.9.9" "1.0.0.1" ];
+
+        ratelimit = 0;
+
+        cache_ttl_min = 300;
+        cache_ttl_max = 86400;
+        cache_optimistic = true;
+
+        upstream_timeout = "2s";
       };
       filtering = {
         protection_enabled = true;
@@ -47,7 +57,7 @@
   time.timeZone = "Europe/Madrid";
   i18n.defaultLocale = "en_US.UTF-8";
 
-  system.stateVersion = "24.05";
+  system.stateVersion = "26.05";
 
   hardware.bluetooth.enable = true;
   hardware.bluetooth.powerOnBoot = true;

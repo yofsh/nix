@@ -18,7 +18,7 @@
   time.timeZone = "Europe/Kyiv";
   i18n.defaultLocale = "en_US.UTF-8";
 
-  system.stateVersion = "24.05";
+  system.stateVersion = "26.05";
 
   hardware.bluetooth.enable = true;
   hardware.bluetooth.powerOnBoot = true;
