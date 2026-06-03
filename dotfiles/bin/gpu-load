@@ -1,0 +1,78 @@
+#!/usr/bin/env bash
+# gpu-load [interval_seconds] — stream "<load%> <vram%>" once per sample for the
+# primary GPU, normalized across vendors so callers don't care which is present.
+# load% = engine utilization, vram% = VRAM used / total.
+#
+#   NVIDIA  -> persistent `nvidia-smi --query-gpu` loop (util%, mem used/total)
+#   AMD     -> sysfs gpu_busy_percent / mem_info_vram_{used,total} (zero spawns)
+#   Intel   -> `intel_gpu_top -J` Render/3D engine busy % (vram reported as 0;
+#              integrated GPUs share system RAM, no dedicated VRAM)
+#
+# Prints nothing and exits non-zero when no supported GPU is found, so a widget
+# can simply stay hidden on hosts where a GPU load number makes no sense.
+set -uo pipefail
+
+interval="${1:-2}"
+[[ "$interval" =~ ^[0-9]+$ ]] || interval=2
+[ "$interval" -lt 1 ] && interval=1
+ms=$((interval * 1000))
+
+# --- NVIDIA: one long-lived query loop, reformatted to "load vram%" ----------
+# --query-gpu emits "<util>, <mem.used MiB>, <mem.total MiB>" per line; -l keeps
+# the process alive sampling every <interval>s. vram% = round(used/total*100).
+if command -v nvidia-smi >/dev/null 2>&1 && nvidia-smi -L >/dev/null 2>&1; then
+  exec nvidia-smi --query-gpu=utilization.gpu,memory.used,memory.total \
+        --format=csv,noheader,nounits -l "$interval" \
+    | awk -F'[, ]+' 'NF>=3 { vram = $3>0 ? int($2*100/$3 + 0.5) : 0; print $1" "vram; fflush() }'
+fi
+
+# --- AMD: amdgpu exposes busy % and VRAM bytes directly in sysfs (free) ------
+for d in /sys/class/drm/card*/device; do
+  [ -r "$d/gpu_busy_percent" ] || continue
+  drv=$(basename "$(readlink -f "$d/driver" 2>/dev/null)" 2>/dev/null)
+  [ "$drv" = "amdgpu" ] || continue
+  while :; do
+    load=$(cat "$d/gpu_busy_percent" 2>/dev/null || echo 0)
+    used=$(cat "$d/mem_info_vram_used" 2>/dev/null || echo 0)
+    total=$(cat "$d/mem_info_vram_total" 2>/dev/null || echo 0)
+    if [ "${total:-0}" -gt 0 ] 2>/dev/null; then
+      vram=$(( (used * 100 + total / 2) / total ))
+    else
+      vram=0
+    fi
+    printf '%s %s\n' "${load:-0}" "${vram:-0}"
+    sleep "$interval"
+  done
+fi
+
+# --- Intel: parse the streaming JSON from intel_gpu_top ----------------------
+# intel_gpu_top emits a never-closing JSON array, so we decode objects
+# incrementally and report the Render/3D engine busy %. Needs intel-gpu-tools
+# and perf access (kernel.perf_event_paranoid <= 1, CAP_PERFMON, or root).
+if command -v intel_gpu_top >/dev/null 2>&1; then
+  exec intel_gpu_top -J -s "$ms" 2>/dev/null | python3 -u -c '
+import sys, json
+dec = json.JSONDecoder()
+buf = ""
+for chunk in iter(lambda: sys.stdin.read(4096), ""):
+    buf += chunk
+    while True:
+        buf = buf.lstrip().lstrip("[").lstrip(",").lstrip()
+        if not buf:
+            break
+        try:
+            obj, idx = dec.raw_decode(buf)
+        except ValueError:
+            break
+        buf = buf[idx:]
+        load = 0.0
+        for name, e in (obj.get("engines") or {}).items():
+            if name.startswith("Render") and isinstance(e, dict):
+                load = e.get("busy", 0.0) or 0.0
+                break
+        print(int(round(load)), 0, flush=True)
+'
+fi
+
+# No supported GPU.
+exit 1
