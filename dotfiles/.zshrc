@@ -22,6 +22,10 @@ typeset -gA FOOT_BG_DIR_COLORS=(
   "$HOME/servant" "342117"
 )
 
+# Colour saturation when emitting a background colour: 100 = unchanged, lower =
+# greyer/softer, higher = more vivid (deeper). Applied to table + hashed colours.
+typeset -g FOOT_BG_SATURATION=130
+
 _foot_bg_reserved_color() {
   local color="${1:l}"
   local reserved
@@ -74,7 +78,22 @@ _foot_bg_color_for_dir() {
   _foot_bg_predefined_for_dir "$1" || _foot_bg_hashed_color_for_dir "$1"
 }
 
-_foot_bg_from_dir() { printf '\e]11;#%s\e\\' "$(_foot_bg_color_for_dir "${1:-$PWD}")" }
+# Scale each channel's distance from the brightest one (HSV "value"): pulling
+# toward it greys the colour out (<100), pushing away deepens it (>100). The
+# brightest channel is the anchor, so hue and overall brightness stay put.
+_foot_bg_desaturate() {
+  local hex="${1:l}"
+  local r=$((16#${hex:0:2})) g=$((16#${hex:2:2})) b=$((16#${hex:4:2}))
+  local mx=$r d=$((100 - FOOT_BG_SATURATION))
+  (( g > mx )) && mx=$g
+  (( b > mx )) && mx=$b
+  r=$(( r + (mx - r) * d / 100 )); (( r < 0 )) && r=0; (( r > 255 )) && r=255
+  g=$(( g + (mx - g) * d / 100 )); (( g < 0 )) && g=0; (( g > 255 )) && g=255
+  b=$(( b + (mx - b) * d / 100 )); (( b < 0 )) && b=0; (( b > 255 )) && b=255
+  printf '%02x%02x%02x' $r $g $b
+}
+
+_foot_bg_from_dir() { printf '\e]11;#%s\e\\' "$(_foot_bg_desaturate "$(_foot_bg_color_for_dir "${1:-$PWD}")")" }
 _foot_bg_reset() { printf '\e]11;#050505\e\\' }
 
 _cc_run_claude_direct() {
@@ -166,11 +185,14 @@ cc() {
   zellij attach --create-background "$session" || return $?
   zellij -s "$session" action new-tab --cwd "$dir" --name "$tab_name" --close-on-exit -- zsh -ic '_cc_run_claude_direct "$@"' cc-claude "$@" >/dev/null || return $?
   zellij -s "$session" action close-tab-by-id 0 >/dev/null 2>&1
-  _foot_bg_from_dir "$dir"
-  zellij attach "$session"
-  local status=$?
-  _foot_bg_reset
-  return $status
+  # always-block guarantees the foot bg is reset even on detach/interrupt, so the
+  # project colour never sticks once we leave the session.
+  {
+    _foot_bg_from_dir "$dir"
+    zellij attach "$session"
+  } always {
+    _foot_bg_reset
+  }
 }
 
 _cc_list_active_zellij_sessions() {
@@ -191,7 +213,12 @@ _cc_pick_zellij_session() {
 cca() {
   local session="$(_cc_pick_zellij_session)"
   [[ -n "$session" ]] || return 1
-  zellij attach "$session"
+  # Reset the foot bg on the way out in case a forwarded OSC-11 leaked through.
+  {
+    zellij attach "$session"
+  } always {
+    _foot_bg_reset
+  }
 }
 
 ccs() { cd ~/servant/ && cc "$@" }
