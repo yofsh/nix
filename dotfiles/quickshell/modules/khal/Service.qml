@@ -10,24 +10,8 @@ Scope {
 
     property var calendarMap: ({})
 
-    IpcHandler {
-        target: "khal"
+    // Popup open/close/toggle IPC is provided by Core.PackagePopup.
 
-        function toggle() {
-            if (root.context)
-                root.context.togglePopup();
-        }
-
-        function open() {
-            if (root.context)
-                root.context.openPopup();
-        }
-
-        function close() {
-            if (root.context)
-                root.context.closePopup();
-        }
-    }
     readonly property var defaultCalendar: ({ icon: "\uF073", color: Helpers.Colors.textMuted, label: "" })
 
     FileView {

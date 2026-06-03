@@ -9,34 +9,19 @@ Item {
     readonly property var service: context ? context.service : null
     onServiceChanged: if (service) pickCurrent()
 
-    // ─────────────── Config ───────────────
-
-    // Event display windows (ms)
-    readonly property int refreshIntervalMs: 60 * 1000             // how often to query khal + tick
-    readonly property int upcomingWindowMs: 30 * 60 * 1000         // full view: icon + title + "in Xm"
-    readonly property int compactWindowMs: 3 * 60 * 60 * 1000      // compact view: icon + "1h43m" (no title)
-    readonly property int soonThresholdMs: 10 * 60 * 1000          // colors status amber when ≤this
-
-    // Notification
-    readonly property int notifyBeforeMs: 2 * 60 * 1000            // fire this long before start
-    readonly property int notifyExpireMs: 2 * 60 * 1000            // notification on-screen time
+    readonly property int refreshIntervalMs: 60 * 1000
+    readonly property int upcomingWindowMs: 30 * 60 * 1000
+    readonly property int compactWindowMs: 3 * 60 * 60 * 1000
+    readonly property int soonThresholdMs: 10 * 60 * 1000
+    readonly property int notifyBeforeMs: 2 * 60 * 1000
+    readonly property int notifyExpireMs: 2 * 60 * 1000
     readonly property string notifyAppName: "Khal"
     readonly property string notifyIconName: "x-office-calendar"
     readonly property string notifyUrgency: "normal"
     readonly property string notifyCategory: "appointment.reminder"
     readonly property string notifyActionLabel: "Open meeting"
-
-    // Visuals
-    readonly property int fontSizeIcon: 12
-    readonly property int fontSizeText: 11
-    readonly property int rowSpacing: 5
-    readonly property int horizontalPadding: 6
-
-    // Status colors
-    readonly property color inProgressColor: "#f53c3c"             // event running
-    readonly property color soonColor: "#ff9800"                   // start ≤soonThresholdMs
-
-    // Meeting link patterns (first match wins)
+    readonly property color inProgressColor: "#f53c3c"
+    readonly property color soonColor: "#ff9800"
     readonly property var meetingLinkPatterns: [
         /https:\/\/meet\.google\.com\/[A-Za-z0-9_\-?=&]+/,
         /https:\/\/[A-Za-z0-9.\-]*zoom\.us\/[A-Za-z0-9_\-?=&\/.]+/,
@@ -44,21 +29,30 @@ Item {
         /https:\/\/[A-Za-z0-9.\-]*webex\.com\/[^\s"<>]+/
     ]
 
-    // ───────────── End config ─────────────
-
-    implicitWidth: row.implicitWidth + horizontalPadding * 2
+    implicitWidth: contentRow.implicitWidth + 12
     implicitHeight: parent ? parent.height : 22
+
+    Rectangle {
+        anchors.fill: parent
+        radius: AppConfig.Config.theme.interactiveHoverRadius || 4
+        color: Qt.rgba(0.55, 0.3, 0.85, 0.12)
+    }
+
+    property bool altFormat: false
+    property string timeStr: ""
+    property string dateStr: ""
 
     property var events: []
     property var current: null
     property real now: Date.now()
     property var notifiedUids: ({})
     property string pendingLink: ""
+    property bool popupOpen: false
 
     function calendarInfo(cal) {
         return service ? service.calendarInfo(cal) : service_fallback;
     }
-    readonly property var service_fallback: ({ icon: "\uF073", color: Helpers.Colors.textMuted, label: "" })
+    readonly property var service_fallback: ({ icon: "", color: Helpers.Colors.textMuted, label: "" })
 
     function parseTime(s) {
         if (!s) return NaN;
@@ -94,39 +88,34 @@ Item {
             var s = parseTime(e.start);
             var en = parseTime(e.end);
             if (isNaN(s) || isNaN(en)) continue;
-            if (en <= nowMs) continue;  // already ended
+            if (en <= nowMs) continue;
 
             var uid = e.uid || (e.title + "|" + e.start);
             liveUids[uid] = true;
 
-            // Notify once, within notifyBefore window and before start
             var delta = s - nowMs;
             if (delta > 0 && delta <= notifyBeforeMs && !root.notifiedUids[uid]) {
                 root.notifiedUids[uid] = true;
                 notifyEvent(e, delta);
             }
 
-            // In-progress events always win over upcoming
             if (s <= nowMs && en > nowMs) {
                 best = e;
                 continue;
             }
-            // Upcoming within the compact window — pick the soonest
             if (delta <= compactWindowMs && s < bestStart) {
-                if (!best || parseTime(best.end) <= nowMs) {  // don't override in-progress
+                if (!best || parseTime(best.end) <= nowMs) {
                     best = e;
                     bestStart = s;
                 }
             }
         }
 
-        // Prune notified uids for events no longer in the window
         var kept = {};
         for (var k in root.notifiedUids) {
             if (liveUids[k]) kept[k] = true;
         }
         root.notifiedUids = kept;
-
         root.current = best;
     }
 
@@ -147,7 +136,6 @@ Item {
             root.pendingLink = link;
         }
         cmd.push(title, body);
-
         notifyProc.command = cmd;
         notifyProc.running = true;
     }
@@ -170,7 +158,7 @@ Item {
         var mode = eventMode();
         if (mode === "progress") return formatDuration(en - root.now) + " left";
         if (mode === "soon") return "in " + formatDuration(s - root.now);
-        return formatDuration(s - root.now);  // "later" — bare duration
+        return formatDuration(s - root.now);
     }
 
     function statusColor() {
@@ -181,9 +169,29 @@ Item {
         return Helpers.Colors.textMuted;
     }
 
+    Timer {
+        interval: 1000
+        running: true
+        repeat: true
+        triggeredOnStart: true
+        onTriggered: {
+            var now = new Date();
+            if (root.altFormat) {
+                var onejan = new Date(now.getFullYear(), 0, 1);
+                var dayOfYear = Math.ceil((now - onejan) / 86400000);
+                var weekNum = Math.ceil((dayOfYear + onejan.getDay()) / 7);
+                root.timeStr = Qt.formatDateTime(now, "HH:mm:ss");
+                root.dateStr = "W" + weekNum + " " + Qt.formatDateTime(now, "ddd dd MMM");
+            } else {
+                root.timeStr = Qt.formatDateTime(now, "HH:mm");
+                root.dateStr = Qt.formatDateTime(now, "ddd dd MMM");
+            }
+        }
+    }
+
     Process {
         id: khalProc
-        command: ["khal-agenda"]
+        command: ["curl", "-s", "--unix-socket", AppConfig.Config.daemon.socket, "http://d/calendar/agenda?span=2d"]
         running: true
         stdout: StdioCollector {
             onStreamFinished: {
@@ -193,9 +201,7 @@ Item {
                         root.events = data;
                         root.pickCurrent();
                     }
-                } catch (e) {
-                    console.warn("Khal: parse error", e);
-                }
+                } catch (e) {}
             }
         }
     }
@@ -204,7 +210,6 @@ Item {
         interval: root.refreshIntervalMs
         running: true
         repeat: true
-        triggeredOnStart: false
         onTriggered: {
             root.now = Date.now();
             root.pickCurrent();
@@ -213,36 +218,64 @@ Item {
     }
 
     Row {
-        id: row
+        id: contentRow
         anchors.centerIn: parent
-        spacing: root.rowSpacing
+        spacing: 6
 
-        Text {
+        Column {
             anchors.verticalCenter: parent.verticalCenter
-            text: root.current ? root.calendarInfo(root.current.calendar).icon : root.service_fallback.icon
-            color: root.current ? root.calendarInfo(root.current.calendar).color : Helpers.Colors.textMuted
-            font.family: AppConfig.Config.theme.fontFamily
-            font.pixelSize: root.fontSizeIcon
+            spacing: -2
+
+            Text {
+                anchors.horizontalCenter: parent.horizontalCenter
+                color: Helpers.Colors.textDefault
+                font.family: AppConfig.Config.theme.fontFamily
+                font.pixelSize: AppConfig.Config.theme.fontSizeDefault
+                font.bold: true
+                text: root.timeStr
+            }
+
+            Text {
+                anchors.horizontalCenter: parent.horizontalCenter
+                color: Helpers.Colors.textMuted
+                font.family: AppConfig.Config.theme.fontFamily
+                font.pixelSize: AppConfig.Config.theme.fontSizeSmall
+                text: root.dateStr
+            }
         }
 
-        Text {
-            visible: root.eventMode() !== "later"
+        Row {
             anchors.verticalCenter: parent.verticalCenter
-            text: root.current ? (root.current.title || "").trim() : ""
-            color: Helpers.Colors.textDefault
-            font.family: AppConfig.Config.theme.fontFamily
-            font.pixelSize: root.fontSizeText
-            elide: Text.ElideRight
-            maximumLineCount: 1
-        }
+            spacing: 4
+            visible: root.current !== null
 
-        Text {
-            anchors.verticalCenter: parent.verticalCenter
-            text: root.statusText()
-            color: root.statusColor()
-            font.family: AppConfig.Config.theme.fontFamily
-            font.pixelSize: root.fontSizeText
-            font.bold: true
+            Text {
+                anchors.verticalCenter: parent.verticalCenter
+                text: root.current ? root.calendarInfo(root.current.calendar).icon : ""
+                color: root.current ? root.calendarInfo(root.current.calendar).color : Helpers.Colors.textMuted
+                font.family: AppConfig.Config.theme.fontFamily
+                font.pixelSize: AppConfig.Config.theme.fontSizeDefault
+            }
+
+            Text {
+                visible: root.eventMode() !== "later"
+                anchors.verticalCenter: parent.verticalCenter
+                text: root.current ? (root.current.title || "").trim() : ""
+                color: Helpers.Colors.textDefault
+                font.family: AppConfig.Config.theme.fontFamily
+                font.pixelSize: AppConfig.Config.theme.fontSizeSmall
+                elide: Text.ElideRight
+                maximumLineCount: 1
+            }
+
+            Text {
+                anchors.verticalCenter: parent.verticalCenter
+                text: root.statusText()
+                color: root.statusColor()
+                font.family: AppConfig.Config.theme.fontFamily
+                font.pixelSize: AppConfig.Config.theme.fontSizeSmall
+                font.bold: true
+            }
         }
     }
 
@@ -251,18 +284,11 @@ Item {
         acceptedButtons: Qt.LeftButton | Qt.RightButton
         cursorShape: Qt.PointingHandCursor
         onClicked: function(mouse) {
-            if (mouse.button === Qt.RightButton) {
-                if (!root.current) return;
-                var link = root.extractMeetingLink(root.current.description);
-                if (link) {
-                    openProc.command = ["xdg-open", link];
-                    openProc.running = true;
-                }
-                return;
+            if (mouse.button === Qt.LeftButton) {
+                root.popupOpen = !root.popupOpen;
+            } else if (mouse.button === Qt.RightButton) {
+                root.altFormat = !root.altFormat;
             }
-            // Left click: toggle agenda popup
-            if (root.context)
-                root.context.togglePopup();
         }
     }
 

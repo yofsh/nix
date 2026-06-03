@@ -3,11 +3,13 @@ import Quickshell.Io
 import Quickshell.Wayland
 import QtQuick
 import QtQuick.Controls
+import QtQuick.Layouts
 import "../../helpers" as Helpers
 import "../../components" as Components
 import "../../config" as AppConfig
 
-PanelWindow {
+// Content only — Core.PackagePopup provides window/placement/state/click-out/IPC.
+Item {
     id: root
 
     property var context: null
@@ -15,10 +17,10 @@ PanelWindow {
 
     // ─────────────── Config ───────────────
 
-    readonly property int spanDays: 14                      // how far forward the popup shows
+    readonly property int spanDays: 90                      // how far forward the popup shows
     readonly property int refreshIntervalMs: 60 * 1000      // auto-refresh while open
-    readonly property int popupWidth: 720
-    readonly property int popupHeight: 620
+    readonly property int popupWidth: 900
+    readonly property int popupHeight: 680
     readonly property var defaultCalendar: ({ icon: "\uF073", color: Helpers.Colors.textMuted, label: "" })
 
     // Status styling
@@ -39,23 +41,41 @@ PanelWindow {
 
     // ───────────── End config ─────────────
 
-    property int barHeight: AppConfig.Config.theme.barHeight
     property bool popupOpen: false
 
-    anchors.top: true
-    exclusionMode: ExclusionMode.Ignore
-    margins.top: barHeight + AppConfig.Config.theme.popupTopGap
     implicitWidth: popupWidth
     implicitHeight: popupHeight
-    visible: popupOpen
-    color: "transparent"
 
     property var events: []
     property bool dataLoaded: false
     property real now: Date.now()
 
     onPopupOpenChanged: {
-        if (popupOpen) loadProc.running = true;
+        if (popupOpen) {
+            loadProc.running = true;
+            root.now = Date.now();
+        }
+    }
+
+    property string scrollTarget: ""
+
+    function scrollToDate(dateStr) {
+        root.scrollTarget = dateStr;
+        Qt.callLater(doScroll);
+    }
+
+    function doScroll() {
+        if (!scrollTarget) return;
+        for (var i = 0; i < agendaCol.children.length; i++) {
+            var child = agendaCol.children[i];
+            if (child && child.modelData && child.modelData.date === scrollTarget) {
+                var yPos = child.y;
+                agendaFlickable.contentY = Math.max(0, Math.min(yPos, agendaFlickable.contentHeight - agendaFlickable.height));
+                scrollTarget = "";
+                return;
+            }
+        }
+        scrollTarget = "";
     }
 
     function calendarInfo(cal) {
@@ -221,8 +241,8 @@ PanelWindow {
 
     Process {
         id: loadProc
-        command: ["khal-agenda"]
-        running: false
+        command: ["curl", "-s", "--unix-socket", AppConfig.Config.daemon.socket, "http://d/calendar/agenda?span=" + root.spanDays + "d"]
+        running: true
         stdout: StdioCollector {
             onStreamFinished: {
                 try {
@@ -239,13 +259,12 @@ PanelWindow {
     }
 
     Timer {
-        interval: root.refreshIntervalMs
-        running: root.popupOpen
+        interval: root.popupOpen ? root.refreshIntervalMs : 3600000
+        running: true
         repeat: true
         onTriggered: loadProc.running = true
     }
 
-    // Tick `now` every 30s so countdowns stay fresh without refetching events.
     Timer {
         interval: 30000
         running: root.popupOpen
@@ -301,7 +320,7 @@ PanelWindow {
                         text: "Agenda"
                         color: Helpers.Colors.textDefault
                         font.family: AppConfig.Config.theme.fontFamily
-                        font.pixelSize: AppConfig.Config.theme.fontSizeMedium
+                        font.pixelSize: AppConfig.Config.theme.popupFontSizeMedium
                         font.bold: true
                         anchors.verticalCenter: parent.verticalCenter
                     }
@@ -310,8 +329,181 @@ PanelWindow {
                         text: root.events.length + " events · next " + root.spanDays + "d"
                         color: Helpers.Colors.textMuted
                         font.family: AppConfig.Config.theme.fontFamily
-                        font.pixelSize: AppConfig.Config.theme.fontSizeSmall
+                        font.pixelSize: AppConfig.Config.theme.popupFontSizeSmall
                         anchors.verticalCenter: parent.verticalCenter
+                    }
+                }
+
+                Rectangle { width: parent.width; height: 1; color: Qt.rgba(1, 1, 1, 0.08) }
+
+                // 3-month calendar (current + 2 upcoming)
+                Item {
+                    id: calendarArea
+                    width: parent.width
+                    height: calRow.implicitHeight
+
+                    property var eventDateColors: {
+                        var dates = {};
+                        for (var i = 0; i < root.events.length; i++) {
+                            var ev = root.events[i];
+                            var d = (ev.start || "").split(" ")[0];
+                            if (!d) continue;
+                            if (!dates[d]) dates[d] = [];
+                            var info = root.calendarInfo(ev.calendar);
+                            var col = info.color || Helpers.Colors.textMuted;
+                            var found = false;
+                            for (var j = 0; j < dates[d].length; j++) {
+                                if (String(dates[d][j]) === String(col)) { found = true; break; }
+                            }
+                            if (!found) dates[d].push(col);
+                        }
+                        return dates;
+                    }
+
+                    function dateKey(date) {
+                        return date.getFullYear() + "-"
+                            + String(date.getMonth() + 1).padStart(2, "0") + "-"
+                            + String(date.getDate()).padStart(2, "0");
+                    }
+
+                    function hasEvent(date) {
+                        return !!eventDateColors[dateKey(date)];
+                    }
+
+                    function eventColors(date) {
+                        return eventDateColors[dateKey(date)] || [];
+                    }
+
+                    Row {
+                        id: calRow
+                        width: parent.width
+                        spacing: 16
+
+                        Repeater {
+                            model: 3
+
+                            Row {
+                                required property int index
+                                spacing: 12
+
+                                Rectangle {
+                                    visible: index > 0
+                                    width: 1
+                                    height: monthCol.implicitHeight
+                                    color: Qt.rgba(1, 1, 1, 0.1)
+                                }
+
+                                Column {
+                                    id: monthCol
+                                    width: (calRow.width - 2 * (16 + 12 + 1)) / 3
+                                    spacing: 2
+
+                                    property int mOffset: index
+                                    property int calMonth: {
+                                        var d = new Date();
+                                        var m = d.getMonth() + mOffset;
+                                        return m % 12;
+                                    }
+                                    property int calYear: {
+                                        var d = new Date();
+                                        var m = d.getMonth() + mOffset;
+                                        return d.getFullYear() + Math.floor(m / 12);
+                                    }
+
+                                    Text {
+                                        width: parent.width
+                                        horizontalAlignment: Text.AlignHCenter
+                                        text: {
+                                            var months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+                                            return months[monthCol.calMonth] + " " + monthCol.calYear;
+                                        }
+                                        color: monthCol.mOffset === 0 ? Helpers.Colors.textDefault : Helpers.Colors.textMuted
+                                        font.family: AppConfig.Config.theme.fontFamily
+                                        font.pixelSize: AppConfig.Config.theme.popupFontSizeSmall
+                                        font.bold: monthCol.mOffset === 0
+                                    }
+
+                                    DayOfWeekRow {
+                                        width: parent.width
+                                        locale: Qt.locale("en_US")
+                                        delegate: Text {
+                                            required property string narrowName
+                                            text: narrowName
+                                            color: Qt.rgba(1, 1, 1, 0.3)
+                                            font.family: AppConfig.Config.theme.fontFamily
+                                            font.pixelSize: AppConfig.Config.theme.popupFontSizeTiny
+                                            horizontalAlignment: Text.AlignHCenter
+                                        }
+                                    }
+
+                                    MonthGrid {
+                                        id: mGrid
+                                        width: parent.width
+                                        height: width * 6 / 7
+                                        month: monthCol.calMonth
+                                        year: monthCol.calYear
+                                        locale: Qt.locale("en_US")
+
+                                        onClicked: function(date) {
+                                            root.scrollToDate(calendarArea.dateKey(date));
+                                        }
+
+                                        delegate: Item {
+                                            required property var model
+                                            implicitWidth: dayText.implicitWidth
+                                            implicitHeight: dayText.implicitHeight + 6
+
+                                            Rectangle {
+                                                z: -1
+                                                anchors.centerIn: dayText
+                                                width: Math.min(parent.width, 22)
+                                                height: width
+                                                radius: width / 2
+                                                color: model.today ? Qt.rgba(Helpers.Colors.accent.r, Helpers.Colors.accent.g, Helpers.Colors.accent.b, 0.2) : "transparent"
+                                            }
+
+                                            Text {
+                                                id: dayText
+                                                anchors.horizontalCenter: parent.horizontalCenter
+                                                text: model.day
+                                                color: model.month === mGrid.month
+                                                    ? (model.today ? Helpers.Colors.accent : Helpers.Colors.textDefault)
+                                                    : Qt.rgba(1, 1, 1, 0.15)
+                                                font.family: AppConfig.Config.theme.fontFamily
+                                                font.pixelSize: AppConfig.Config.theme.fontSizeDefault
+                                                font.bold: model.today
+                                                horizontalAlignment: Text.AlignHCenter
+                                            }
+
+                                            Row {
+                                                visible: model.month === mGrid.month && calendarArea.hasEvent(model.date)
+                                                anchors.horizontalCenter: parent.horizontalCenter
+                                                anchors.top: dayText.bottom
+                                                anchors.topMargin: 1
+                                                spacing: 2
+
+                                                Repeater {
+                                                    model: calendarArea.eventColors(parent.parent.model.date)
+                                                    Rectangle {
+                                                        required property var modelData
+                                                        width: 4
+                                                        height: 4
+                                                        radius: 2
+                                                        color: modelData
+                                                    }
+                                                }
+                                            }
+
+                                            MouseArea {
+                                                anchors.fill: parent
+                                                cursorShape: calendarArea.hasEvent(model.date) ? Qt.PointingHandCursor : Qt.ArrowCursor
+                                                onClicked: root.scrollToDate(calendarArea.dateKey(model.date))
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
 
@@ -328,13 +520,21 @@ PanelWindow {
                 }
 
                 // Scrollable agenda
-                ScrollView {
+                Flickable {
+                    id: agendaFlickable
                     width: parent.width
                     height: parent.height - y
                     clip: true
-                    ScrollBar.vertical.policy: ScrollBar.AsNeeded
+                    contentWidth: width
+                    contentHeight: agendaCol.implicitHeight
+                    boundsBehavior: Flickable.StopAtBounds
+
+                    Behavior on contentY { NumberAnimation { duration: 200; easing.type: Easing.OutCubic } }
+
+                    ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
 
                     Column {
+                        id: agendaCol
                         width: parent.width
                         spacing: 10
 
@@ -343,7 +543,7 @@ PanelWindow {
 
                             Column {
                                 required property var modelData
-                                width: ScrollView.view ? ScrollView.view.width - 12 : 700
+                                width: agendaFlickable.width
                                 spacing: 4
 
                                 // Day header
@@ -355,14 +555,14 @@ PanelWindow {
                                             ? Helpers.Colors.textDefault
                                             : Helpers.Colors.textMuted
                                         font.family: AppConfig.Config.theme.fontFamily
-                                        font.pixelSize: AppConfig.Config.theme.fontSizeBody
+                                        font.pixelSize: AppConfig.Config.theme.popupFontSizeBody
                                         font.bold: true
                                     }
                                     Text {
                                         text: modelData.items.length + (modelData.items.length === 1 ? " event" : " events")
                                         color: Qt.rgba(1, 1, 1, 0.3)
                                         font.family: AppConfig.Config.theme.fontFamily
-                                        font.pixelSize: AppConfig.Config.theme.fontSizeSmall
+                                        font.pixelSize: AppConfig.Config.theme.popupFontSizeSmall
                                         anchors.verticalCenter: parent.verticalCenter
                                     }
                                 }
@@ -416,7 +616,7 @@ PanelWindow {
                                                     text: root.formatTimeRange(modelData)
                                                     color: Helpers.Colors.textMuted
                                                     font.family: AppConfig.Config.theme.fontFamily
-                                                    font.pixelSize: AppConfig.Config.theme.fontSizeSmall
+                                                    font.pixelSize: AppConfig.Config.theme.popupFontSizeSmall
                                                     anchors.verticalCenter: parent.verticalCenter
                                                 }
 
@@ -435,7 +635,7 @@ PanelWindow {
                                                         ? Helpers.Colors.textMuted
                                                         : Helpers.Colors.textDefault
                                                     font.family: AppConfig.Config.theme.fontFamily
-                                                    font.pixelSize: AppConfig.Config.theme.fontSizeBody
+                                                    font.pixelSize: AppConfig.Config.theme.popupFontSizeBody
                                                     font.bold: true
                                                     elide: Text.ElideRight
                                                     anchors.verticalCenter: parent.verticalCenter
@@ -456,7 +656,7 @@ PanelWindow {
                                                         text: root.countdownText(eventRow.modelData)
                                                         color: eventRow.pillColor
                                                         font.family: AppConfig.Config.theme.fontFamily
-                                                        font.pixelSize: AppConfig.Config.theme.fontSizeSmall
+                                                        font.pixelSize: AppConfig.Config.theme.popupFontSizeSmall
                                                         font.bold: eventRow.status === "progress"
                                                     }
                                                 }
@@ -477,13 +677,13 @@ PanelWindow {
                                                             text: "\uF00C"  // fa-check
                                                             color: root.attendeeAcceptedColor
                                                             font.family: AppConfig.Config.theme.fontFamily
-                                                            font.pixelSize: AppConfig.Config.theme.fontSizeSmall
+                                                            font.pixelSize: AppConfig.Config.theme.popupFontSizeSmall
                                                         }
                                                         Text {
                                                             text: "" + attendeeBadge.att.accepted
                                                             color: root.attendeeAcceptedColor
                                                             font.family: AppConfig.Config.theme.fontFamily
-                                                            font.pixelSize: AppConfig.Config.theme.fontSizeSmall
+                                                            font.pixelSize: AppConfig.Config.theme.popupFontSizeSmall
                                                         }
                                                     }
                                                     Row {
@@ -494,13 +694,13 @@ PanelWindow {
                                                             text: "\uF00D"  // fa-times
                                                             color: root.attendeeDeclinedColor
                                                             font.family: AppConfig.Config.theme.fontFamily
-                                                            font.pixelSize: AppConfig.Config.theme.fontSizeSmall
+                                                            font.pixelSize: AppConfig.Config.theme.popupFontSizeSmall
                                                         }
                                                         Text {
                                                             text: "" + attendeeBadge.att.declined
                                                             color: root.attendeeDeclinedColor
                                                             font.family: AppConfig.Config.theme.fontFamily
-                                                            font.pixelSize: AppConfig.Config.theme.fontSizeSmall
+                                                            font.pixelSize: AppConfig.Config.theme.popupFontSizeSmall
                                                         }
                                                     }
                                                     Row {
@@ -511,13 +711,13 @@ PanelWindow {
                                                             text: "\uF128"  // fa-question
                                                             color: root.attendeeUnansweredColor
                                                             font.family: AppConfig.Config.theme.fontFamily
-                                                            font.pixelSize: AppConfig.Config.theme.fontSizeSmall
+                                                            font.pixelSize: AppConfig.Config.theme.popupFontSizeSmall
                                                         }
                                                         Text {
                                                             text: "" + attendeeBadge.unanswered
                                                             color: root.attendeeUnansweredColor
                                                             font.family: AppConfig.Config.theme.fontFamily
-                                                            font.pixelSize: AppConfig.Config.theme.fontSizeSmall
+                                                            font.pixelSize: AppConfig.Config.theme.popupFontSizeSmall
                                                         }
                                                     }
                                                 }
@@ -528,7 +728,7 @@ PanelWindow {
                                                     text: "\uF08E"  // fa-external-link
                                                     color: eventRow.hovered ? Helpers.Colors.textDefault : Qt.rgba(1, 1, 1, 0.35)
                                                     font.family: AppConfig.Config.theme.fontFamily
-                                                    font.pixelSize: AppConfig.Config.theme.fontSizeSmall
+                                                    font.pixelSize: AppConfig.Config.theme.popupFontSizeSmall
                                                     anchors.verticalCenter: parent.verticalCenter
                                                 }
                                             }
@@ -540,7 +740,7 @@ PanelWindow {
                                                 text: "\uF041  " + modelData.location   // fa-map-marker
                                                 color: Qt.rgba(1, 1, 1, 0.45)
                                                 font.family: AppConfig.Config.theme.fontFamily
-                                                font.pixelSize: AppConfig.Config.theme.fontSizeSmall
+                                                font.pixelSize: AppConfig.Config.theme.popupFontSizeSmall
                                                 elide: Text.ElideRight
                                             }
 
@@ -551,7 +751,7 @@ PanelWindow {
                                                 text: modelData.description
                                                 color: Qt.rgba(1, 1, 1, 0.4)
                                                 font.family: AppConfig.Config.theme.fontFamily
-                                                font.pixelSize: AppConfig.Config.theme.fontSizeSmall
+                                                font.pixelSize: AppConfig.Config.theme.popupFontSizeSmall
                                                 wrapMode: Text.WordWrap
                                                 maximumLineCount: 2
                                                 elide: Text.ElideRight
