@@ -2,14 +2,30 @@
 let
   netwatch = pkgs.rustPlatform.buildRustPackage rec {
     pname = "netwatch-tui";
-    version = "0.3.5";
+    version = "0.23.0";
     src = pkgs.fetchCrate {
       inherit pname version;
-      hash = "sha256-NvylrXrCOO5mgTj2zt5XCLQSlKE/V7TrBXYqYivNswE=";
+      hash = "sha256-qk7ydVqcUU/OEfUG/xaF/NDmG/vq0GTvmfOmlV8645Y=";
     };
-    cargoHash = "sha256-rzyqJh6GedeSj5vMqd1B7GgOSuN8uwPavKA/OAX6kvE=";
+    cargoHash = "sha256-2+Hy5wYiij26NBjbahZfu0gqXwL7qifBY8jCo3O5sYg=";
     nativeBuildInputs = [ pkgs.pkg-config ];
     buildInputs = [ pkgs.libpcap ];
+  };
+
+  netscan = pkgs.rustPlatform.buildRustPackage rec {
+    pname = "netscan-tui";
+    version = "0.8.1";
+    src = pkgs.fetchCrate {
+      inherit pname version;
+      hash = "sha256-b+nrTCr5aaUON0QLV7S8qJbBCoO7m91nbOikBoaaK1k=";
+    };
+    cargoHash = "sha256-4mhVNr62NrCPR5W7Qkfg2LAPInOltyfG/nyITROEKJY=";
+    nativeBuildInputs = [ pkgs.makeBinaryWrapper ];
+    # netscan shells out to nmap at runtime
+    postInstall = ''
+      wrapProgram $out/bin/netscan \
+        --prefix PATH : ${lib.makeBinPath [ pkgs.nmap ]}
+    '';
   };
 in
 {
@@ -36,9 +52,10 @@ in
     #TUI utils
     yazi
     p7zip # for yazi archive extraction
-    wifitui
-    bluetuith
+    inputs.net-tui.packages.${pkgs.system}.wifi-tui
+    inputs.net-tui.packages.${pkgs.system}.bt-tui
     netwatch
+    netscan
     powertop
     config.boot.kernelPackages.cpupower
 
@@ -109,7 +126,7 @@ in
   time.timeZone = "Europe/Madrid";
   i18n.defaultLocale = "en_US.UTF-8";
 
-  system.stateVersion = "24.05";
+  system.stateVersion = "26.05";
 
   # DDC/CI for external monitor brightness control via I2C
   boot.kernelModules = [ "i2c-dev" ];

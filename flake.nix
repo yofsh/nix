@@ -36,6 +36,10 @@
       url = "git+https://git.outfoxxed.me/quickshell/quickshell";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+    net-tui = {
+      url = "github:yofsh/net-tui";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
   outputs = { self, nixpkgs, home-manager, sops-nix, ... }@inputs:
@@ -78,6 +82,7 @@
             nixpkgs.overlays = [
               inputs.quickshell.overlays.default
               (_: prev: { monique = prev.callPackage ./packages/monique.nix { }; })
+              (_: prev: { openldap = prev.openldap.overrideAttrs (_: { doCheck = false; }); })
             ];
           }
         ];
@@ -89,7 +94,13 @@
         modules = [
           ./hosts/athena/configuration.nix
           sops-nix.nixosModules.sops
-          { nixpkgs.overlays = [ inputs.quickshell.overlays.default ]; }
+          {
+            nixpkgs.overlays = [
+              inputs.quickshell.overlays.default
+              # openldap's syncrepl test is flaky and breaks bottles' dep chain (same fix as ares)
+              (_: prev: { openldap = prev.openldap.overrideAttrs (_: { doCheck = false; }); })
+            ];
+          }
         ];
       };
 
