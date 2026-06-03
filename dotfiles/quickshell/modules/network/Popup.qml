@@ -6,18 +6,13 @@ import "../../helpers" as Helpers
 import "../../components" as Components
 import "../../config" as AppConfig
 
-PanelWindow {
+// Content only — Core.PackagePopup provides window/placement/state/click-out/IPC.
+Item {
     id: root
-    property int barHeight: AppConfig.Config.theme.barHeight
     property bool popupOpen: false
 
-    anchors.top: true
-    exclusionMode: ExclusionMode.Ignore
-    margins.top: barHeight + AppConfig.Config.theme.popupTopGap
     implicitWidth: 1100
-    implicitHeight: 820
-    visible: popupOpen
-    color: "transparent"
+    implicitHeight: 920
 
     // ─── State, populated by qs-net-status loop ───────────────────────────
     property var wifi: null         // see qs-net-status JSON shape
@@ -36,6 +31,13 @@ PanelWindow {
     }
     property var gatewayInfo: ({ gateway: "", dev: "", src: "" })
     property var dnsServers: []
+    property bool _dnsTestPending: false
+    onDnsServersChanged: {
+        if (_dnsTestPending && dnsServers.length > 0) {
+            _dnsTestPending = false;
+            refreshDnsTest();
+        }
+    }
 
     property string gatewayIp: gatewayInfo.gateway || ""
 
@@ -48,6 +50,25 @@ PanelWindow {
     property var dnsMethods: ({})
     property bool dnsTestLoading: false
 
+    // ─── WiFi/Tailscale controls ──────────────────────────────────────────
+    property bool wifiEnabled: true
+    property var trafficHistory: []
+    readonly property int trafficMaxHistory: 300
+    property var wifiNetworks: []
+    property int wifiNetworkCount: 0
+    property bool wifiScanLoading: false
+    property bool wifiConnecting: false
+    property string wifiConnectError: ""
+    property string passwordInputBssid: ""
+
+    // ─── Bluetooth ─────────────────────────────────────────────────────────
+    property var btController: null
+    property var btDevices: []
+    property bool btLoading: false
+    property bool btScanLoading: false
+    property bool btActionLoading: false
+    property string btActionError: ""
+
     // ─── Ping series ──────────────────────────────────────────────────────
     readonly property int pingMaxHistory: 80
     property var pingTargets: [
@@ -59,20 +80,134 @@ PanelWindow {
     onPopupOpenChanged: {
         if (popupOpen) {
             statusLoop.running = true;
-            // Kick a one-shot status fetch immediately so the UI populates
-            // before the first 1s tick of the long-lived loop arrives.
-            initialStatus.running = true;
             refreshIpInfo();
-            refreshDnsTest();
+            if (root.dnsServers.length > 0)
+                refreshDnsTest();
+            else
+                root._dnsTestPending = true;
+            loadWifiNetworks();
+            loadBtStatus();
         } else {
             statusLoop.running = false;
+            root.trafficHistory = [];
+            root.passwordInputBssid = "";
+            root.wifiConnectError = "";
+            root.btActionError = "";
         }
     }
 
     function refreshDnsTest() {
         if (root.dnsTestLoading) return;
         root.dnsTestLoading = true;
+        var upstream = (root.dnsServers && root.dnsServers.length > 0)
+            ? root.dnsServers[0] : "";
+        var url = upstream
+            ? "http://d/dns/test?upstream=" + encodeURIComponent(upstream)
+            : "http://d/dns/test";
+        dnsTestProc.command = ["curl", "-s", "--unix-socket", root._sock, url];
         dnsTestProc.running = true;
+    }
+
+    function loadWifiNetworks() {
+        if (root.wifiScanLoading) return;
+        root.wifiScanLoading = true;
+        wifiCachedProc.running = true;
+    }
+
+    function scanWifiNetworks() {
+        if (root.wifiScanLoading) return;
+        root.wifiScanLoading = true;
+        wifiScanProc.running = true;
+    }
+
+    function connectToWifi(ssid, bssid, password, known) {
+        root.wifiConnecting = true;
+        root.wifiConnectError = "";
+        var body = {ssid: ssid};
+        if (bssid) body.bssid = bssid;
+        if (password) body.password = password;
+        if (known) body.known = true;
+        wifiConnectProc.command = ["curl", "-s", "-X", "POST",
+            "-H", "Content-Type: application/json",
+            "-d", JSON.stringify(body),
+            "--unix-socket", root._sock, "http://d/net/wifi-connect"];
+        wifiConnectProc.running = true;
+    }
+
+    // ─── Bluetooth functions ────────────────────────────────────────────
+    function loadBtStatus() {
+        if (root.btLoading) return;
+        root.btLoading = true;
+        btStatusProc.running = true;
+    }
+
+    function scanBtDevices() {
+        if (root.btScanLoading) return;
+        root.btScanLoading = true;
+        btScanProc.running = true;
+    }
+
+    function btConnect(mac) {
+        root.btActionLoading = true;
+        root.btActionError = "";
+        btActionProc.command = ["curl", "-s", "-X", "POST",
+            "-H", "Content-Type: application/json",
+            "-d", JSON.stringify({mac: mac}),
+            "--unix-socket", root._sock, "http://d/bt/connect"];
+        btActionProc.running = true;
+    }
+
+    function btDisconnect(mac) {
+        root.btActionLoading = true;
+        root.btActionError = "";
+        btActionProc.command = ["curl", "-s", "-X", "POST",
+            "-H", "Content-Type: application/json",
+            "-d", JSON.stringify({mac: mac}),
+            "--unix-socket", root._sock, "http://d/bt/disconnect"];
+        btActionProc.running = true;
+    }
+
+    function btRemove(mac) {
+        root.btActionLoading = true;
+        root.btActionError = "";
+        btActionProc.command = ["curl", "-s", "-X", "POST",
+            "-H", "Content-Type: application/json",
+            "-d", JSON.stringify({mac: mac}),
+            "--unix-socket", root._sock, "http://d/bt/remove"];
+        btActionProc.running = true;
+    }
+
+    function btIconForType(icon) {
+        if (icon === "audio-headset" || icon === "audio-headphones") return String.fromCodePoint(0xF07CE);
+        if (icon === "audio-card") return String.fromCodePoint(0xF075A);
+        if (icon === "input-keyboard") return String.fromCodePoint(0xF030C);
+        if (icon === "input-mouse") return String.fromCodePoint(0xF037D);
+        if (icon === "input-gaming") return String.fromCodePoint(0xF0EB5);
+        if (icon === "phone") return String.fromCodePoint(0xF03F2);
+        if (icon === "computer") return String.fromCodePoint(0xF0379);
+        if (icon === "video-display") return String.fromCodePoint(0xF0379);
+        return String.fromCodePoint(0xF00AF);
+    }
+
+    function fmtRate(bytesPerSec) {
+        if (!bytesPerSec || bytesPerSec < 1024) return (Math.round(bytesPerSec) || 0) + " B/s";
+        if (bytesPerSec < 1048576) return (bytesPerSec / 1024).toFixed(1) + " KB/s";
+        if (bytesPerSec < 1073741824) return (bytesPerSec / 1048576).toFixed(1) + " MB/s";
+        return (bytesPerSec / 1073741824).toFixed(1) + " GB/s";
+    }
+
+    function signalIconForPct(signal) {
+        if (signal >= 75) return String.fromCodePoint(0xF0928);
+        if (signal >= 50) return String.fromCodePoint(0xF0925);
+        if (signal >= 25) return String.fromCodePoint(0xF0922);
+        return String.fromCodePoint(0xF091F);
+    }
+
+    function signalColorForPct(signal) {
+        if (signal >= 75) return "#4caf50";
+        if (signal >= 50) return "#8bc34a";
+        if (signal >= 25) return "#ffb74d";
+        return "#ef5350";
     }
 
     // ─── Helpers ──────────────────────────────────────────────────────────
@@ -178,26 +313,15 @@ PanelWindow {
         ipinfoProc.running = true;
     }
 
-    // ─── Long-lived status process (single pipe, 1s cadence) ──────────────
+    readonly property string _sock: AppConfig.Config.daemon.socket
+
+    // ─── Long-lived status stream (NDJSON from daemon, 1s cadence) ───────
     Process {
         id: statusLoop
-        // bash -lc gives a login-shell PATH and matches how dotfiles/bin
-        // scripts are found by other modules in this shell.
-        command: ["bash", "-lc", "exec qs-net-status"]
+        command: ["curl", "-sN", "--unix-socket", root._sock, "http://d/net/stream"]
         running: false
         stdout: SplitParser {
             onRead: line => root.applyStatus(line)
-        }
-    }
-
-    // One-shot fetch so the UI is populated as soon as the popup opens,
-    // without waiting for the first iteration of the looping process.
-    Process {
-        id: initialStatus
-        command: ["bash", "-lc", "exec qs-net-status --once"]
-        running: false
-        stdout: StdioCollector {
-            onStreamFinished: root.applyStatus(this.text)
         }
     }
 
@@ -210,6 +334,21 @@ PanelWindow {
             root.wifi = d.wifi;
             root.ethernet = d.ethernet;
             root.tailscale = d.tailscale || { installed: false };
+            if (d.wifi_enabled !== undefined) root.wifiEnabled = d.wifi_enabled;
+
+            // Seed traffic history from daemon on first message
+            if (d.traffic_history && d.traffic_history.length > 0 && root.trafficHistory.length === 0) {
+                root.trafficHistory = d.traffic_history;
+            } else {
+                var rxRate = 0, txRate = 0;
+                if (d.wifi && d.wifi.rx_rate) { rxRate += d.wifi.rx_rate; txRate += (d.wifi.tx_rate || 0); }
+                if (d.ethernet && d.ethernet.rx_rate) { rxRate += d.ethernet.rx_rate; txRate += (d.ethernet.tx_rate || 0); }
+                var h = root.trafficHistory.slice();
+                h.push({ rx: rxRate, tx: txRate });
+                if (h.length > root.trafficMaxHistory) h.shift();
+                root.trafficHistory = h;
+            }
+            trafficGraph.requestPaint();
         } catch (e) {
             console.warn("network/Popup: status parse error", e, raw.substring(0, 120));
         }
@@ -232,20 +371,10 @@ PanelWindow {
         }
     }
 
-    // ─── DNS self-test (parallel: 3 methods × N domains) ─────────────────
-    // Passes the current upstream so we can probe it directly (bypassing
-    // libc / systemd-resolved caching) alongside the system path and 1.1.1.1.
+    // ─── DNS self-test (via daemon) ─────────────────────────────────────
     Process {
         id: dnsTestProc
-        command: {
-            var upstream = (root.dnsServers && root.dnsServers.length > 0)
-                ? root.dnsServers[0] : "";
-            // Pass upstream as $1 to bash so we don't interpolate user-
-            // controlled text into the shell command.
-            return upstream
-                ? ["bash", "-lc", "exec qs-dns-test --upstream \"$1\"", "bash", upstream]
-                : ["bash", "-lc", "exec qs-dns-test"];
-        }
+        command: ["echo", "{}"]
         running: false
         stdout: StdioCollector {
             onStreamFinished: {
@@ -258,8 +387,161 @@ PanelWindow {
         }
     }
 
-    // (No auto-refresh — DNS test runs once when the popup opens; user can
-    // re-run on demand with the refresh button next to the section header.)
+    // ─── WiFi/Tailscale control processes ────────────────────────────────
+    Process {
+        id: wifiToggleProc
+        command: ["curl", "-s", "-X", "POST", "--unix-socket", root._sock, "http://d/net/wifi-toggle"]
+        running: false
+    }
+
+    Process {
+        id: tailscaleToggleProc
+        command: ["curl", "-s", "-X", "POST", "--unix-socket", root._sock, "http://d/net/tailscale-toggle"]
+        running: false
+    }
+
+    Process {
+        id: wifiCachedProc
+        command: ["curl", "-s", "--unix-socket", root._sock, "http://d/net/wifi-list"]
+        running: false
+        stdout: StdioCollector {
+            onStreamFinished: {
+                root.wifiScanLoading = false;
+                try {
+                    var d = JSON.parse(this.text.trim() || "{}");
+                    if (d.networks) {
+                        root.wifiNetworks = d.networks;
+                        root.wifiNetworkCount = d.count || 0;
+                    }
+                } catch (e) { /* ignore */ }
+            }
+        }
+    }
+
+    Process {
+        id: wifiScanProc
+        command: ["curl", "-s", "--unix-socket", root._sock, "http://d/net/wifi-scan"]
+        running: false
+        stdout: StdioCollector {
+            onStreamFinished: {
+                root.wifiScanLoading = false;
+                try {
+                    var d = JSON.parse(this.text.trim() || "{}");
+                    if (d.networks) {
+                        root.wifiNetworks = d.networks;
+                        root.wifiNetworkCount = d.count || 0;
+                    }
+                } catch (e) { /* ignore */ }
+            }
+        }
+    }
+
+    Process {
+        id: wifiConnectProc
+        running: false
+        stdout: StdioCollector {
+            onStreamFinished: {
+                root.wifiConnecting = false;
+                try {
+                    var d = JSON.parse(this.text.trim() || "{}");
+                    if (d.success) {
+                        root.wifiConnectError = "";
+                        root.passwordInputBssid = "";
+                        root.scanWifiNetworks();
+                    } else {
+                        root.wifiConnectError = d.message || "Connection failed";
+                    }
+                } catch (e) {
+                    root.wifiConnectError = "Connection failed";
+                }
+            }
+        }
+    }
+
+    // ─── Bluetooth processes ────────────────────────────────────────────
+    Process {
+        id: btStatusProc
+        command: ["curl", "-s", "--unix-socket", root._sock, "http://d/bt/status"]
+        running: false
+        stdout: StdioCollector {
+            onStreamFinished: {
+                root.btLoading = false;
+                try {
+                    var d = JSON.parse(this.text.trim() || "{}");
+                    root.btController = d.controller || null;
+                    root.btDevices = d.devices || [];
+                } catch (e) { /* ignore */ }
+            }
+        }
+    }
+
+    Process {
+        id: btScanProc
+        command: ["curl", "-s", "--unix-socket", root._sock, "http://d/bt/scan"]
+        running: false
+        stdout: StdioCollector {
+            onStreamFinished: {
+                root.btScanLoading = false;
+                try {
+                    var d = JSON.parse(this.text.trim() || "{}");
+                    if (d.devices) root.btDevices = d.devices;
+                } catch (e) { /* ignore */ }
+                root.loadBtStatus();
+            }
+        }
+    }
+
+    Process {
+        id: btActionProc
+        running: false
+        stdout: StdioCollector {
+            onStreamFinished: {
+                root.btActionLoading = false;
+                try {
+                    var d = JSON.parse(this.text.trim() || "{}");
+                    if (!d.success) root.btActionError = d.message || "Failed";
+                } catch (e) {
+                    root.btActionError = "Failed";
+                }
+                root.loadBtStatus();
+            }
+        }
+    }
+
+    Process {
+        id: btTogglePowerProc
+        command: ["curl", "-s", "-X", "POST", "--unix-socket", root._sock, "http://d/bt/toggle-power"]
+        running: false
+        stdout: StdioCollector {
+            onStreamFinished: root.loadBtStatus()
+        }
+    }
+
+    Process {
+        id: btToggleDiscoverableProc
+        command: ["curl", "-s", "-X", "POST", "--unix-socket", root._sock, "http://d/bt/toggle-discoverable"]
+        running: false
+        stdout: StdioCollector {
+            onStreamFinished: root.loadBtStatus()
+        }
+    }
+
+    Process {
+        id: btToggleScanProc
+        command: ["curl", "-s", "-X", "POST", "--unix-socket", root._sock, "http://d/bt/toggle-scan"]
+        running: false
+        stdout: StdioCollector {
+            onStreamFinished: root.loadBtStatus()
+        }
+    }
+
+    Timer {
+        id: btScanRefreshTimer
+        interval: 3000
+        running: root.popupOpen && root.btController && root.btController.discovering
+        repeat: true
+        onTriggered: root.loadBtStatus()
+    }
 
     // ─── Layout ───────────────────────────────────────────────────────────
     Item {
@@ -273,10 +555,17 @@ PanelWindow {
             Components.PopupSurface { anchors.fill: parent }
         }
 
-        Column {
+        Flickable {
             anchors.fill: parent
             anchors.margins: 14
             anchors.topMargin: 12
+            contentHeight: mainColumn.implicitHeight
+            clip: true
+            boundsBehavior: Flickable.StopAtBounds
+
+        Column {
+            id: mainColumn
+            width: parent.width
             spacing: 10
 
             // ── Header ───────────────────────────────────────────────────
@@ -297,7 +586,7 @@ PanelWindow {
                     text: "Network"
                     color: Helpers.Colors.textDefault
                     font.family: AppConfig.Config.theme.fontFamily
-                    font.pixelSize: AppConfig.Config.theme.fontSizeMedium
+                    font.pixelSize: AppConfig.Config.theme.popupFontSizeMedium
                     font.bold: true
                 }
 
@@ -351,7 +640,7 @@ PanelWindow {
                                 text: "Wi-Fi"
                                 color: Helpers.Colors.textDefault
                                 font.family: AppConfig.Config.theme.fontFamily
-                                font.pixelSize: AppConfig.Config.theme.fontSizeBody
+                                font.pixelSize: AppConfig.Config.theme.popupFontSizeBody
                                 font.bold: true
                                 anchors.verticalCenter: parent.verticalCenter
                             }
@@ -359,7 +648,7 @@ PanelWindow {
                                 text: root.wifi && root.wifi.iface ? root.wifi.iface : ""
                                 color: Helpers.Colors.textMuted
                                 font.family: AppConfig.Config.theme.fontFamily
-                                font.pixelSize: AppConfig.Config.theme.fontSizeSmall
+                                font.pixelSize: AppConfig.Config.theme.popupFontSizeSmall
                                 anchors.verticalCenter: parent.verticalCenter
                             }
                         }
@@ -372,7 +661,7 @@ PanelWindow {
                             text: root.wifi && root.wifi.iface ? "Not connected" : "No wireless interface"
                             color: Helpers.Colors.textMuted
                             font.family: AppConfig.Config.theme.fontFamily
-                            font.pixelSize: AppConfig.Config.theme.fontSizeBody
+                            font.pixelSize: AppConfig.Config.theme.popupFontSizeBody
                         }
 
                         // Connected — primary fields
@@ -491,6 +780,28 @@ PanelWindow {
                             }
                         }
                     }
+
+                    Rectangle {
+                        anchors.top: parent.top
+                        anchors.right: parent.right
+                        anchors.topMargin: 10
+                        anchors.rightMargin: 10
+                        width: 34; height: 16; radius: 8
+                        color: root.wifiEnabled ? "#4caf50" : Qt.rgba(1, 1, 1, 0.15)
+                        Behavior on color { ColorAnimation { duration: 200 } }
+                        Rectangle {
+                            width: 12; height: 12; radius: 6
+                            anchors.verticalCenter: parent.verticalCenter
+                            x: root.wifiEnabled ? parent.width - width - 2 : 2
+                            color: "#ffffff"
+                            Behavior on x { NumberAnimation { duration: 200 } }
+                        }
+                        MouseArea {
+                            anchors.fill: parent
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: wifiToggleProc.running = true
+                        }
+                    }
                 }
 
                 // Ethernet card
@@ -518,7 +829,7 @@ PanelWindow {
                                 text: "Ethernet"
                                 color: Helpers.Colors.textDefault
                                 font.family: AppConfig.Config.theme.fontFamily
-                                font.pixelSize: AppConfig.Config.theme.fontSizeBody
+                                font.pixelSize: AppConfig.Config.theme.popupFontSizeBody
                                 font.bold: true
                                 anchors.verticalCenter: parent.verticalCenter
                             }
@@ -526,7 +837,7 @@ PanelWindow {
                                 text: root.ethernet && root.ethernet.iface ? root.ethernet.iface : ""
                                 color: Helpers.Colors.textMuted
                                 font.family: AppConfig.Config.theme.fontFamily
-                                font.pixelSize: AppConfig.Config.theme.fontSizeSmall
+                                font.pixelSize: AppConfig.Config.theme.popupFontSizeSmall
                                 anchors.verticalCenter: parent.verticalCenter
                             }
                         }
@@ -538,7 +849,7 @@ PanelWindow {
                             text: "No ethernet interface"
                             color: Helpers.Colors.textMuted
                             font.family: AppConfig.Config.theme.fontFamily
-                            font.pixelSize: AppConfig.Config.theme.fontSizeBody
+                            font.pixelSize: AppConfig.Config.theme.popupFontSizeBody
                         }
 
                         Column {
@@ -646,7 +957,7 @@ PanelWindow {
                                 text: "Tailscale"
                                 color: Helpers.Colors.textDefault
                                 font.family: AppConfig.Config.theme.fontFamily
-                                font.pixelSize: AppConfig.Config.theme.fontSizeBody
+                                font.pixelSize: AppConfig.Config.theme.popupFontSizeBody
                                 font.bold: true
                                 anchors.verticalCenter: parent.verticalCenter
                             }
@@ -659,7 +970,7 @@ PanelWindow {
                             text: "Not installed"
                             color: Helpers.Colors.textMuted
                             font.family: AppConfig.Config.theme.fontFamily
-                            font.pixelSize: AppConfig.Config.theme.fontSizeBody
+                            font.pixelSize: AppConfig.Config.theme.popupFontSizeBody
                         }
 
                         Column {
@@ -735,7 +1046,7 @@ PanelWindow {
                                             text: String.fromCodePoint(0xF0029) // 󰀩 alert
                                             color: "#ef5350"
                                             font.family: AppConfig.Config.theme.fontFamily
-                                            font.pixelSize: AppConfig.Config.theme.fontSizeSmall
+                                            font.pixelSize: AppConfig.Config.theme.popupFontSizeSmall
                                             horizontalAlignment: Text.AlignHCenter
                                         }
                                         Text {
@@ -746,7 +1057,7 @@ PanelWindow {
                                             text: modelData
                                             color: "#ef9a9a"
                                             font.family: AppConfig.Config.theme.fontFamily
-                                            font.pixelSize: AppConfig.Config.theme.fontSizeSmall
+                                            font.pixelSize: AppConfig.Config.theme.popupFontSizeSmall
                                             wrapMode: Text.WordWrap
                                         }
                                     }
@@ -754,127 +1065,962 @@ PanelWindow {
                             }
                         }
                     }
+
+                    Rectangle {
+                        anchors.top: parent.top
+                        anchors.right: parent.right
+                        anchors.topMargin: 10
+                        anchors.rightMargin: 10
+                        width: 34; height: 16; radius: 8
+                        visible: root.tailscale && root.tailscale.installed
+                        color: root.tailscale && root.tailscale.running ? "#4caf50" : Qt.rgba(1, 1, 1, 0.15)
+                        Behavior on color { ColorAnimation { duration: 200 } }
+                        Rectangle {
+                            width: 12; height: 12; radius: 6
+                            anchors.verticalCenter: parent.verticalCenter
+                            x: root.tailscale && root.tailscale.running ? parent.width - width - 2 : 2
+                            color: "#ffffff"
+                            Behavior on x { NumberAnimation { duration: 200 } }
+                        }
+                        MouseArea {
+                            anchors.fill: parent
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: tailscaleToggleProc.running = true
+                        }
+                    }
                 }
             }
 
-            // ── DNS resolution test card ─────────────────────────────────
+            // ── WiFi Networks + Network Traffic (side by side) ─────────
+            Row {
+                width: parent.width
+                spacing: 10
+                height: 240
+
+                // ── WiFi Networks (left, hidden when wifi off) ───────────
+                Rectangle {
+                    visible: root.wifiEnabled
+                    width: visible ? (parent.width - 10) / 2 : 0
+                    height: parent.height
+                    color: Qt.rgba(1, 1, 1, 0.04)
+                    radius: 8
+
+                    Column {
+                        anchors.fill: parent
+                        anchors.margins: 10
+                        spacing: 4
+
+                        Item {
+                            width: parent.width
+                            height: 20
+
+                            Row {
+                                anchors.left: parent.left
+                                anchors.verticalCenter: parent.verticalCenter
+                                spacing: 6
+                                Text {
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    text: String.fromCodePoint(0xF05A9)
+                                    color: "#90caf9"
+                                    font.family: AppConfig.Config.theme.fontFamily
+                                    font.pixelSize: 14
+                                }
+                                Text {
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    text: "Wi-Fi"
+                                    color: Helpers.Colors.textDefault
+                                    font.family: AppConfig.Config.theme.fontFamily
+                                    font.pixelSize: AppConfig.Config.theme.popupFontSizeBody
+                                    font.bold: true
+                                }
+                                Rectangle {
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    visible: root.wifiNetworkCount > 0
+                                    width: countText.implicitWidth + 8
+                                    height: 16; radius: 3
+                                    color: Qt.rgba(1, 1, 1, 0.10)
+                                    Text {
+                                        id: countText
+                                        anchors.centerIn: parent
+                                        text: root.wifiNetworkCount
+                                        color: Helpers.Colors.textMuted
+                                        font.family: AppConfig.Config.theme.fontFamily
+                                        font.pixelSize: AppConfig.Config.theme.popupFontSizeTiny
+                                        font.bold: true
+                                    }
+                                }
+                            }
+
+                            Text {
+                                anchors.right: parent.right
+                                anchors.verticalCenter: parent.verticalCenter
+                                transformOrigin: Item.Center
+                                text: String.fromCodePoint(0xF0453)
+                                color: wifiScanRefreshMA.containsMouse ? Helpers.Colors.textDefault : Helpers.Colors.textMuted
+                                opacity: root.wifiScanLoading ? 0.5 : 1.0
+                                font.family: AppConfig.Config.theme.fontFamily
+                                font.pixelSize: 14
+                                RotationAnimation on rotation {
+                                    running: root.wifiScanLoading
+                                    from: 0; to: 360; duration: 800
+                                    loops: Animation.Infinite
+                                }
+                                MouseArea {
+                                    id: wifiScanRefreshMA
+                                    anchors.fill: parent
+                                    anchors.margins: -4
+                                    hoverEnabled: true
+                                    cursorShape: Qt.PointingHandCursor
+                                    enabled: !root.wifiScanLoading
+                                    onClicked: root.scanWifiNetworks()
+                                }
+                            }
+                        }
+
+                        Rectangle { width: parent.width; height: 1; color: Qt.rgba(1,1,1,0.07) }
+
+                        Text {
+                            visible: root.wifiConnectError !== ""
+                            text: String.fromCodePoint(0xF0029) + " " + root.wifiConnectError
+                            color: "#ef5350"
+                            font.family: AppConfig.Config.theme.fontFamily
+                            font.pixelSize: AppConfig.Config.theme.popupFontSizeSmall
+                            width: parent.width
+                            elide: Text.ElideRight
+                        }
+
+                        Flickable {
+                            width: parent.width
+                            height: parent.height - 30 - (root.wifiConnectError !== "" ? 16 : 0)
+                            contentHeight: networkListCol.implicitHeight
+                            clip: true
+                            boundsBehavior: Flickable.StopAtBounds
+
+                            Column {
+                                id: networkListCol
+                                width: parent.width
+                                spacing: 1
+
+                                Text {
+                                    visible: root.wifiNetworks.length === 0
+                                    text: root.wifiScanLoading ? "Scanning…" : (root.wifiEnabled ? "No networks" : "Wi-Fi off")
+                                    color: Helpers.Colors.textMuted
+                                    font.family: AppConfig.Config.theme.fontFamily
+                                    font.pixelSize: AppConfig.Config.theme.popupFontSizeSmall
+                                }
+
+                                Repeater {
+                                    model: root.wifiNetworks
+                                    delegate: Column {
+                                        id: apDelegate
+                                        required property var modelData
+                                        required property int index
+                                        width: parent.width
+                                        spacing: 0
+
+                                        // ── Group header (SSID label, not clickable) ──
+                                        Item {
+                                            visible: modelData.group_first
+                                            width: parent.width
+                                            height: visible ? 26 : 0
+
+                                            // Gap before group (except first)
+                                            Rectangle {
+                                                visible: apDelegate.index > 0
+                                                anchors.top: parent.top
+                                                width: parent.width; height: 1
+                                                color: Qt.rgba(1,1,1,0.08)
+                                            }
+
+                                            Row {
+                                                anchors.left: parent.left; anchors.leftMargin: 4
+                                                anchors.verticalCenter: parent.verticalCenter
+                                                spacing: 4
+
+                                                Text {
+                                                    anchors.verticalCenter: parent.verticalCenter
+                                                    text: String.fromCodePoint(0xF05A9)
+                                                    color: Helpers.Colors.textMuted
+                                                    font.family: AppConfig.Config.theme.fontFamily
+                                                    font.pixelSize: AppConfig.Config.theme.popupFontSizeTiny
+                                                }
+                                                Text {
+                                                    anchors.verticalCenter: parent.verticalCenter
+                                                    text: modelData.ssid
+                                                    color: Helpers.Colors.textDefault
+                                                    font.family: AppConfig.Config.theme.fontFamily
+                                                    font.pixelSize: AppConfig.Config.theme.popupFontSizeSmall
+                                                    font.bold: true
+                                                    elide: Text.ElideRight
+                                                    width: Math.min(implicitWidth, 140)
+                                                }
+                                                Text {
+                                                    anchors.verticalCenter: parent.verticalCenter
+                                                    visible: modelData.ssid_count > 1
+                                                    text: modelData.ssid_count + " AP"
+                                                    color: Helpers.Colors.textMuted
+                                                    font.family: AppConfig.Config.theme.fontFamily
+                                                    font.pixelSize: AppConfig.Config.theme.popupFontSizeTiny
+                                                }
+                                                Text {
+                                                    anchors.verticalCenter: parent.verticalCenter
+                                                    text: modelData.security || ""
+                                                    color: {
+                                                        var s = modelData.security || ""
+                                                        if (s === "Open") return "#ef5350"
+                                                        if (s === "WPA3" || s === "WPA2/3") return "#66bb6a"
+                                                        return Helpers.Colors.textMuted
+                                                    }
+                                                    font.family: AppConfig.Config.theme.fontFamily
+                                                    font.pixelSize: AppConfig.Config.theme.popupFontSizeTiny
+                                                }
+                                                Rectangle {
+                                                    anchors.verticalCenter: parent.verticalCenter
+                                                    visible: !!modelData.known
+                                                    width: savedLabel.implicitWidth + 8
+                                                    height: 14; radius: 3
+                                                    color: Qt.rgba(0.30, 0.69, 0.31, 0.15)
+                                                    border.color: "#66bb6a"; border.width: 1
+                                                    Text {
+                                                        id: savedLabel
+                                                        anchors.centerIn: parent
+                                                        text: "Saved"
+                                                        color: "#66bb6a"
+                                                        font.family: AppConfig.Config.theme.fontFamily
+                                                        font.pixelSize: AppConfig.Config.theme.popupFontSizeTiny
+                                                        font.bold: true
+                                                    }
+                                                }
+                                            }
+                                        }
+
+                                        // ── AP row (clickable, shows BSSID) ──
+                                        Rectangle {
+                                            property bool isActive: !!modelData.active
+                                            property bool isOpen: modelData.security === "Open" || modelData.security === ""
+                                            width: parent.width
+                                            height: 24
+                                            radius: 2
+                                            color: {
+                                                if (isActive) return Qt.rgba(0.05, 0.68, 0.29, 0.12)
+                                                if (isOpen) return Qt.rgba(0.96, 0.26, 0.21, 0.08)
+                                                if (apMA.containsMouse) return Qt.rgba(1,1,1,0.08)
+                                                return "transparent"
+                                            }
+
+                                            Rectangle {
+                                                visible: parent.isOpen && !parent.isActive
+                                                width: 2; radius: 1
+                                                anchors.top: parent.top; anchors.bottom: parent.bottom
+                                                anchors.left: parent.left
+                                                anchors.topMargin: 2; anchors.bottomMargin: 2
+                                                color: "#ef5350"
+                                            }
+
+                                            Rectangle {
+                                                visible: parent.isActive
+                                                width: 2; radius: 1
+                                                anchors.top: parent.top; anchors.bottom: parent.bottom
+                                                anchors.left: parent.left
+                                                anchors.topMargin: 2; anchors.bottomMargin: 2
+                                                color: "#66bb6a"
+                                            }
+
+                                            Row {
+                                                anchors.left: parent.left
+                                                anchors.right: apSignalText.left
+                                                anchors.rightMargin: 2
+                                                anchors.verticalCenter: parent.verticalCenter
+                                                anchors.leftMargin: 6
+                                                spacing: 0
+
+                                                Text { anchors.verticalCenter: parent.verticalCenter; width: 14; text: root.signalIconForPct(modelData.signal); color: root.signalColorForPct(modelData.signal); font.family: AppConfig.Config.theme.fontFamily; font.pixelSize: AppConfig.Config.theme.popupFontSizeTiny; horizontalAlignment: Text.AlignHCenter }
+                                                Text {
+                                                    anchors.verticalCenter: parent.verticalCenter; width: 120
+                                                    text: modelData.bssid || ""
+                                                    color: modelData.active ? "#66bb6a" : Helpers.Colors.textMuted
+                                                    font.family: "DejaVuSansM Nerd Font Mono"
+                                                    font.pixelSize: AppConfig.Config.theme.popupFontSizeTiny
+                                                    elide: Text.ElideRight
+                                                }
+                                                Text {
+                                                    anchors.verticalCenter: parent.verticalCenter; width: 20
+                                                    text: {
+                                                        var g = modelData.gen || ""
+                                                        if (g === "7") return "7"
+                                                        if (g === "6E") return "6E"
+                                                        if (g === "6") return "6"
+                                                        if (g === "5") return "5"
+                                                        if (g === "4") return "4"
+                                                        return ""
+                                                    }
+                                                    color: root.genColor(modelData.gen || "")
+                                                    font.family: AppConfig.Config.theme.fontFamily
+                                                    font.pixelSize: AppConfig.Config.theme.popupFontSizeTiny; font.bold: true
+                                                }
+                                                Text {
+                                                    anchors.verticalCenter: parent.verticalCenter; width: 46
+                                                    text: modelData.freq ? modelData.freq + "" : ""
+                                                    color: {
+                                                        var f = modelData.freq || 0
+                                                        if (f >= 5925) return "#bb86fc"
+                                                        if (f >= 5000) return "#42a5f5"
+                                                        return "#8d6e63"
+                                                    }
+                                                    font.family: "DejaVuSansM Nerd Font Mono"
+                                                    font.pixelSize: AppConfig.Config.theme.popupFontSizeTiny
+                                                }
+                                                Text { anchors.verticalCenter: parent.verticalCenter; width: 36; text: modelData.channel ? "ch" + modelData.channel : ""; color: Helpers.Colors.textMuted; font.family: AppConfig.Config.theme.fontFamily; font.pixelSize: AppConfig.Config.theme.popupFontSizeTiny }
+                                                Text {
+                                                    anchors.verticalCenter: parent.verticalCenter; width: 56
+                                                    text: { var w = modelData.channel_width || ""; return w.replace(/ MHz/g, "M").replace("20 or 40", "20/40") }
+                                                    color: Helpers.Colors.textMuted; font.family: AppConfig.Config.theme.fontFamily; font.pixelSize: AppConfig.Config.theme.popupFontSizeTiny
+                                                }
+                                                Text { anchors.verticalCenter: parent.verticalCenter; width: 22; text: modelData.streams > 0 ? modelData.streams + "SS" : ""; color: Helpers.Colors.textMuted; font.family: AppConfig.Config.theme.fontFamily; font.pixelSize: AppConfig.Config.theme.popupFontSizeTiny }
+                                                Text { anchors.verticalCenter: parent.verticalCenter; width: modelData.mu_mimo ? 18 : 0; visible: modelData.mu_mimo; text: "MU"; color: "#4dd0e1"; font.family: AppConfig.Config.theme.fontFamily; font.pixelSize: AppConfig.Config.theme.popupFontSizeTiny; font.bold: true }
+                                                Text { anchors.verticalCenter: parent.verticalCenter; width: modelData.twt ? 22 : 0; visible: modelData.twt; text: "TWT"; color: "#66bb6a"; font.family: AppConfig.Config.theme.fontFamily; font.pixelSize: AppConfig.Config.theme.popupFontSizeTiny; font.bold: true }
+                                                Text { anchors.verticalCenter: parent.verticalCenter; width: modelData.wps ? 22 : 0; visible: modelData.wps; text: "WPS"; color: "#ffb74d"; font.family: AppConfig.Config.theme.fontFamily; font.pixelSize: AppConfig.Config.theme.popupFontSizeTiny; font.bold: true }
+                                            }
+
+                                            Text {
+                                                id: apSignalText
+                                                anchors.right: parent.right
+                                                anchors.rightMargin: 4
+                                                anchors.verticalCenter: parent.verticalCenter
+                                                width: 32
+                                                text: modelData.signal_dbm !== undefined ? modelData.signal_dbm + "" : ""
+                                                color: root.signalColorForPct(modelData.signal)
+                                                font.family: AppConfig.Config.theme.fontFamily
+                                                font.pixelSize: AppConfig.Config.theme.popupFontSizeTiny; font.bold: true
+                                                horizontalAlignment: Text.AlignRight
+                                            }
+
+                                            MouseArea {
+                                                id: apMA
+                                                anchors.fill: parent
+                                                hoverEnabled: true
+                                                cursorShape: modelData.active ? Qt.ArrowCursor : Qt.PointingHandCursor
+                                                onClicked: {
+                                                    if (modelData.active) return
+                                                    var sec = modelData.security || ""
+                                                    if (sec === "Open" || sec === "" || modelData.known)
+                                                        root.connectToWifi(modelData.ssid, modelData.bssid, "", modelData.known)
+                                                    else
+                                                        root.passwordInputBssid = (root.passwordInputBssid === modelData.bssid) ? "" : modelData.bssid
+                                                }
+                                            }
+                                        }
+
+                                        // Password input
+                                        Item {
+                                            width: parent.width
+                                            height: root.passwordInputBssid === modelData.bssid ? 22 : 0
+                                            visible: height > 0; clip: true
+                                            Behavior on height { NumberAnimation { duration: 150 } }
+                                            Row {
+                                                anchors.fill: parent; anchors.leftMargin: 14; spacing: 4
+                                                Text { anchors.verticalCenter: parent.verticalCenter; text: String.fromCodePoint(0xF0341); color: Helpers.Colors.textMuted; font.family: AppConfig.Config.theme.fontFamily; font.pixelSize: AppConfig.Config.theme.popupFontSizeSmall }
+                                                Rectangle {
+                                                    anchors.verticalCenter: parent.verticalCenter; width: 120; height: 16; radius: 3
+                                                    color: Qt.rgba(1,1,1,0.08); border.color: Qt.rgba(1,1,1,0.15); border.width: 1
+                                                    TextInput {
+                                                        id: pwInput; anchors.fill: parent; anchors.margins: 3
+                                                        color: Helpers.Colors.textDefault; font.family: "DejaVuSansM Nerd Font Mono"; font.pixelSize: AppConfig.Config.theme.popupFontSizeSmall
+                                                        echoMode: TextInput.Password; clip: true
+                                                        onAccepted: root.connectToWifi(modelData.ssid, modelData.bssid, text, modelData.known)
+                                                        Component.onCompleted: if (root.passwordInputBssid === modelData.bssid) forceActiveFocus()
+                                                    }
+                                                }
+                                                Rectangle {
+                                                    anchors.verticalCenter: parent.verticalCenter; width: 36; height: 16; radius: 3
+                                                    color: connectBtnMA.containsMouse ? "#42a5f5" : Qt.rgba(1,1,1,0.10)
+                                                    Text { id: connectBtnText; anchors.centerIn: parent; text: root.wifiConnecting ? "…" : "Go"; color: Helpers.Colors.textDefault; font.family: AppConfig.Config.theme.fontFamily; font.pixelSize: AppConfig.Config.theme.popupFontSizeSmall; font.bold: true }
+                                                    MouseArea { id: connectBtnMA; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; enabled: !root.wifiConnecting; onClicked: root.connectToWifi(modelData.ssid, modelData.bssid, pwInput.text, modelData.known) }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // ── Traffic bar graph (right; expands when wifi hidden) ──
+                Rectangle {
+                    width: root.wifiEnabled ? (parent.width - 10) / 2 : parent.width
+                    Behavior on width { NumberAnimation { duration: 200 } }
+                    height: parent.height
+                    color: Qt.rgba(1, 1, 1, 0.04)
+                    radius: 8
+
+                    Column {
+                        anchors.fill: parent
+                        anchors.margins: 10
+                        spacing: 4
+
+                        Row {
+                            width: parent.width
+                            spacing: 6
+                            Text {
+                                anchors.verticalCenter: parent.verticalCenter
+                                text: String.fromCodePoint(0xF04E1)
+                                color: "#90caf9"
+                                font.family: AppConfig.Config.theme.fontFamily
+                                font.pixelSize: 14
+                            }
+                            Text {
+                                anchors.verticalCenter: parent.verticalCenter
+                                text: "Traffic"
+                                color: Helpers.Colors.textDefault
+                                font.family: AppConfig.Config.theme.fontFamily
+                                font.pixelSize: AppConfig.Config.theme.popupFontSizeBody
+                                font.bold: true
+                            }
+                            Item { width: 1; height: 1 }
+                            Column {
+                                anchors.verticalCenter: parent.verticalCenter
+                                spacing: -2
+                                Text {
+                                    text: {
+                                        var h = root.trafficHistory;
+                                        if (h.length === 0) return "↑ —";
+                                        return "↑ " + root.fmtRate(h[h.length - 1].tx);
+                                    }
+                                    color: "#ff9800"
+                                    font.family: AppConfig.Config.theme.fontFamily
+                                    font.pixelSize: AppConfig.Config.theme.popupFontSizeSmall
+                                }
+                                Text {
+                                    text: {
+                                        var h = root.trafficHistory;
+                                        if (h.length === 0) return "↓ —";
+                                        return "↓ " + root.fmtRate(h[h.length - 1].rx);
+                                    }
+                                    color: "#42a5f5"
+                                    font.family: AppConfig.Config.theme.fontFamily
+                                    font.pixelSize: AppConfig.Config.theme.popupFontSizeSmall
+                                }
+                            }
+                            Item { width: 8; height: 1 }
+                            Column {
+                                anchors.verticalCenter: parent.verticalCenter
+                                spacing: -2
+                                Text {
+                                    text: {
+                                        var h = root.trafficHistory;
+                                        if (h.length === 0) return "max ↑ —";
+                                        var m = 0;
+                                        for (var i = 0; i < h.length; i++)
+                                            if (h[i].tx > m) m = h[i].tx;
+                                        return "max ↑ " + root.fmtRate(m);
+                                    }
+                                    color: Qt.rgba(1, 0.6, 0, 0.6)
+                                    font.family: AppConfig.Config.theme.fontFamily
+                                    font.pixelSize: AppConfig.Config.theme.popupFontSizeSmall
+                                }
+                                Text {
+                                    text: {
+                                        var h = root.trafficHistory;
+                                        if (h.length === 0) return "max ↓ —";
+                                        var m = 0;
+                                        for (var i = 0; i < h.length; i++)
+                                            if (h[i].rx > m) m = h[i].rx;
+                                        return "max ↓ " + root.fmtRate(m);
+                                    }
+                                    color: Qt.rgba(0.26, 0.65, 0.96, 0.6)
+                                    font.family: AppConfig.Config.theme.fontFamily
+                                    font.pixelSize: AppConfig.Config.theme.popupFontSizeSmall
+                                }
+                            }
+                        }
+
+                        Canvas {
+                            id: trafficGraph
+                            width: parent.width
+                            height: parent.height - 24
+
+                            onPaint: {
+                                var ctx = getContext("2d");
+                                ctx.clearRect(0, 0, width, height);
+                                var h = root.trafficHistory;
+                                if (h.length === 0) return;
+
+                                var rawMax = 0;
+                                for (var i = 0; i < h.length; i++) {
+                                    if (h[i].tx > rawMax) rawMax = h[i].tx;
+                                    if (h[i].rx > rawMax) rawMax = h[i].rx;
+                                }
+                                // Nice auto-scale ceiling with headroom
+                                var maxVal;
+                                if (rawMax <= 0) maxVal = 1024;
+                                else if (rawMax < 1024) maxVal = 1024;
+                                else if (rawMax < 10240) maxVal = Math.ceil(rawMax / 1024) * 1024;
+                                else if (rawMax < 102400) maxVal = Math.ceil(rawMax / 10240) * 10240;
+                                else if (rawMax < 1048576) maxVal = Math.ceil(rawMax / 102400) * 102400;
+                                else maxVal = Math.ceil(rawMax / 1048576) * 1048576;
+                                if (maxVal < rawMax * 1.1) maxVal = Math.ceil(rawMax * 1.15);
+
+                                var halfH = height / 2;
+                                var barW = width / root.trafficMaxHistory;
+                                var offset = width - h.length * barW;
+
+                                // Grid: center + quarter lines
+                                ctx.strokeStyle = Qt.rgba(1, 1, 1, 0.06);
+                                ctx.lineWidth = 1;
+                                for (var g = 0.25; g <= 0.75; g += 0.25) {
+                                    ctx.beginPath();
+                                    ctx.moveTo(0, halfH - g * halfH);
+                                    ctx.lineTo(width, halfH - g * halfH);
+                                    ctx.stroke();
+                                    ctx.beginPath();
+                                    ctx.moveTo(0, halfH + g * halfH);
+                                    ctx.lineTo(width, halfH + g * halfH);
+                                    ctx.stroke();
+                                }
+                                ctx.strokeStyle = Qt.rgba(1, 1, 1, 0.10);
+                                ctx.beginPath();
+                                ctx.moveTo(0, halfH);
+                                ctx.lineTo(width, halfH);
+                                ctx.stroke();
+
+                                for (var i = 0; i < h.length; i++) {
+                                    var x = offset + i * barW;
+                                    var txR = Math.min(1, h[i].tx / maxVal);
+                                    var rxR = Math.min(1, h[i].rx / maxVal);
+
+                                    if (txR > 0) {
+                                        var txH = txR * halfH;
+                                        var ta = 0.3 + 0.7 * txR;
+                                        ctx.fillStyle = "rgba(255, 152, 0, " + ta + ")";
+                                        ctx.fillRect(x, halfH - txH, Math.max(1, barW - 0.3), txH);
+                                    }
+                                    if (rxR > 0) {
+                                        var rxH = rxR * halfH;
+                                        var ra = 0.3 + 0.7 * rxR;
+                                        ctx.fillStyle = "rgba(66, 165, 245, " + ra + ")";
+                                        ctx.fillRect(x, halfH, Math.max(1, barW - 0.3), rxH);
+                                    }
+                                }
+
+                                ctx.fillStyle = "rgba(255,255,255,0.35)";
+                                ctx.font = "10px '" + AppConfig.Config.theme.fontFamily + "'";
+                                ctx.textAlign = "left";
+                                ctx.fillText("↑ " + root.fmtRate(maxVal), 2, 10);
+                                ctx.fillText(root.fmtRate(maxVal / 2), 2, halfH * 0.5 + 3);
+                                ctx.fillText(root.fmtRate(maxVal / 2), 2, halfH * 1.5 + 3);
+                                ctx.fillText("↓ " + root.fmtRate(maxVal), 2, height - 3);
+                            }
+                        }
+                    }
+                }
+            }
+
+            // ── Bluetooth ────────────────────────────────────────────────
             Rectangle {
                 width: parent.width
-                height: 120
+                height: btContent.implicitHeight + 20
                 color: Qt.rgba(1, 1, 1, 0.04)
                 radius: 8
 
-                // Header — icon + label + per-method summary chips + refresh
+                Column {
+                    id: btContent
+                    anchors.fill: parent
+                    anchors.margins: 10
+                    spacing: 4
+
+                    // Header
+                    Item {
+                        width: parent.width
+                        height: 20
+
+                        Row {
+                            anchors.left: parent.left
+                            anchors.verticalCenter: parent.verticalCenter
+                            spacing: 6
+                            Text {
+                                anchors.verticalCenter: parent.verticalCenter
+                                text: String.fromCodePoint(0xF00AF)
+                                color: root.btController && root.btController.powered ? "#42a5f5" : Helpers.Colors.disconnected
+                                font.family: AppConfig.Config.theme.fontFamily
+                                font.pixelSize: 14
+                            }
+                            Text {
+                                anchors.verticalCenter: parent.verticalCenter
+                                text: "Bluetooth"
+                                color: Helpers.Colors.textDefault
+                                font.family: AppConfig.Config.theme.fontFamily
+                                font.pixelSize: AppConfig.Config.theme.popupFontSizeBody
+                                font.bold: true
+                            }
+                            Text {
+                                anchors.verticalCenter: parent.verticalCenter
+                                visible: root.btController && root.btController.name
+                                text: root.btController ? root.btController.name : ""
+                                color: Helpers.Colors.textMuted
+                                font.family: AppConfig.Config.theme.fontFamily
+                                font.pixelSize: AppConfig.Config.theme.popupFontSizeSmall
+                            }
+                            Rectangle {
+                                anchors.verticalCenter: parent.verticalCenter
+                                visible: root.btDevices.length > 0
+                                width: btCountText.implicitWidth + 8
+                                height: 16; radius: 3
+                                color: Qt.rgba(1, 1, 1, 0.10)
+                                Text {
+                                    id: btCountText
+                                    anchors.centerIn: parent
+                                    text: root.btDevices.length
+                                    color: Helpers.Colors.textMuted
+                                    font.family: AppConfig.Config.theme.fontFamily
+                                    font.pixelSize: AppConfig.Config.theme.popupFontSizeTiny
+                                    font.bold: true
+                                }
+                            }
+                            // Discoverable badge
+                            Rectangle {
+                                anchors.verticalCenter: parent.verticalCenter
+                                visible: root.btController && root.btController.discoverable
+                                width: discLabel.implicitWidth + 8
+                                height: 14; radius: 3
+                                color: Qt.rgba(0.26, 0.65, 0.96, 0.15)
+                                border.color: "#42a5f5"; border.width: 1
+                                Text {
+                                    id: discLabel
+                                    anchors.centerIn: parent
+                                    text: "Discoverable"
+                                    color: "#42a5f5"
+                                    font.family: AppConfig.Config.theme.fontFamily
+                                    font.pixelSize: AppConfig.Config.theme.popupFontSizeTiny
+                                    font.bold: true
+                                }
+                            }
+                        }
+
+                        Row {
+                            anchors.right: parent.right
+                            anchors.verticalCenter: parent.verticalCenter
+                            spacing: 6
+
+                            // Discoverable toggle
+                            Text {
+                                anchors.verticalCenter: parent.verticalCenter
+                                visible: root.btController && root.btController.powered
+                                text: String.fromCodePoint(0xF0124)
+                                color: btDiscMA.containsMouse ? Helpers.Colors.textDefault : Helpers.Colors.textMuted
+                                font.family: AppConfig.Config.theme.fontFamily
+                                font.pixelSize: 14
+                                MouseArea {
+                                    id: btDiscMA
+                                    anchors.fill: parent
+                                    anchors.margins: -4
+                                    hoverEnabled: true
+                                    cursorShape: Qt.PointingHandCursor
+                                    onClicked: btToggleDiscoverableProc.running = true
+                                }
+                            }
+
+                            // Scan toggle
+                            Rectangle {
+                                anchors.verticalCenter: parent.verticalCenter
+                                visible: root.btController && root.btController.powered
+                                width: btScanLabel.implicitWidth + 12; height: 16; radius: 3
+                                color: {
+                                    var scanning = root.btController && root.btController.discovering;
+                                    if (btScanToggleMA.containsMouse) return scanning ? "#ef5350" : "#42a5f5";
+                                    return scanning ? Qt.rgba(0.26, 0.65, 0.96, 0.2) : Qt.rgba(1,1,1,0.10);
+                                }
+                                Text {
+                                    id: btScanLabel
+                                    anchors.centerIn: parent
+                                    text: root.btController && root.btController.discovering ? "Scanning" : "Scan"
+                                    color: root.btController && root.btController.discovering ? "#42a5f5" : Helpers.Colors.textMuted
+                                    font.family: AppConfig.Config.theme.fontFamily
+                                    font.pixelSize: AppConfig.Config.theme.popupFontSizeTiny
+                                    font.bold: true
+                                }
+                                MouseArea {
+                                    id: btScanToggleMA
+                                    anchors.fill: parent
+                                    hoverEnabled: true
+                                    cursorShape: Qt.PointingHandCursor
+                                    onClicked: btToggleScanProc.running = true
+                                }
+                            }
+                        }
+                    }
+
+                    // Power toggle
+                    Rectangle {
+                        anchors.right: parent.right
+                        width: 34; height: 16; radius: 8
+                        color: root.btController && root.btController.powered ? "#42a5f5" : Qt.rgba(1, 1, 1, 0.15)
+                        Behavior on color { ColorAnimation { duration: 200 } }
+                        Rectangle {
+                            width: 12; height: 12; radius: 6
+                            anchors.verticalCenter: parent.verticalCenter
+                            x: root.btController && root.btController.powered ? parent.width - width - 2 : 2
+                            color: "#ffffff"
+                            Behavior on x { NumberAnimation { duration: 200 } }
+                        }
+                        MouseArea {
+                            anchors.fill: parent
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: btTogglePowerProc.running = true
+                        }
+                    }
+
+                    Rectangle { width: parent.width; height: 1; color: Qt.rgba(1,1,1,0.07) }
+
+                    // Error message
+                    Text {
+                        visible: root.btActionError !== ""
+                        text: String.fromCodePoint(0xF0029) + " " + root.btActionError
+                        color: "#ef5350"
+                        font.family: AppConfig.Config.theme.fontFamily
+                        font.pixelSize: AppConfig.Config.theme.popupFontSizeSmall
+                        width: parent.width
+                        elide: Text.ElideRight
+                    }
+
+                    // Powered off state
+                    Text {
+                        visible: !(root.btController && root.btController.powered)
+                        text: root.btController ? "Bluetooth off" : "No controller"
+                        color: Helpers.Colors.textMuted
+                        font.family: AppConfig.Config.theme.fontFamily
+                        font.pixelSize: AppConfig.Config.theme.popupFontSizeBody
+                    }
+
+                    // Device list
+                    Column {
+                        visible: root.btController && root.btController.powered
+                        width: parent.width
+                        spacing: 1
+
+                        Text {
+                            visible: root.btDevices.length === 0
+                            text: root.btScanLoading ? "Scanning…" : "No devices"
+                            color: Helpers.Colors.textMuted
+                            font.family: AppConfig.Config.theme.fontFamily
+                            font.pixelSize: AppConfig.Config.theme.popupFontSizeSmall
+                        }
+
+                        Repeater {
+                            model: root.btDevices
+                            Rectangle {
+                                required property var modelData
+                                width: parent.width
+                                height: 26
+                                radius: 2
+                                color: {
+                                    if (modelData.connected) return Qt.rgba(0.05, 0.68, 0.29, 0.12)
+                                    if (btDevMA.containsMouse) return Qt.rgba(1,1,1,0.08)
+                                    return "transparent"
+                                }
+
+                                Rectangle {
+                                    visible: modelData.connected
+                                    width: 2; radius: 1
+                                    anchors.top: parent.top; anchors.bottom: parent.bottom
+                                    anchors.left: parent.left
+                                    anchors.topMargin: 2; anchors.bottomMargin: 2
+                                    color: "#42a5f5"
+                                }
+
+                                Row {
+                                    anchors.left: parent.left
+                                    anchors.leftMargin: 6
+                                    anchors.right: btDevRight.left
+                                    anchors.rightMargin: 4
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    spacing: 6
+
+                                    Text {
+                                        anchors.verticalCenter: parent.verticalCenter
+                                        text: root.btIconForType(modelData.icon)
+                                        color: modelData.connected ? "#42a5f5" : Helpers.Colors.textMuted
+                                        font.family: AppConfig.Config.theme.fontFamily
+                                        font.pixelSize: AppConfig.Config.theme.popupFontSizeSmall
+                                    }
+
+                                    Text {
+                                        anchors.verticalCenter: parent.verticalCenter
+                                        text: modelData.name
+                                        color: modelData.connected ? Helpers.Colors.textDefault : Helpers.Colors.textMuted
+                                        font.family: AppConfig.Config.theme.fontFamily
+                                        font.pixelSize: AppConfig.Config.theme.popupFontSizeSmall
+                                        font.bold: modelData.connected
+                                        elide: Text.ElideRight
+                                        width: Math.min(implicitWidth, 200)
+                                    }
+
+                                    Text {
+                                        anchors.verticalCenter: parent.verticalCenter
+                                        text: modelData.mac
+                                        color: Helpers.Colors.textMuted
+                                        font.family: "DejaVuSansM Nerd Font Mono"
+                                        font.pixelSize: AppConfig.Config.theme.popupFontSizeTiny
+                                    }
+
+                                    Rectangle {
+                                        anchors.verticalCenter: parent.verticalCenter
+                                        visible: modelData.paired
+                                        width: pairedLabel.implicitWidth + 8
+                                        height: 14; radius: 3
+                                        color: Qt.rgba(0.30, 0.69, 0.31, 0.15)
+                                        border.color: "#66bb6a"; border.width: 1
+                                        Text {
+                                            id: pairedLabel
+                                            anchors.centerIn: parent
+                                            text: "Paired"
+                                            color: "#66bb6a"
+                                            font.family: AppConfig.Config.theme.fontFamily
+                                            font.pixelSize: AppConfig.Config.theme.popupFontSizeTiny
+                                            font.bold: true
+                                        }
+                                    }
+
+                                    Text {
+                                        anchors.verticalCenter: parent.verticalCenter
+                                        visible: modelData.battery !== null && modelData.battery !== undefined
+                                        text: modelData.battery !== null ? String.fromCodePoint(0xF0079) + " " + modelData.battery + "%" : ""
+                                        color: {
+                                            var b = modelData.battery || 0;
+                                            if (b > 60) return "#66bb6a";
+                                            if (b > 20) return "#ffb74d";
+                                            return "#ef5350";
+                                        }
+                                        font.family: AppConfig.Config.theme.fontFamily
+                                        font.pixelSize: AppConfig.Config.theme.popupFontSizeTiny
+                                    }
+                                }
+
+                                Row {
+                                    id: btDevRight
+                                    anchors.right: parent.right
+                                    anchors.rightMargin: 4
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    spacing: 4
+
+                                    // Connect/disconnect button
+                                    Rectangle {
+                                        width: btConnLabel.implicitWidth + 12; height: 16; radius: 3
+                                        color: btConnMA.containsMouse
+                                            ? (modelData.connected ? "#ef5350" : "#42a5f5")
+                                            : Qt.rgba(1,1,1,0.10)
+                                        Text {
+                                            id: btConnLabel
+                                            anchors.centerIn: parent
+                                            text: root.btActionLoading ? "…" : (modelData.connected ? "Disconnect" : "Connect")
+                                            color: Helpers.Colors.textDefault
+                                            font.family: AppConfig.Config.theme.fontFamily
+                                            font.pixelSize: AppConfig.Config.theme.popupFontSizeTiny
+                                            font.bold: true
+                                        }
+                                        MouseArea {
+                                            id: btConnMA
+                                            anchors.fill: parent
+                                            hoverEnabled: true
+                                            cursorShape: Qt.PointingHandCursor
+                                            enabled: !root.btActionLoading
+                                            onClicked: {
+                                                if (modelData.connected)
+                                                    root.btDisconnect(modelData.mac)
+                                                else
+                                                    root.btConnect(modelData.mac)
+                                            }
+                                        }
+                                    }
+
+                                    // Remove button (only for paired, non-connected)
+                                    Rectangle {
+                                        visible: modelData.paired && !modelData.connected
+                                        width: 16; height: 16; radius: 3
+                                        color: btRemMA.containsMouse ? "#ef5350" : Qt.rgba(1,1,1,0.10)
+                                        Text {
+                                            anchors.centerIn: parent
+                                            text: String.fromCodePoint(0xF0156)
+                                            color: btRemMA.containsMouse ? "#ffffff" : Helpers.Colors.textMuted
+                                            font.family: AppConfig.Config.theme.fontFamily
+                                            font.pixelSize: AppConfig.Config.theme.popupFontSizeTiny
+                                        }
+                                        MouseArea {
+                                            id: btRemMA
+                                            anchors.fill: parent
+                                            hoverEnabled: true
+                                            cursorShape: Qt.PointingHandCursor
+                                            enabled: !root.btActionLoading
+                                            onClicked: root.btRemove(modelData.mac)
+                                        }
+                                    }
+                                }
+
+                                MouseArea {
+                                    id: btDevMA
+                                    anchors.fill: parent
+                                    hoverEnabled: true
+                                    acceptedButtons: Qt.NoButton
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // ── DNS test + Public IP (side by side) ─────────────────────
+            Row {
+                width: parent.width
+                spacing: 10
+                height: 220
+
+            // ── DNS resolution test card ─────────────────────────────────
+            Rectangle {
+                width: (parent.width - 10) / 2
+                height: parent.height
+                color: Qt.rgba(1, 1, 1, 0.04)
+                radius: 8
+
                 Item {
                     id: dnsTestHeader
                     anchors.top: parent.top
                     anchors.left: parent.left
                     anchors.right: parent.right
-                    height: 26
-
-                    function methodOk(m) {
-                        var d = root.dnsMethods[m];
-                        if (!d || !d.tests) return -1;     // not run yet
-                        var ok = 0;
-                        for (var i = 0; i < d.tests.length; i++)
-                            if (d.tests[i].ok) ok++;
-                        return ok === d.tests.length ? 2
-                            : (ok === 0 ? 0 : 1);          // 0=red, 1=amber, 2=green
-                    }
-
-                    readonly property int sysOk: methodOk("system")
-                    readonly property int upOk:  methodOk("upstream")
-                    readonly property int extOk: methodOk("external")
-
-                    function statusColor(s) {
-                        if (s === 2) return "#66bb6a";
-                        if (s === 1) return "#ffb74d";
-                        if (s === 0) return "#ef5350";
-                        return Helpers.Colors.textMuted;
-                    }
+                    height: 22
 
                     Row {
                         anchors.left: parent.left
-                        anchors.leftMargin: 12
+                        anchors.leftMargin: 10
                         anchors.verticalCenter: parent.verticalCenter
-                        spacing: 8
-
+                        spacing: 6
                         Text {
                             anchors.verticalCenter: parent.verticalCenter
-                            text: String.fromCodePoint(0xF0E5C)   // 󰹜 dns
+                            text: String.fromCodePoint(0xF0E5C)
                             color: "#90caf9"
                             font.family: AppConfig.Config.theme.fontFamily
-                            font.pixelSize: 16
+                            font.pixelSize: 14
                         }
                         Text {
                             anchors.verticalCenter: parent.verticalCenter
-                            text: "DNS resolution test"
+                            text: "DNS"
                             color: Helpers.Colors.textDefault
                             font.family: AppConfig.Config.theme.fontFamily
-                            font.pixelSize: AppConfig.Config.theme.fontSizeBody
-                            font.bold: true
-                        }
-                        Text {
-                            anchors.verticalCenter: parent.verticalCenter
-                            text: "·  raw UDP queries bypass libc / resolved cache"
-                            color: Helpers.Colors.textMuted
-                            font.family: AppConfig.Config.theme.fontFamily
-                            font.pixelSize: AppConfig.Config.theme.fontSizeTiny
-                        }
-                    }
-
-                    Rectangle {
-                        anchors.right: dnsTestRefreshBtn.left
-                        anchors.rightMargin: 8
-                        anchors.verticalCenter: parent.verticalCenter
-                        width: 28
-                        height: 16
-                        radius: 3
-                        color: "transparent"
-                        Text {
-                            anchors.centerIn: parent
-                            text: {
-                                var n = root.dnsMethods["upstream"] ? 3 : 2;
-                                var ok = 0;
-                                ["system", "upstream", "external"].forEach(function(m) {
-                                    if (dnsTestHeader.methodOk(m) === 2) ok++;
-                                });
-                                return ok + " / " + n;
-                            }
-                            color: {
-                                var states = [dnsTestHeader.sysOk, dnsTestHeader.upOk, dnsTestHeader.extOk]
-                                    .filter(function(s){ return s >= 0; });
-                                if (states.length === 0) return Helpers.Colors.textMuted;
-                                if (states.indexOf(0) >= 0) return "#ef5350";
-                                if (states.indexOf(1) >= 0) return "#ffb74d";
-                                return "#66bb6a";
-                            }
-                            font.family: AppConfig.Config.theme.fontFamily
-                            font.pixelSize: AppConfig.Config.theme.fontSizeSmall
+                            font.pixelSize: AppConfig.Config.theme.popupFontSizeBody
                             font.bold: true
                         }
                     }
 
-                    Rectangle {
+                    Text {
                         id: dnsTestRefreshBtn
                         anchors.right: parent.right
                         anchors.rightMargin: 10
                         anchors.verticalCenter: parent.verticalCenter
-                        width: 28
-                        height: 20
-                        radius: 4
-                        color: dnsTestRefreshMA.containsMouse
-                            ? Qt.rgba(1, 1, 1, 0.12)
-                            : Qt.rgba(1, 1, 1, 0.05)
+                        transformOrigin: Item.Center
+                        text: String.fromCodePoint(0xF0453)
+                        color: dnsTestRefreshMA.containsMouse ? Helpers.Colors.textDefault : Helpers.Colors.textMuted
                         opacity: root.dnsTestLoading ? 0.5 : 1.0
-
-                        Text {
-                            anchors.centerIn: parent
-                            text: String.fromCodePoint(0xF0453)   // 󰑓 refresh
-                            color: Helpers.Colors.textDefault
-                            font.family: AppConfig.Config.theme.fontFamily
-                            font.pixelSize: 13
-                        }
+                        font.family: AppConfig.Config.theme.fontFamily
+                        font.pixelSize: 14
                         RotationAnimation on rotation {
                             running: root.dnsTestLoading
                             from: 0; to: 360
@@ -884,6 +2030,7 @@ PanelWindow {
                         MouseArea {
                             id: dnsTestRefreshMA
                             anchors.fill: parent
+                            anchors.margins: -4
                             hoverEnabled: true
                             cursorShape: Qt.PointingHandCursor
                             enabled: !root.dnsTestLoading
@@ -892,113 +2039,155 @@ PanelWindow {
                     }
                 }
 
-                Rectangle {
+                // Table: domains as rows, methods as columns
+                Item {
+                    id: dnsTable
                     anchors.top: dnsTestHeader.bottom
-                    anchors.left: parent.left
-                    anchors.right: parent.right
-                    anchors.leftMargin: 12
-                    anchors.rightMargin: 12
-                    height: 1
-                    color: Qt.rgba(1, 1, 1, 0.07)
-                }
-
-                // Three side-by-side columns
-                Row {
-                    anchors.top: dnsTestHeader.bottom
-                    anchors.topMargin: 6
+                    anchors.topMargin: 2
                     anchors.left: parent.left
                     anchors.right: parent.right
                     anchors.bottom: parent.bottom
-                    anchors.leftMargin: 12
-                    anchors.rightMargin: 12
-                    anchors.bottomMargin: 8
-                    spacing: 14
+                    anchors.leftMargin: 8
+                    anchors.rightMargin: 8
+                    anchors.bottomMargin: 4
 
-                    Repeater {
-                        model: [
-                            {
-                                key: "system",
-                                title: "System resolver",
-                                iconCode: 0xF048D,    // 󰒍 network
-                                iconColor: "#90caf9"
-                            },
-                            {
-                                key: "upstream",
-                                title: "Upstream (direct)",
-                                iconCode: 0xF08F0,    // 󰣰 router
-                                iconColor: "#bb86fc"
-                            },
-                            {
-                                key: "external",
-                                title: "External 1.1.1.1",
-                                iconCode: 0xF059F,    // 󰖟 web
-                                iconColor: "#4dd0e1"
-                            }
-                        ]
-                        Column {
-                            required property var modelData
-                            width: (parent.width - 2 * parent.spacing) / 3
-                            spacing: 3
+                    readonly property real colDomain: 90
+                    readonly property real colMethod: (width - colDomain) / 3
 
-                            // Column header — method name + server in mono
-                            Item {
-                                width: parent.width
-                                height: 16
-                                Row {
-                                    anchors.left: parent.left
-                                    anchors.verticalCenter: parent.verticalCenter
-                                    spacing: 5
-                                    Text {
-                                        anchors.verticalCenter: parent.verticalCenter
-                                        text: String.fromCodePoint(modelData.iconCode)
-                                        color: modelData.iconColor
-                                        font.family: AppConfig.Config.theme.fontFamily
-                                        font.pixelSize: 13
-                                    }
-                                    Text {
-                                        anchors.verticalCenter: parent.verticalCenter
-                                        text: modelData.title
-                                        color: Helpers.Colors.textDefault
-                                        font.family: AppConfig.Config.theme.fontFamily
-                                        font.pixelSize: AppConfig.Config.theme.fontSizeSmall
-                                        font.bold: true
-                                    }
-                                }
+                    function dnsResult(method, domain) {
+                        var m = root.dnsMethods[method]
+                        if (!m || !m.tests) return null
+                        for (var i = 0; i < m.tests.length; i++)
+                            if (m.tests[i].domain === domain) return m.tests[i]
+                        return null
+                    }
+
+                    readonly property var domains: {
+                        var sys = root.dnsMethods["system"]
+                        if (sys && sys.tests) return sys.tests.map(function(t) { return t.domain })
+                        return ["google.com", "cloudflare.com", "github.com"]
+                    }
+
+                    Column {
+                        anchors.fill: parent
+                        spacing: 1
+
+                        // Column headers with method name + server
+                        Row {
+                            width: parent.width; height: 30; spacing: 0
+                            Item { width: dnsTable.colDomain; height: parent.height }
+                            Column {
+                                width: dnsTable.colMethod; height: parent.height
+                                Text { width: parent.width; text: "System"; color: "#90caf9"; font.family: AppConfig.Config.theme.fontFamily; font.pixelSize: AppConfig.Config.theme.popupFontSizeTiny; font.bold: true; horizontalAlignment: Text.AlignHCenter }
                                 Text {
-                                    anchors.right: parent.right
-                                    anchors.verticalCenter: parent.verticalCenter
+                                    width: parent.width
+                                    text: "libc / 127.0.0.53"
+                                    color: Helpers.Colors.textMuted; font.family: AppConfig.Config.theme.fontFamily; font.pixelSize: AppConfig.Config.theme.popupFontSizeTiny
+                                    horizontalAlignment: Text.AlignHCenter
+                                }
+                            }
+                            Column {
+                                width: dnsTable.colMethod; height: parent.height
+                                Text { width: parent.width; text: "Upstream"; color: "#bb86fc"; font.family: AppConfig.Config.theme.fontFamily; font.pixelSize: AppConfig.Config.theme.popupFontSizeTiny; font.bold: true; horizontalAlignment: Text.AlignHCenter }
+                                Text {
+                                    width: parent.width
                                     text: {
-                                        var m = root.dnsMethods[modelData.key];
-                                        if (!m) return "";
-                                        return m.server === "system"
-                                            ? "(libc / 127.0.0.53)"
-                                            : "@ " + m.server;
+                                        var m = root.dnsMethods["upstream"]
+                                        return m ? m.server : "—"
                                     }
-                                    color: Helpers.Colors.textMuted
-                                    font.family: "DejaVuSansM Nerd Font Mono"
-                                    font.pixelSize: AppConfig.Config.theme.fontSizeTiny
+                                    color: Helpers.Colors.textMuted; font.family: "DejaVuSansM Nerd Font Mono"; font.pixelSize: AppConfig.Config.theme.popupFontSizeTiny
+                                    horizontalAlignment: Text.AlignHCenter; elide: Text.ElideRight
                                 }
                             }
-
-                            // Placeholder while empty
-                            Text {
-                                visible: !root.dnsMethods[modelData.key]
-                                text: modelData.key === "upstream" && (!root.dnsServers || root.dnsServers.length === 0)
-                                    ? "no upstream known"
-                                    : (root.dnsTestLoading ? "resolving…" : "—")
-                                color: Helpers.Colors.textMuted
-                                font.family: AppConfig.Config.theme.fontFamily
-                                font.pixelSize: AppConfig.Config.theme.fontSizeSmall
+                            Column {
+                                width: dnsTable.colMethod; height: parent.height
+                                Text { width: parent.width; text: "External"; color: "#4dd0e1"; font.family: AppConfig.Config.theme.fontFamily; font.pixelSize: AppConfig.Config.theme.popupFontSizeTiny; font.bold: true; horizontalAlignment: Text.AlignHCenter }
+                                Text { width: parent.width; text: "1.1.1.1"; color: Helpers.Colors.textMuted; font.family: "DejaVuSansM Nerd Font Mono"; font.pixelSize: AppConfig.Config.theme.popupFontSizeTiny; horizontalAlignment: Text.AlignHCenter }
                             }
+                        }
 
-                            Repeater {
-                                model: root.dnsMethods[modelData.key]
-                                    ? root.dnsMethods[modelData.key].tests
-                                    : []
-                                DnsTestLine {
-                                    required property var modelData
-                                    test: modelData
+                        Rectangle { width: parent.width; height: 1; color: Qt.rgba(1,1,1,0.06) }
+
+                        // Data rows
+                        Repeater {
+                            model: dnsTable.domains
+                            Column {
+                                id: dnsRow
+                                required property var modelData
+                                readonly property string domain: modelData
+                                width: parent.width
+                                spacing: 0
+
+                                Row {
+                                    width: parent.width; height: 18; spacing: 0
+                                    Text {
+                                        width: dnsTable.colDomain; height: parent.height
+                                        text: dnsRow.domain
+                                        color: Helpers.Colors.textDefault
+                                        font.family: "DejaVuSansM Nerd Font Mono"
+                                        font.pixelSize: AppConfig.Config.theme.popupFontSizeTiny
+                                        verticalAlignment: Text.AlignVCenter
+                                    }
+                                    Repeater {
+                                        model: ["system", "upstream", "external"]
+                                        Item {
+                                            required property var modelData
+                                            width: dnsTable.colMethod; height: parent.height
+                                            readonly property var r: dnsTable.dnsResult(modelData, dnsRow.domain)
+                                            readonly property bool ok: r ? !!r.ok : false
+                                            readonly property int ms: r ? (r.time_ms || 0) : 0
+                                            Row {
+                                                anchors.horizontalCenter: parent.horizontalCenter
+                                                anchors.verticalCenter: parent.verticalCenter
+                                                spacing: 2
+                                                Text {
+                                                    text: r ? (ok ? String.fromCodePoint(0xF012C) : String.fromCodePoint(0xF0156)) : "—"
+                                                    color: !r ? Helpers.Colors.textMuted : ok ? "#66bb6a" : "#ef5350"
+                                                    font.family: AppConfig.Config.theme.fontFamily
+                                                    font.pixelSize: AppConfig.Config.theme.popupFontSizeTiny
+                                                }
+                                                Text {
+                                                    text: ms > 0 ? ms + "ms" : ""
+                                                    color: {
+                                                        if (!ok) return "#ef5350"
+                                                        if (ms <= 30) return "#66bb6a"
+                                                        if (ms <= 100) return "#ffb74d"
+                                                        return "#f4721a"
+                                                    }
+                                                    font.family: AppConfig.Config.theme.fontFamily
+                                                    font.pixelSize: AppConfig.Config.theme.popupFontSizeTiny
+                                                    font.bold: true
+                                                }
+                                            }
+                                        }
+                                    }
                                 }
+
+                                Row {
+                                    width: parent.width; height: 14; spacing: 0
+                                    Item { width: dnsTable.colDomain; height: parent.height }
+                                    Repeater {
+                                        model: ["system", "upstream", "external"]
+                                        Item {
+                                            required property var modelData
+                                            width: dnsTable.colMethod; height: parent.height
+                                            readonly property var r: dnsTable.dnsResult(modelData, dnsRow.domain)
+                                            readonly property bool ok: r ? !!r.ok : false
+                                            Text {
+                                                anchors.horizontalCenter: parent.horizontalCenter
+                                                anchors.verticalCenter: parent.verticalCenter
+                                                text: r && ok ? (r.ip || "") : (r && r.error ? r.error : "")
+                                                color: ok ? Helpers.Colors.textMuted : "#ef9a9a"
+                                                font.family: "DejaVuSansM Nerd Font Mono"
+                                                font.pixelSize: AppConfig.Config.theme.popupFontSizeTiny
+                                                elide: Text.ElideRight
+                                                width: Math.min(implicitWidth, dnsTable.colMethod - 4)
+                                            }
+                                        }
+                                    }
+                                }
+
+                                Rectangle { width: parent.width; height: 1; color: Qt.rgba(1,1,1,0.03); visible: dnsRow.domain !== "github.com" }
                             }
                         }
                     }
@@ -1007,8 +2196,8 @@ PanelWindow {
 
             // ── Public IP / ipinfo card ──────────────────────────────────
             Rectangle {
-                width: parent.width
-                height: 210
+                width: (parent.width - 10) / 2
+                height: parent.height
                 color: Qt.rgba(1, 1, 1, 0.04)
                 radius: 8
 
@@ -1038,14 +2227,14 @@ PanelWindow {
                             text: "Public IP"
                             color: Helpers.Colors.textMuted
                             font.family: AppConfig.Config.theme.fontFamily
-                            font.pixelSize: AppConfig.Config.theme.fontSizeSmall
+                            font.pixelSize: AppConfig.Config.theme.popupFontSizeSmall
                         }
                         Text {
                             anchors.verticalCenter: parent.verticalCenter
                             text: root.ipinfo ? root.ipinfo.query : (root.ipinfoLoading ? "loading…" : "—")
                             color: Helpers.Colors.textDefault
                             font.family: "DejaVuSansM Nerd Font Mono"
-                            font.pixelSize: AppConfig.Config.theme.fontSizeMedium
+                            font.pixelSize: AppConfig.Config.theme.popupFontSizeMedium
                             font.bold: true
                         }
                         Rectangle {
@@ -1061,7 +2250,7 @@ PanelWindow {
                                 text: root.ipinfo ? root.ipinfo.countryCode : ""
                                 color: Helpers.Colors.textDefault
                                 font.family: AppConfig.Config.theme.fontFamily
-                                font.pixelSize: AppConfig.Config.theme.fontSizeSmall
+                                font.pixelSize: AppConfig.Config.theme.popupFontSizeSmall
                                 font.bold: true
                             }
                         }
@@ -1084,7 +2273,7 @@ PanelWindow {
                                     text: String.fromCodePoint(0xF0582) + " VPN"  // 󰖂 shield-lock or similar
                                     color: "#ffb74d"
                                     font.family: AppConfig.Config.theme.fontFamily
-                                    font.pixelSize: AppConfig.Config.theme.fontSizeTiny
+                                    font.pixelSize: AppConfig.Config.theme.popupFontSizeTiny
                                     font.bold: true
                                 }
                             }
@@ -1103,7 +2292,7 @@ PanelWindow {
                                     text: String.fromCodePoint(0xF1C0F) + " DC"   // 󱰏 server-network
                                     color: "#bb86fc"
                                     font.family: AppConfig.Config.theme.fontFamily
-                                    font.pixelSize: AppConfig.Config.theme.fontSizeTiny
+                                    font.pixelSize: AppConfig.Config.theme.popupFontSizeTiny
                                     font.bold: true
                                 }
                             }
@@ -1122,7 +2311,7 @@ PanelWindow {
                                     text: String.fromCodePoint(0xF011F) + " MOBILE"  // 󰄟 cellphone
                                     color: "#4dd0e1"
                                     font.family: AppConfig.Config.theme.fontFamily
-                                    font.pixelSize: AppConfig.Config.theme.fontSizeTiny
+                                    font.pixelSize: AppConfig.Config.theme.popupFontSizeTiny
                                     font.bold: true
                                 }
                             }
@@ -1130,36 +2319,26 @@ PanelWindow {
                     }
 
                     // Refresh button
-                    Rectangle {
+                    Text {
                         anchors.right: parent.right
                         anchors.rightMargin: 10
                         anchors.verticalCenter: parent.verticalCenter
-                        width: 28
-                        height: 22
-                        radius: 4
-                        color: refreshHover.containsMouse
-                            ? Qt.rgba(1, 1, 1, 0.12)
-                            : Qt.rgba(1, 1, 1, 0.05)
+                        transformOrigin: Item.Center
+                        text: String.fromCodePoint(0xF0453)
+                        color: refreshHover.containsMouse ? Helpers.Colors.textDefault : Helpers.Colors.textMuted
                         opacity: root.ipinfoLoading ? 0.5 : 1.0
-
-                        Text {
-                            anchors.centerIn: parent
-                            text: String.fromCodePoint(0xF0453)   // 󰑓 refresh
-                            color: Helpers.Colors.textDefault
-                            font.family: AppConfig.Config.theme.fontFamily
-                            font.pixelSize: 14
-                        }
-
+                        font.family: AppConfig.Config.theme.fontFamily
+                        font.pixelSize: 14
                         RotationAnimation on rotation {
                             running: root.ipinfoLoading
                             from: 0; to: 360
                             duration: 800
                             loops: Animation.Infinite
                         }
-
                         MouseArea {
                             id: refreshHover
                             anchors.fill: parent
+                            anchors.margins: -4
                             hoverEnabled: true
                             cursorShape: Qt.PointingHandCursor
                             enabled: !root.ipinfoLoading
@@ -1291,6 +2470,8 @@ PanelWindow {
                     }
                 }
             }
+            }
+        }
         }
     }
 
@@ -1318,7 +2499,7 @@ PanelWindow {
             text: iconCode > 0 ? String.fromCodePoint(iconCode) : ""
             color: iconColor
             font.family: AppConfig.Config.theme.fontFamily
-            font.pixelSize: AppConfig.Config.theme.fontSizeBody
+            font.pixelSize: AppConfig.Config.theme.popupFontSizeBody
             horizontalAlignment: Text.AlignHCenter
         }
         Text {
@@ -1330,7 +2511,7 @@ PanelWindow {
             text: label
             color: Helpers.Colors.textMuted
             font.family: AppConfig.Config.theme.fontFamily
-            font.pixelSize: AppConfig.Config.theme.fontSizeSmall
+            font.pixelSize: AppConfig.Config.theme.popupFontSizeSmall
             elide: Text.ElideRight
         }
         Text {
@@ -1341,7 +2522,7 @@ PanelWindow {
             text: value
             color: valueColor
             font.family: valueMono ? "DejaVuSansM Nerd Font Mono" : AppConfig.Config.theme.fontFamily
-            font.pixelSize: AppConfig.Config.theme.fontSizeSmall
+            font.pixelSize: AppConfig.Config.theme.popupFontSizeSmall
             font.bold: valueBold
             elide: Text.ElideRight
             width: Math.min(implicitWidth, parent.width - 86)
@@ -1353,7 +2534,7 @@ PanelWindow {
             text: valueExtra
             color: valueExtraColor
             font.family: AppConfig.Config.theme.fontFamily
-            font.pixelSize: AppConfig.Config.theme.fontSizeSmall
+            font.pixelSize: AppConfig.Config.theme.popupFontSizeSmall
             visible: text.length > 0
             elide: Text.ElideRight
             width: Math.max(0, parent.width - 86 - _value.width - 4)
@@ -1382,7 +2563,7 @@ PanelWindow {
             text: ok ? String.fromCodePoint(0xF012C) : String.fromCodePoint(0xF0156)  // 󰄬 check / 󰅖 close
             color: ok ? "#66bb6a" : "#ef5350"
             font.family: AppConfig.Config.theme.fontFamily
-            font.pixelSize: AppConfig.Config.theme.fontSizeBody
+            font.pixelSize: AppConfig.Config.theme.popupFontSizeBody
         }
         Text {
             id: dtDomain
@@ -1393,7 +2574,7 @@ PanelWindow {
             text: domain
             color: Helpers.Colors.textDefault
             font.family: "DejaVuSansM Nerd Font Mono"
-            font.pixelSize: AppConfig.Config.theme.fontSizeSmall
+            font.pixelSize: AppConfig.Config.theme.popupFontSizeSmall
             elide: Text.ElideRight
         }
         Text {
@@ -1406,7 +2587,7 @@ PanelWindow {
             text: ok ? ip : (err || "—")
             color: ok ? Helpers.Colors.textMuted : "#ef9a9a"
             font.family: ok ? "DejaVuSansM Nerd Font Mono" : AppConfig.Config.theme.fontFamily
-            font.pixelSize: AppConfig.Config.theme.fontSizeSmall
+            font.pixelSize: AppConfig.Config.theme.popupFontSizeSmall
             elide: Text.ElideRight
         }
         Text {
@@ -1421,7 +2602,7 @@ PanelWindow {
                 return "#f4721a";
             }
             font.family: AppConfig.Config.theme.fontFamily
-            font.pixelSize: AppConfig.Config.theme.fontSizeSmall
+            font.pixelSize: AppConfig.Config.theme.popupFontSizeSmall
             font.bold: true
         }
     }
@@ -1444,7 +2625,7 @@ PanelWindow {
             text: label
             color: Helpers.Colors.textDefault
             font.family: AppConfig.Config.theme.fontFamily
-            font.pixelSize: AppConfig.Config.theme.fontSizeSmall
+            font.pixelSize: AppConfig.Config.theme.popupFontSizeSmall
             font.bold: true
         }
     }
@@ -1544,7 +2725,7 @@ PanelWindow {
                     text: panel.target.label
                     color: Helpers.Colors.textDefault
                     font.family: AppConfig.Config.theme.fontFamily
-                    font.pixelSize: AppConfig.Config.theme.fontSizeSmall
+                    font.pixelSize: AppConfig.Config.theme.popupFontSizeSmall
                     font.bold: true
                 }
                 Text {
@@ -1552,7 +2733,7 @@ PanelWindow {
                     text: panel.target.host ? "  " + panel.target.host : ""
                     color: Helpers.Colors.textMuted
                     font.family: AppConfig.Config.theme.fontFamily
-                    font.pixelSize: AppConfig.Config.theme.fontSizeSmall
+                    font.pixelSize: AppConfig.Config.theme.popupFontSizeSmall
                 }
                 Item { width: 1; height: 1 }
                 Text {
@@ -1561,7 +2742,7 @@ PanelWindow {
                         : (panel.currentPing < 0 ? "…" : panel.currentPing + " ms")
                     color: panel.pingColorFor(panel.currentPing)
                     font.family: AppConfig.Config.theme.fontFamily
-                    font.pixelSize: AppConfig.Config.theme.fontSizeBody
+                    font.pixelSize: AppConfig.Config.theme.popupFontSizeBody
                     font.bold: true
                 }
             }
@@ -1633,13 +2814,13 @@ PanelWindow {
                         text: "avg"
                         color: Helpers.Colors.textMuted
                         font.family: AppConfig.Config.theme.fontFamily
-                        font.pixelSize: AppConfig.Config.theme.fontSizeTiny
+                        font.pixelSize: AppConfig.Config.theme.popupFontSizeTiny
                     }
                     Text {
                         text: panel.avgPing > 0 ? panel.avgPing + " ms" : "—"
                         color: panel.pingColorFor(panel.avgPing)
                         font.family: AppConfig.Config.theme.fontFamily
-                        font.pixelSize: AppConfig.Config.theme.fontSizeSmall
+                        font.pixelSize: AppConfig.Config.theme.popupFontSizeSmall
                         font.bold: true
                     }
                 }
@@ -1649,13 +2830,13 @@ PanelWindow {
                         text: "max"
                         color: Helpers.Colors.textMuted
                         font.family: AppConfig.Config.theme.fontFamily
-                        font.pixelSize: AppConfig.Config.theme.fontSizeTiny
+                        font.pixelSize: AppConfig.Config.theme.popupFontSizeTiny
                     }
                     Text {
                         text: panel.maxPing > 0 ? panel.maxPing + " ms" : "—"
                         color: Helpers.Colors.textDefault
                         font.family: AppConfig.Config.theme.fontFamily
-                        font.pixelSize: AppConfig.Config.theme.fontSizeSmall
+                        font.pixelSize: AppConfig.Config.theme.popupFontSizeSmall
                     }
                 }
                 Column {
@@ -1664,7 +2845,7 @@ PanelWindow {
                         text: "loss"
                         color: Helpers.Colors.textMuted
                         font.family: AppConfig.Config.theme.fontFamily
-                        font.pixelSize: AppConfig.Config.theme.fontSizeTiny
+                        font.pixelSize: AppConfig.Config.theme.popupFontSizeTiny
                     }
                     Text {
                         text: panel.packetCount > 0
@@ -1672,7 +2853,7 @@ PanelWindow {
                             : "—"
                         color: panel.packetLoss === 0 ? "#66bb6a" : "#ef5350"
                         font.family: AppConfig.Config.theme.fontFamily
-                        font.pixelSize: AppConfig.Config.theme.fontSizeSmall
+                        font.pixelSize: AppConfig.Config.theme.popupFontSizeSmall
                         font.bold: panel.packetLoss > 0
                     }
                 }

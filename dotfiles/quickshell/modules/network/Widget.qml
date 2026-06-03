@@ -1,17 +1,23 @@
 import QtQuick
 import Quickshell.Io
 import "../../helpers" as Helpers
+import "../../config" as AppConfig
 import "../../core" as Core
 
 Item {
     id: root
-    implicitWidth: netRow.implicitWidth + 4
+    implicitWidth: netRow.implicitWidth + 8
     implicitHeight: parent ? parent.height : 30
+
+    Rectangle {
+        anchors.fill: parent
+        radius: AppConfig.Config.theme.interactiveHoverRadius || 4
+        color: Qt.rgba(0.2, 0.5, 0.9, 0.12)
+    }
 
     property var context: null
     property var config: Helpers.ModuleConfig.resolve("network")
-    readonly property int effectiveStatusIntervalMs: config.fastWhenExpanded && expanded ? Math.min(config.intervalMs, 1000) : config.intervalMs
-    readonly property int effectiveTrafficIntervalMs: config.fastWhenExpanded && expanded ? Math.min(config.trafficIntervalMs, 1000) : config.trafficIntervalMs
+    readonly property int effectiveStatusIntervalMs: config.intervalMs
 
     property int pingServiceRevision: Core.ModuleRegistry.serviceRevision
     readonly property var pingService: {
@@ -22,19 +28,14 @@ Item {
     property string wifiOutput: ""
     property string ethOutput: ""
     property string activeIface: ""
-    property real prevRx: 0
-    property real prevTx: 0
     property string rxRate: ""
     property string txRate: ""
     property real rxRateNum: 0
     property real txRateNum: 0
-    property bool hovered: false
     property bool pinned: context && context.service ? context.service.pinned : false
     property bool pingActive: pingService ? pingService.active : false
-    property bool expanded: hovered || pinned || popupOpen
-    // Popup state — left-click toggles, picked up by PackagePopupLoader.
+    // Popup state — left-click toggles; PackagePopup mirrors this to show the popup.
     property bool popupOpen: false
-    onPinnedChanged: if (pinned) infoProc.running = true
     property string netInfo: ""
     property string wifiName: netInfo ? netInfo.split("|")[0] || "" : ""
     property string netIp: netInfo ? netInfo.split("|")[1] || "" : ""
@@ -42,7 +43,7 @@ Item {
     property string wifiBand: netInfo ? netInfo.split("|")[3] || "" : ""
     property bool mlo: netInfo ? netInfo.split("|")[4] === "MLO" : false
 
-    // Graph history
+    // Graph history (2Hz from daemon = 30s visible)
     property int maxHistory: 60
     property var netHistory: []
     property real maxTxKb: 0
@@ -59,46 +60,29 @@ Item {
 
     function formatRate(bytesPerSec) {
         var kb = Math.round(bytesPerSec / 1024);
-        var s = kb.toString();
-        while (s.length < 5) s = " " + s;
-        return s;
+        return kb.toString();
     }
 
-    property real prevTimestamp: 0
+    readonly property string _sock: AppConfig.Config.daemon.socket
 
     function refreshStatus() {
         if (!netProc.running)
             netProc.running = true;
+        if (!infoProc.running)
+            infoProc.running = true;
     }
 
-    function parseTraffic() {
-        if (!root.activeIface) return;
-        var rx = parseFloat(rxFile.text().trim()) || 0;
-        var tx = parseFloat(txFile.text().trim()) || 0;
-        var now = Date.now() / 1000;
-        if (root.prevRx > 0 && root.prevTimestamp > 0) {
-            var dt = now - root.prevTimestamp;
-            if (dt > 0) {
-                var rxBps = (rx - root.prevRx) / dt;
-                var txBps = (tx - root.prevTx) / dt;
-                root.rxRateNum = rxBps / 1024;
-                root.txRateNum = txBps / 1024;
-                root.rxRate = formatRate(rxBps);
-                root.txRate = formatRate(txBps);
-            }
-        }
-        root.prevRx = rx;
-        root.prevTx = tx;
-        root.prevTimestamp = now;
+    function applyTrafficTick(rxBytes, txBytes) {
+        root.rxRateNum = rxBytes / 1024;
+        root.txRateNum = txBytes / 1024;
+        root.rxRate = formatRate(rxBytes);
+        root.txRate = formatRate(txBytes);
 
-        // Update history
         var h = root.netHistory.slice();
         h.push({rx: root.rxRateNum, tx: root.txRateNum});
-        if (h.length > root.maxHistory)
-            h.shift();
+        if (h.length > root.maxHistory) h.shift();
         root.netHistory = h;
 
-        // Track max values visible on graph
         var mTx = 0, mRx = 0;
         for (var i = 0; i < h.length; i++) {
             if (h[i].tx > mTx) mTx = h[i].tx;
@@ -106,8 +90,38 @@ Item {
         }
         root.maxTxKb = mTx;
         root.maxRxKb = mRx;
-
         netGraph.requestPaint();
+    }
+
+    function applyDaemonLine(raw) {
+        if (!raw) return;
+        try {
+            var d = JSON.parse(raw.trim());
+            // Seed history from daemon backlog on first message
+            if (d.traffic_history && d.traffic_history.length > 0 && root.netHistory.length === 0) {
+                var h = [];
+                for (var i = 0; i < d.traffic_history.length; i++) {
+                    h.push({rx: d.traffic_history[i].rx / 1024, tx: d.traffic_history[i].tx / 1024});
+                }
+                if (h.length > root.maxHistory)
+                    h = h.slice(h.length - root.maxHistory);
+                root.netHistory = h;
+                var mTx = 0, mRx = 0;
+                for (var j = 0; j < h.length; j++) {
+                    if (h[j].tx > mTx) mTx = h[j].tx;
+                    if (h[j].rx > mRx) mRx = h[j].rx;
+                }
+                root.maxTxKb = mTx;
+                root.maxRxKb = mRx;
+                netGraph.requestPaint();
+            }
+            // Compute combined rate from all interfaces
+            var rxR = 0, txR = 0;
+            if (d.wifi && d.wifi.rx_rate) { rxR += d.wifi.rx_rate; txR += (d.wifi.tx_rate || 0); }
+            if (d.ethernet && d.ethernet.rx_rate) { rxR += d.ethernet.rx_rate; txR += (d.ethernet.tx_rate || 0); }
+            if (rxR > 0 || txR > 0 || root.netHistory.length > 0)
+                applyTrafficTick(rxR, txR);
+        } catch (e) { /* ignore parse errors */ }
     }
 
     property int signalStrength: {
@@ -124,8 +138,7 @@ Item {
         var parts = wifiOutput.split("|");
         return parts[3] || "";
     }
-    // Suppress wifi connecting/disconnected status when ethernet provides connectivity
-    property bool showStatus: connectionStatus !== "" && connectionStatus !== "connected" && !isEthernet
+    property bool showStatus: connectionStatus !== "" && connectionStatus !== "connected"
     property bool isConnected: isWifi || isEthernet
 
     property string connectingName: {
@@ -186,17 +199,15 @@ Item {
         anchors.verticalCenter: parent.verticalCenter
         spacing: 2
 
-        // Graph with overlaid traffic numbers
+        // Graph with overlaid traffic info
         Item {
-            id: graphContainer
             anchors.verticalCenter: parent.verticalCenter
-            width: netGraph.width
+            width: root.maxHistory
             height: root.implicitHeight
 
             Canvas {
                 id: netGraph
-                width: root.maxHistory
-                height: parent.height
+                anchors.fill: parent
                 opacity: 0.4
 
                 onPaint: {
@@ -205,7 +216,6 @@ Item {
                     var h = root.netHistory;
                     if (h.length === 0) return;
 
-                    // Find max value for auto-scaling
                     var maxVal = 1;
                     for (var i = 0; i < h.length; i++) {
                         if (h[i].tx > maxVal) maxVal = h[i].tx;
@@ -214,115 +224,43 @@ Item {
 
                     var halfH = height / 2;
 
-                    // Draw newest on the left, oldest on the right
-                    // Each bar colored by speed: low=dim, high=bright
                     for (var i = 0; i < h.length; i++) {
-                        var si = h.length - 1 - i; // reverse: newest first
-                        var txRatio = h[si].tx / maxVal;
-                        var rxRatio = h[si].rx / maxVal;
+                        var x = i;
+                        var txRatio = h[i].tx / maxVal;
+                        var rxRatio = h[i].rx / maxVal;
 
-                        // Upload (tx) — top half, grows upward from center
                         var txH = txRatio * halfH;
                         if (txH > 0) {
                             var tr = Math.round(30 + 70 * txRatio);
                             var tg = Math.round(100 + 81 * txRatio);
                             var tb = Math.round(150 + 96 * txRatio);
                             ctx.fillStyle = "rgb(" + tr + "," + tg + "," + tb + ")";
-                            ctx.fillRect(i, halfH - txH, 1, txH);
+                            ctx.fillRect(x, halfH - txH, 1, txH);
                         }
 
-                        // Download (rx) — bottom half, grows downward from center
                         var rxH = rxRatio * halfH;
                         if (rxH > 0) {
                             var rr = Math.round(20 + 46 * rxRatio);
                             var rg = Math.round(80 + 85 * rxRatio);
                             var rb = Math.round(140 + 105 * rxRatio);
                             ctx.fillStyle = "rgb(" + rr + "," + rg + "," + rb + ")";
-                            ctx.fillRect(i, halfH, 1, rxH);
+                            ctx.fillRect(x, halfH, 1, rxH);
                         }
                     }
                 }
             }
 
-            // Traffic numbers + arrows overlaid on the right of graph
             Row {
-                anchors.right: parent.right
-                anchors.rightMargin: 2
-                anchors.verticalCenter: parent.verticalCenter
-                spacing: 0
-                z: 1
-                visible: root.rxRate !== ""
-
-                Column {
-                    anchors.verticalCenter: parent.verticalCenter
-                    spacing: -2
-
-                    Text {
-                        text: root.txRate
-                        color: "#64b5f6"
-                        font.family: "DejaVuSansM Nerd Font"
-                        font.pixelSize: 10
-                    }
-
-                    Text {
-                        text: root.rxRate
-                        color: "#42a5f5"
-                        font.family: "DejaVuSansM Nerd Font"
-                        font.pixelSize: 10
-                    }
-                }
-
-                Column {
-                    anchors.verticalCenter: parent.verticalCenter
-                    spacing: -2
-
-                    Text {
-                        text: "↑"
-                        color: "#64b5f6"
-                        font.pixelSize: 10
-                    }
-
-                    Text {
-                        text: "↓"
-                        color: "#42a5f5"
-                        font.pixelSize: 10
-                    }
-                }
-            }
-        }
-
-        // Hover info (IP + network name)
-        Item {
-            id: infoWrapper
-            anchors.verticalCenter: parent.verticalCenter
-            height: infoRow.implicitHeight
-            width: root.expanded ? infoMeasure.implicitWidth + 4 : 0
-            clip: true
-
-            Behavior on width {
-                NumberAnimation { duration: 200; easing.type: Easing.OutCubic }
-            }
-
-            Row {
-                id: infoRow
                 anchors.verticalCenter: parent.verticalCenter
                 anchors.left: parent.left
-                anchors.leftMargin: 4
+                anchors.leftMargin: 2
                 spacing: 4
 
                 Text {
                     anchors.verticalCenter: parent.verticalCenter
                     text: root.wifiName
                     color: Helpers.Colors.textDefault
-                    font.family: "DejaVuSansM Nerd Font"
-                    font.pixelSize: 10
-                }
-
-                Text {
-                    anchors.verticalCenter: parent.verticalCenter
-                    text: root.netIp
-                    color: Helpers.Colors.textMuted
-                    font.family: "DejaVuSansM Nerd Font"
+                    font.family: AppConfig.Config.theme.fontFamily
                     font.pixelSize: 10
                 }
 
@@ -331,7 +269,7 @@ Item {
                     visible: root.isWifi && root.wifiBand !== ""
                     text: root.wifiBand
                     color: root.wifiBand === "6G" ? "#bb86fc" : root.wifiBand === "5G" ? "#42a5f5" : "#8d6e63"
-                    font.family: "DejaVuSansM Nerd Font"
+                    font.family: AppConfig.Config.theme.fontFamily
                     font.pixelSize: 10
                 }
 
@@ -340,7 +278,7 @@ Item {
                     visible: root.isWifi && root.wifiGen !== ""
                     text: root.wifiGen
                     color: root.genColor
-                    font.family: "DejaVuSansM Nerd Font"
+                    font.family: AppConfig.Config.theme.fontFamily
                     font.pixelSize: 10
                     font.bold: true
                 }
@@ -350,8 +288,40 @@ Item {
                     visible: root.mlo
                     text: "MLO"
                     color: "#bb86fc"
-                    font.family: "DejaVuSansM Nerd Font"
+                    font.family: AppConfig.Config.theme.fontFamily
                     font.pixelSize: 10
+                }
+            }
+
+            Row {
+                anchors.verticalCenter: parent.verticalCenter
+                anchors.right: parent.right
+                anchors.rightMargin: 1
+                visible: root.rxRate !== ""
+                spacing: 0
+
+                Column {
+                    anchors.verticalCenter: parent.verticalCenter
+                    width: 34
+                    spacing: -2
+
+                    Text {
+                        width: parent.width
+                        text: root.txRate
+                        color: Helpers.Colors.textMuted
+                        font.family: AppConfig.Config.theme.fontFamily
+                        font.pixelSize: AppConfig.Config.theme.fontSizeSmall
+                        horizontalAlignment: Text.AlignRight
+                    }
+
+                    Text {
+                        width: parent.width
+                        text: root.rxRate
+                        color: Helpers.Colors.textMuted
+                        font.family: AppConfig.Config.theme.fontFamily
+                        font.pixelSize: AppConfig.Config.theme.fontSizeSmall
+                        horizontalAlignment: Text.AlignRight
+                    }
                 }
 
                 Column {
@@ -359,43 +329,17 @@ Item {
                     spacing: -2
 
                     Text {
-                        text: "↑" + Math.round(root.maxTxKb)
-                        color: "#ff9800"
-                        font.family: "DejaVuSansM Nerd Font"
-                        font.pixelSize: 10
+                        text: "↑"
+                        color: Helpers.Colors.textMuted
+                        font.pixelSize: AppConfig.Config.theme.fontSizeSmall
                     }
 
                     Text {
-                        text: "↓" + Math.round(root.maxRxKb)
-                        color: "#ff9800"
-                        font.family: "DejaVuSansM Nerd Font"
-                        font.pixelSize: 10
+                        text: "↓"
+                        color: Helpers.Colors.textMuted
+                        font.pixelSize: AppConfig.Config.theme.fontSizeSmall
                     }
                 }
-            }
-        }
-
-        // Signal strength bar (4px vertical strip)
-        Item {
-            anchors.verticalCenter: parent.verticalCenter
-            width: 4
-            height: root.implicitHeight
-            visible: root.isWifi
-
-            Rectangle {
-                width: parent.width
-                height: parent.height
-                radius: 1
-                color: Qt.rgba(1, 1, 1, 0.1)
-            }
-
-            Rectangle {
-                anchors.bottom: parent.bottom
-                width: parent.width
-                height: parent.height * (root.signalStrength / 100)
-                radius: 1
-                color: root.signalColor
-                opacity: 0.5
             }
         }
 
@@ -407,12 +351,10 @@ Item {
             text: String.fromCodePoint(0xF0200)   // nf-md-ethernet
             color: Helpers.Colors.textDefault
             opacity: 0.9
-            font.family: "DejaVuSansM Nerd Font"
-            font.pixelSize: 16
+            font.family: AppConfig.Config.theme.fontFamily
+            font.pixelSize: AppConfig.Config.theme.fontSizeIcon
         }
 
-        // WiFi icon — shown when WiFi is connected, or as a wifi_off fallback
-        // when nothing is connected and no wifi connecting-status is being shown.
         Text {
             id: wifiIcon
             anchors.verticalCenter: parent.verticalCenter
@@ -420,8 +362,8 @@ Item {
             text: root.wifiIconText()
             color: root.iconColor
             opacity: root.isConnected ? 0.9 : 0.6
-            font.family: "DejaVuSansM Nerd Font"
-            font.pixelSize: 16
+            font.family: AppConfig.Config.theme.fontFamily
+            font.pixelSize: AppConfig.Config.theme.fontSizeIcon
         }
 
         // Status icon + network name (non-connected states)
@@ -434,7 +376,7 @@ Item {
                 anchors.verticalCenter: parent.verticalCenter
                 text: root.statusIconText()
                 color: root.statusColor
-                font.family: "DejaVuSansM Nerd Font"
+                font.family: AppConfig.Config.theme.fontFamily
                 font.pixelSize: 12
             }
 
@@ -443,24 +385,14 @@ Item {
                 visible: root.connectingName !== ""
                 text: root.connectingName
                 color: root.statusColor
-                font.family: "DejaVuSansM Nerd Font"
+                font.family: AppConfig.Config.theme.fontFamily
                 font.pixelSize: 10
             }
         }
     }
 
-    // Hidden text to measure target width
-    Text {
-        id: infoMeasure
-        text: root.wifiName + " " + root.netIp + (root.isWifi ? " " + root.wifiBand + " " + root.wifiGen + (root.mlo ? " MLO" : "") : "") + " ↑" + Math.round(root.maxTxKb)
-        font.family: "DejaVuSansM Nerd Font"
-        font.pixelSize: 10
-        visible: false
-    }
-
     MouseArea {
         anchors.fill: parent
-        hoverEnabled: true
         acceptedButtons: Qt.LeftButton | Qt.RightButton
         cursorShape: Qt.PointingHandCursor
         onClicked: function(mouse) {
@@ -473,11 +405,6 @@ Item {
                 root.popupOpen = !root.popupOpen;
             }
         }
-        onEntered: {
-            root.hovered = true;
-            infoProc.running = true;
-        }
-        onExited: root.hovered = false
     }
 
 
@@ -502,11 +429,9 @@ Item {
             "  elif [ \"${FREQ:-0}\" -ge 5000 ]; then BAND='5G'",
             "  else BAND='2.4G'; fi",
             "  if echo \"$LINK\" | grep -qE '^MLD |Link [0-9]+ BSSID'; then MLO='MLO'; else MLO=''; fi",
-            "  echo \"${SSID}|${IP}|${GEN}|${BAND}|${MLO}\"",
+            "  echo \"${SSID}||${GEN}|${BAND}|${MLO}\"",
             "else",
-            "  SPEED=$(cat /sys/class/net/$AIFACE/speed 2>/dev/null || echo '')",
-            "  [ -n \"$SPEED\" ] && SPEED=\"${SPEED}M\" || SPEED='ETH'",
-            "  echo \"${SPEED}|${IP}\"",
+            "  echo \"|\"",
             "fi"
         ].join("\n")]
         running: false
@@ -515,16 +440,15 @@ Item {
         }
     }
 
-    FileView {
-        id: rxFile
-        path: root.activeIface ? "/sys/class/net/" + root.activeIface + "/statistics/rx_bytes" : ""
-        blockLoading: true
-    }
-
-    FileView {
-        id: txFile
-        path: root.activeIface ? "/sys/class/net/" + root.activeIface + "/statistics/tx_bytes" : ""
-        blockLoading: true
+    // Traffic data from daemon stream (persists across QS restarts)
+    Process {
+        id: daemonStream
+        command: ["curl", "-sN", "--unix-socket", root._sock, "http://d/net/stream"]
+        running: true
+        onRunningChanged: if (!running) running = true
+        stdout: SplitParser {
+            onRead: data => root.applyDaemonLine(data)
+        }
     }
 
     Process {
@@ -596,9 +520,6 @@ Item {
                 else if (newWifi && newWifi.split("|")[3] === "connected") iface = newWifi.split("|")[2] || "";
                 if (iface !== root.activeIface) {
                     root.activeIface = iface;
-                    root.prevRx = 0;
-                    root.prevTx = 0;
-                    root.prevTimestamp = 0;
                 }
             }
         }
@@ -612,17 +533,4 @@ Item {
         onTriggered: root.refreshStatus()
     }
 
-    Timer {
-        id: trafficTimer
-        interval: root.effectiveTrafficIntervalMs
-        running: true
-        repeat: true
-        onTriggered: {
-            if (root.activeIface) {
-                rxFile.reload();
-                txFile.reload();
-                root.parseTraffic();
-            }
-        }
-    }
 }
