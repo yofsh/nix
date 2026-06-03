@@ -1,5 +1,5 @@
 local term  = "foot"
-local speed = 4
+local speed = 3
 local step  = 25
 
 -- Host detection (reads /etc/hostname)
@@ -17,8 +17,11 @@ local EXT_MON    = {
   mode = "5120x1440@240",
   position = "0x0",
   scale = 1.0,
-  vrr = 1,
+  vrr = 2,
   bitdepth = 10,
+  -- cm = "auto",
+  -- sdrbrightness = 1.0,
+  -- sdrsaturation = 1.0,
 }
 local TV_MON     = {
   output = "HDMI-A-2",
@@ -49,8 +52,8 @@ local laptop = host.secondary
 
 hl.config({
   general    = {
-    gaps_in     = 5,
-    gaps_out    = 5,
+    gaps_in     = 2,
+    gaps_out    = 4,
     border_size = 0,
     col         = {
       active_border   = { colors = { "rgba(33ccff44)", "rgba(bab34e44)" }, angle = 45 },
@@ -142,7 +145,7 @@ local curves = {
 }
 for name, def in pairs(curves) do hl.curve(name, def) end
 
-local animCurve = "sp"
+local animCurve = "def"
 
 ------------------------------------------------------------------------
 -- Animations (per-leaf)
@@ -257,7 +260,8 @@ local term_rule = "[float; size (monitor_w*0.7) (monitor_h*0.7); move (monitor_w
     .. term .. [[ sh -c "printf '\n%.0s' {1..100}; exec $SHELL"]]
 
 local specials = {
-  { key = "B",     name = "bt",       desc = "Bluetooth", cmd = "[float; size 900 (monitor_h*0.7); center] foot -e 'bluetuith'" },
+  { key = "B",     name = "bt",       desc = "Bluetooth", cmd = "[float; size 900 (monitor_h*0.7); center] foot -e 'bt-tui'" },
+  { key = "B",     name = "wifi",     desc = "WiFi",      cmd = "[float; size 900 (monitor_h*0.7); center] foot -e 'wifi-tui'", mod = "SUPER + SHIFT" },
   { key = "G",     name = "audio",    desc = "Wiremix",   cmd = "[float; size 1100 (monitor_h*0.6); center] foot -e 'wiremix'" },
   { key = "N",     name = "obsidian", desc = "Obsidian",  cmd = "[float; size 1500 (monitor_h*0.9); center] obsidian" },
   { key = "grave", name = "term",     desc = "Terminal",  cmd = term_rule },
@@ -267,7 +271,7 @@ local specials = {
 }
 for _, s in ipairs(specials) do
   hl.workspace_rule({ workspace = "special:" .. s.name, monitor = screen, on_created_empty = s.cmd })
-  hl.bind("SUPER + " .. s.key, hl.dsp.workspace.toggle_special(s.name),
+  hl.bind((s.mod or "SUPER") .. " + " .. s.key, hl.dsp.workspace.toggle_special(s.name),
     { description = "Scratchpad: " .. s.desc })
 end
 
@@ -298,6 +302,7 @@ hl.on("hyprland.start", function()
   hl.exec_cmd("foot --server")
   hl.exec_cmd("hypr-watch-monitors")
   hl.exec_cmd("hypr-watch-windows")
+  hl.exec_cmd("qs-daemon")
   hl.exec_cmd("sleep 2 && quickshell")
 end)
 
@@ -405,10 +410,23 @@ hl.bind("SUPER + CTRL + V", hl.dsp.exec_cmd([[MAX_THINKING_TOKENS=0 CLAUDE_EXTRA
 hl.bind("SUPER + SHIFT + V", hl.dsp.exec_cmd("voice -m stream"), { description = "Voice → stream" })
 hl.bind("SUPER + CTRL + SHIFT + V", hl.dsp.exec_cmd("share-mobile"), { description = "Share with mobile" })
 
-hl.bind("ALT + grave", hl.dsp.exec_cmd("llm -n -w"), { description = "LLM" })
-hl.bind("ALT + CTRL + grave", hl.dsp.exec_cmd("llm -n -w -i"), { description = "LLM (image)" })
-hl.bind("ALT + SHIFT + grave", hl.dsp.exec_cmd("llm -n -w -V"), { description = "LLM (voice)" })
-hl.bind("ALT + SHIFT + CTRL + grave", hl.dsp.exec_cmd("llm -n -w -V -i"), { description = "LLM (voice + image)" })
+hl.bind("ALT + grave", hl.dsp.submap("AI"), { description = "AI submap" })
+hl.define_submap("AI", "reset", function()
+  -- Screen (around cursor)
+  hl.bind("S", hl.dsp.exec_cmd("llm -S -n"), { description = "Screen → LLM" })
+  hl.bind("A", hl.dsp.exec_cmd("llm -S -n --dmenu"), { description = "Screen → ask (dmenu)" })
+  hl.bind("L", hl.dsp.exec_cmd("llm -S --lens"), { description = "Screen → Google Lens" })
+  hl.bind("V", hl.dsp.exec_cmd("llm -S -n -V"), { description = "Screen → voice" })
+  -- Select region
+  hl.bind("I", hl.dsp.exec_cmd("llm -n -w -i"), { description = "Region → LLM" })
+  hl.bind("D", hl.dsp.exec_cmd("llm -n -w -i --dmenu"), { description = "Region → ask (dmenu)" })
+  hl.bind("G", hl.dsp.exec_cmd("lens"), { description = "Region → Google Lens" })
+  hl.bind("O", hl.dsp.exec_cmd("ocr"), { description = "OCR" })
+  -- Text (no image)
+  hl.bind("grave", hl.dsp.exec_cmd("llm -n -w"), { description = "LLM (text)" })
+  hl.bind("SHIFT + grave", hl.dsp.exec_cmd("llm -n -w -V"), { description = "LLM (voice)" })
+  hl.bind("escape", hl.dsp.submap("reset"))
+end)
 
 ------------------------------------------------------------------------
 -- Vision / barcode / bluetooth status
@@ -468,6 +486,8 @@ hl.bind("SUPER + SHIFT + F12", hl.dsp.exec_cmd("screen-record full"), { descript
 hl.bind("SUPER + S", hl.dsp.exec_cmd("screenshot -r -c -n"), { description = "Screenshot region → clipboard" })
 hl.bind("SUPER + SHIFT + S", hl.dsp.exec_cmd("screenshot -r -e -n"), { description = "Screenshot region → edit" })
 hl.bind("SUPER + ALT + S", hl.dsp.exec_cmd("screenshot -f -e -n"), { description = "Screenshot full → edit" })
+hl.bind("SUPER + CTRL + ALT + S", hl.dsp.exec_cmd("screenshot -w -c -n"),
+  { description = "Screenshot window → clipboard" })
 
 ------------------------------------------------------------------------
 -- System monitors (floating)
@@ -613,12 +633,14 @@ hl.define_submap("Monitor", function()
     { key = "W",         qs = "weather",     desc = "Weather" },
     { key = "M",         qs = "system",      desc = "System stats" },
     { key = "K",         qs = "khal",        desc = "Khal agenda" },
+    { key = "F",         qs = "focus",       desc = "Focus timer" },
+    { key = "U",         qs = "app-usage",   desc = "Wellbeing / usage" },
   }) do
     hl.bind(m.key, hl.dsp.exec_cmd("qs ipc call " .. m.qs .. " toggle"), { description = m.desc })
   end
   hl.bind("N", hl.dsp.exec_cmd("qs ipc call network togglePopup"), { description = "Network" })
   hl.bind("escape", function()
-    for _, w in ipairs({ "temperature", "battery", "weather", "system", "khal", "network" }) do
+    for _, w in ipairs({ "temperature", "battery", "weather", "system", "khal", "network", "focus", "app-usage" }) do
       hl.dispatch(hl.dsp.exec_cmd("qs ipc call " .. w .. " close"))
     end
     hl.dispatch(hl.dsp.submap("reset"))
@@ -796,7 +818,7 @@ hl.define_submap("Services", "reset", function()
     { key = "S", cmd = tui("systemctl-tui"),                                                                                                                desc = "systemctl-tui" },
     { key = "K", cmd = tui("kmon"),                                                                                                                         desc = "kmon" },
     { key = "J", cmd = tui([[sh -c 'journalctl -f -n3000 | lnav -t']]),                                                                                     desc = "journal" },
-    { key = "W", cmd = "[float; size (monitor_w*0.6) (monitor_h*0.7); center] " .. term .. " -e wifitui",                                                   desc = "wifi" },
+    { key = "W", cmd = "[float; size (monitor_w*0.6) (monitor_h*0.7); center] " .. term .. " -e wifi-tui",                                                  desc = "wifi" },
     { key = "Z", cmd = tui("sysz"),                                                                                                                         desc = "sysz" },
     { key = "A", cmd = [[pkill librepodsd; sleep 0.5 && ~/dev/librepods/linux/build/librepodsd & notify-send -i audio-headphones "LibrePods restarted"]],   desc = "Restart LibrePods" },
     { key = "P", cmd = [[systemctl --user restart pipewire pipewire-pulse wireplumber && notify-send -i audio-volume-high "PipeWire restarted"]],           desc = "Restart PipeWire" },
