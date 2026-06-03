@@ -43,6 +43,7 @@ REMOTE_MODEL = os.environ.get("VOICE_REMOTE_MODEL", "whisper-large")
 
 PID_DIR = "/tmp"
 TRANSCRIBING_FLAG = os.path.join(PID_DIR, "voice_transcribing")
+TYPING_FLAG = os.path.join(PID_DIR, "voice_typing")
 
 
 # --- Helpers ---
@@ -229,10 +230,11 @@ def do_transcribe(mode, remote):
         open(TRANSCRIBING_FLAG, "w").close()
         text = transcribe(audio, remote)
     finally:
-        try:
-            os.remove(TRANSCRIBING_FLAG)
-        except FileNotFoundError:
-            pass
+        for flag in (TRANSCRIBING_FLAG, TYPING_FLAG):
+            try:
+                os.remove(flag)
+            except FileNotFoundError:
+                pass
 
     try:
         os.remove(audio)
@@ -255,7 +257,14 @@ def cmd_dictate(args):
             print(text)
         else:
             subprocess.run(["wl-copy", text], check=False)
-            subprocess.run(["wtype", text], check=False)
+            try:
+                open(TYPING_FLAG, "w").close()
+                subprocess.run(["wtype", text], check=False)
+            finally:
+                try:
+                    os.remove(TYPING_FLAG)
+                except FileNotFoundError:
+                    pass
             notify("Transcribed", text)
 
     if args.stop or (not args.start and is_recording(mode)):

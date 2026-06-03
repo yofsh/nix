@@ -19,10 +19,17 @@ if [ -z "$PID" ]; then
 
   echo "Starting recording"
 	echo "$FILENAME $GEOMETRY"
+	# Show a thin red border just outside the recorded region (not for full-output).
+	if [ "$TYPE" != "full" ]; then
+		printf '%s' "$GEOMETRY" > /tmp/recordborder.geom
+		qs ipc call recordborder start >/dev/null 2>&1 || true
+	fi
 	wf-recorder -f "$FILENAME" -g "$GEOMETRY" -a > /dev/null 2>&1 &
   echo "Recording started"
 else
 	pkill --signal SIGINT wf-recorder
+	qs ipc call recordborder hide >/dev/null 2>&1 || true
+	rm -f /tmp/recordborder.geom
 	notify-send -u low -i camera "Recording complete"
 	echo "Recording complete"
 fi
