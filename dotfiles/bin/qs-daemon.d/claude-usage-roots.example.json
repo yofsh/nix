@@ -1,0 +1,8 @@
+{
+  "_help": "Working directories to treat as their own project bucket in the Claude-usage breakdown. A session whose cwd is at or under one of these collapses to it (deepest match wins). Anything not under a listed root falls back to its git repo root, then to the cwd itself — so you only list the sub-apps you want carved out of their repo. Paths may start with ~. Copy this to claude-usage-roots.json (gitignored), edit, and restart qs-daemon.",
+  "roots": [
+    "~/nix/dotfiles/quickshell",
+    "~/nix/tools/wifi-tui",
+    "~/nix/tools/bt-tui"
+  ]
+}

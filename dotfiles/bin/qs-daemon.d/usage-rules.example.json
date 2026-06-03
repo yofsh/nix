@@ -1,0 +1,253 @@
+{
+  "categories": {
+    "Development": {
+      "color": "#89b4fa",
+      "icon": ""
+    },
+    "Communication": {
+      "color": "#a6e3a1",
+      "icon": ""
+    },
+    "Entertainment": {
+      "color": "#f38ba8",
+      "icon": ""
+    },
+    "Browsing": {
+      "color": "#fab387",
+      "icon": ""
+    },
+    "Productivity": {
+      "color": "#cba6f7",
+      "icon": ""
+    },
+    "System": {
+      "color": "#94e2d5",
+      "icon": ""
+    },
+    "Work": {
+      "color": "#f9e2af",
+      "icon": "󰦑"
+    },
+    "Other": {
+      "color": "#585b70",
+      "icon": ""
+    }
+  },
+  "rules": [
+    {
+      "match": {
+        "class": "^(foot|kitty|alacritty|wezterm|com\\.mitchellh\\.ghostty)$",
+        "title": "^[⠂⠐✳⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏] |Claude Code|Copilot|aider|gptel"
+      },
+      "category": "Development",
+      "subcategory": "AI"
+    },
+    {
+      "match": {
+        "class": "^(foot|kitty|alacritty|wezterm|com\\.mitchellh\\.ghostty)$"
+      },
+      "category": "Development",
+      "subcategory": "Terminal"
+    },
+    {
+      "match": {
+        "class": "^(code|codium|neovide|zed|jetbrains-.*)$"
+      },
+      "category": "Development",
+      "subcategory": "Editor"
+    },
+    {
+      "match": {
+        "class": "^(firefox|google-chrome|chromium|brave|brave-browser|vivaldi-stable)$",
+        "title": ".*(GitHub|GitLab|Bitbucket).*"
+      },
+      "category": "Development",
+      "subcategory": "Code Review"
+    },
+    {
+      "match": {
+        "class": "^(firefox|google-chrome|chromium|brave|brave-browser|vivaldi-stable)$",
+        "title": ".*(· (Issue|Pull Request) |Releases ·|Actions ·|[A-Za-z][\\w-]*/[\\w.-]+:).*"
+      },
+      "category": "Development",
+      "subcategory": "Code Review"
+    },
+    {
+      "match": {
+        "class": "^(firefox|google-chrome|chromium|brave|brave-browser|vivaldi-stable)$",
+        "title": ".*(Stack Overflow|stackoverflow|docs\\.|documentation|MDN|DevDocs).*"
+      },
+      "category": "Development",
+      "subcategory": "Documentation"
+    },
+    {
+      "match": {
+        "class": "^(firefox|google-chrome|chromium|brave|brave-browser|vivaldi-stable)$",
+        "title": ".*(ChatGPT|Claude|Copilot|Gemini).*"
+      },
+      "category": "Development",
+      "subcategory": "AI"
+    },
+    {
+      "match": {
+        "class": "^(firefox|google-chrome|chromium|brave|brave-browser|vivaldi-stable)$",
+        "title": "^Picture-in-Picture$"
+      },
+      "category": "Entertainment",
+      "subcategory": "Video"
+    },
+    {
+      "match": {
+        "class": "^(firefox|google-chrome|chromium|brave|brave-browser|vivaldi-stable)$",
+        "title": ".*(YouTube|Twitch|Netflix|Plex|Jellyfin).*"
+      },
+      "category": "Entertainment",
+      "subcategory": "Video"
+    },
+    {
+      "match": {
+        "class": "^(firefox|google-chrome|chromium|brave|brave-browser|vivaldi-stable)$",
+        "title": ".*(Reddit|Hacker News|Lobsters).*"
+      },
+      "category": "Entertainment",
+      "subcategory": "Social"
+    },
+    {
+      "match": {
+        "class": "^(firefox|google-chrome|chromium|brave|brave-browser|vivaldi-stable)$",
+        "title": ".*(Discord|Telegram|Slack|Element|Signal).*"
+      },
+      "category": "Communication",
+      "subcategory": "Chat"
+    },
+    {
+      "match": {
+        "class": "^(firefox|google-chrome|chromium|brave|brave-browser|vivaldi-stable)$",
+        "title": ".*(Gmail|Outlook|ProtonMail|Fastmail|Yahoo Mail|Zoho Mail|Roundcube|Mail —).*"
+      },
+      "category": "Communication",
+      "subcategory": "Email"
+    },
+    {
+      "match": {
+        "class": "^(firefox|google-chrome|chromium|brave|brave-browser|vivaldi-stable)$",
+        "title": ".*(Google Docs|Sheets|Slides|Notion|Obsidian).*"
+      },
+      "category": "Productivity",
+      "subcategory": "Documents"
+    },
+    {
+      "match": {
+        "class": "^(firefox|google-chrome|chromium|brave|brave-browser|vivaldi-stable)$",
+        "title": ".*Google Translate.*"
+      },
+      "category": "Productivity",
+      "subcategory": "Tools"
+    },
+    {
+      "match": {
+        "class": "^(firefox|google-chrome|chromium|brave|brave-browser|vivaldi-stable)$"
+      },
+      "category": "Browsing",
+      "subcategory": "Web"
+    },
+    {
+      "match": {
+        "class": "^(discord|vesktop|webcord)$"
+      },
+      "category": "Communication",
+      "subcategory": "Chat"
+    },
+    {
+      "match": {
+        "class": "^(org\\.telegram\\.desktop|telegram-desktop|telegramdesktop)$"
+      },
+      "category": "Communication",
+      "subcategory": "Chat"
+    },
+    {
+      "match": {
+        "class": "^(slack|Slack)$"
+      },
+      "category": "Communication",
+      "subcategory": "Chat"
+    },
+    {
+      "match": {
+        "class": "^(thunderbird|evolution|geary)$"
+      },
+      "category": "Communication",
+      "subcategory": "Email"
+    },
+    {
+      "match": {
+        "class": "^(nautilus|thunar|nemo|pcmanfm|dolphin)$"
+      },
+      "category": "Productivity",
+      "subcategory": "Files"
+    },
+    {
+      "match": {
+        "class": "^(libreoffice.*|soffice)$"
+      },
+      "category": "Productivity",
+      "subcategory": "Office"
+    },
+    {
+      "match": {
+        "class": "^(obsidian|logseq|joplin)$"
+      },
+      "category": "Productivity",
+      "subcategory": "Notes"
+    },
+    {
+      "match": {
+        "class": "^(mpv|vlc|celluloid|imv)$"
+      },
+      "category": "Entertainment",
+      "subcategory": "Media"
+    },
+    {
+      "match": {
+        "class": "^(spotify|Spotify)$"
+      },
+      "category": "Entertainment",
+      "subcategory": "Music"
+    },
+    {
+      "match": {
+        "class": "^(steam|steam_app_.*|lutris|gamescope|heroic|.*\\.exe)$"
+      },
+      "category": "Entertainment",
+      "subcategory": "Gaming"
+    },
+    {
+      "match": {
+        "class": "^(gimp|inkscape|krita|blender)$"
+      },
+      "category": "Productivity",
+      "subcategory": "Creative"
+    },
+    {
+      "match": {
+        "class": "^(pavucontrol|nm-connection-editor|blueman-manager|nwg-look)$"
+      },
+      "category": "System",
+      "subcategory": "Settings"
+    },
+    {
+      "match": {
+        "class": "^(zenity|gtk-launch|xdg-desktop-portal-gtk)$"
+      },
+      "category": "System",
+      "subcategory": "Settings"
+    },
+    {
+      "match": {
+        "class": "^(hypr.*|quickshell|vicinae|xdg-desktop-portal.*)$"
+      },
+      "category": "System",
+      "subcategory": "Desktop"
+    }
+  ]
+}

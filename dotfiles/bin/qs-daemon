@@ -1,0 +1,3 @@
+#!/usr/bin/env bun
+import { startDaemon } from "./qs-daemon.d/server.ts";
+startDaemon();

@@ -9,3 +9,6 @@ dotfiles/khal/config
 dotfiles/vdirsyncer/config
 dotfiles/quickshell/modules/khal/calendar-map.json
 dotfiles/quickshell/config/private.json
+
+dotfiles/bin/qs-daemon.d/usage-rules.json
+dotfiles/bin/qs-daemon.d/claude-usage-roots.json
