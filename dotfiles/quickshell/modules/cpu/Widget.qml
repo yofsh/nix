@@ -35,6 +35,13 @@ Item {
         return Helpers.Colors.textMuted;
     }
 
+    property string profileIcon: {
+        if (profileOutput === "performance") return "󰓅";
+        if (profileOutput === "balanced") return "󰔏";
+        if (profileOutput === "power-saver") return "󰌪";
+        return "";
+    }
+
     property var profiles: ["power-saver", "balanced", "performance"]
 
     Canvas {
@@ -95,7 +102,7 @@ Item {
         z: 1
 
         Text {
-            text: root.currentFreq
+            text: root.profileIcon + " " + root.currentFreq
             color: root.profileColor
             font.family: AppConfig.Config.theme.fontFamily
             font.pixelSize: AppConfig.Config.theme.fontSizeSmall

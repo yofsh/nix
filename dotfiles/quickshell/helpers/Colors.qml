@@ -12,6 +12,7 @@ QtObject {
     // Modules
     readonly property color cpu: AppConfig.Config.theme.colors.cpu
     readonly property color cpuUser: AppConfig.Config.theme.colors.cpuUser
+    readonly property color gpu: AppConfig.Config.theme.colors.gpu
     readonly property color memory: AppConfig.Config.theme.colors.memory
     readonly property color battery: AppConfig.Config.theme.colors.battery
     readonly property color batteryCharging: AppConfig.Config.theme.colors.batteryCharging

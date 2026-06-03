@@ -4,14 +4,12 @@ import QtQuick
 import Quickshell
 import "." as Core
 
+// Modules are statically linked (BarHost widgets/popups, ServiceHost services), so
+// this is no longer a discovery/loader registry — it just tracks live instances so
+// popups can find their driving widget and `context.service` can resolve, plus a
+// thin passthrough to per-module config.
 Scope {
     id: root
-
-    property string quickshellRoot: Qt.resolvedUrl("..").toString().replace("file://", "")
-
-    property var packages: ({})
-    property bool ready: false
-    property int packagesRevision: 0
 
     property var widgetInstances: ({})
     property int widgetRevision: 0
@@ -22,136 +20,27 @@ Scope {
     property var windowInstances: ({})
     property int windowRevision: 0
 
-    signal loaded()
-
-    function packageById(id) {
-        return packages[id] || null;
-    }
-
     function packageConfig(id, defaults) {
         return Core.ConfigService.packageConfig(id, defaults || {});
     }
 
-    function entryUrl(id, entryName) {
-        var pkg = packageById(id);
-        if (!pkg)
-            return "";
-
-        var fileMap = { widget: "Widget.qml", popup: "Popup.qml", service: "Service.qml" };
-        var file = fileMap[entryName];
-        if (!file)
-            return "";
-
-        if (entryName === "widget" && !pkg.hasWidget) return "";
-        if (entryName === "popup" && !pkg.hasPopup) return "";
-        if (entryName === "service" && !pkg.hasService) return "";
-
-        return Qt.resolvedUrl("../" + pkg.basePath + "/" + file);
-    }
-
-    function allPackageIds() {
-        packagesRevision;
-        return Object.keys(packages);
-    }
-
-    function uniqueIds(ids) {
-        var seen = {};
-        var result = [];
-
-        for (var i = 0; i < ids.length; i++) {
-            var id = ids[i];
-            if (!id || seen[id])
-                continue;
-            seen[id] = true;
-            result.push(id);
-        }
-
-        return result;
-    }
-
-    function barIds(section) {
-        var bar = Core.ConfigService.section("bar", { left: [], center: [], right: [] });
-        var ids = uniqueIds(bar[section] || []);
-        var result = [];
-
-        for (var i = 0; i < ids.length; i++) {
-            var id = ids[i];
-            var pkg = packageById(id);
-            if (!pkg || !pkg.hasWidget)
-                continue;
-            if (!Core.ConfigService.isPackageEnabled(id))
-                continue;
-            result.push(id);
-        }
-
-        return result;
-    }
-
-    function isInBar(id) {
-        return barIds("left").indexOf(id) >= 0
-            || barIds("center").indexOf(id) >= 0
-            || barIds("right").indexOf(id) >= 0;
-    }
-
-    function popupIds() {
-        var ids = allPackageIds();
-        var result = [];
-
-        for (var i = 0; i < ids.length; i++) {
-            var id = ids[i];
-            var pkg = packageById(id);
-            if (!pkg || !pkg.hasPopup)
-                continue;
-            if (!Core.ConfigService.isPackageEnabled(id))
-                continue;
-
-            var moduleConfig = Core.ConfigService.packageConfig(id, {});
-            if (!isInBar(id) && moduleConfig.alwaysLoadPopup !== true)
-                continue;
-
-            result.push(id);
-        }
-
-        return result;
-    }
-
-    function serviceIds() {
-        var ids = allPackageIds();
-        var result = [];
-
-        for (var i = 0; i < ids.length; i++) {
-            var id = ids[i];
-            var pkg = packageById(id);
-            if (!pkg)
-                continue;
-            if (!Core.ConfigService.isPackageEnabled(id))
-                continue;
-            // Modules with a Service.qml or a Popup.qml (popup gets auto-IPC)
-            if (!pkg.hasService && !pkg.hasPopup)
-                continue;
-
-            result.push(id);
-        }
-
-        return result;
-    }
-
-    function widgetKey(moduleId, screenName) {
+    function instanceKey(moduleId, screenName) {
         return moduleId + "|" + (screenName || "global");
     }
 
+    // -- widget instances (per screen) --------------------------------------
+
     function registerWidgetInstance(moduleId, screenName, instance) {
         var next = Object.assign({}, widgetInstances);
-        next[widgetKey(moduleId, screenName)] = instance;
+        next[instanceKey(moduleId, screenName)] = instance;
         widgetInstances = next;
         widgetRevision += 1;
     }
 
     function unregisterWidgetInstance(moduleId, screenName) {
-        var key = widgetKey(moduleId, screenName);
+        var key = instanceKey(moduleId, screenName);
         if (!(key in widgetInstances))
             return;
-
         var next = Object.assign({}, widgetInstances);
         delete next[key];
         widgetInstances = next;
@@ -160,8 +49,10 @@ Scope {
 
     function widgetInstance(moduleId, screenName) {
         widgetRevision;
-        return widgetInstances[widgetKey(moduleId, screenName)] || null;
+        return widgetInstances[instanceKey(moduleId, screenName)] || null;
     }
+
+    // -- service instances (global) -----------------------------------------
 
     function registerServiceInstance(moduleId, instance) {
         var next = Object.assign({}, serviceInstances);
@@ -173,7 +64,6 @@ Scope {
     function unregisterServiceInstance(moduleId) {
         if (!(moduleId in serviceInstances))
             return;
-
         var next = Object.assign({}, serviceInstances);
         delete next[moduleId];
         serviceInstances = next;
@@ -185,18 +75,19 @@ Scope {
         return serviceInstances[moduleId] || null;
     }
 
+    // -- window instances (per screen) --------------------------------------
+
     function registerWindowInstance(moduleId, screenName, instance) {
         var next = Object.assign({}, windowInstances);
-        next[widgetKey(moduleId, screenName)] = instance;
+        next[instanceKey(moduleId, screenName)] = instance;
         windowInstances = next;
         windowRevision += 1;
     }
 
     function unregisterWindowInstance(moduleId, screenName) {
-        var key = widgetKey(moduleId, screenName);
+        var key = instanceKey(moduleId, screenName);
         if (!(key in windowInstances))
             return;
-
         var next = Object.assign({}, windowInstances);
         delete next[key];
         windowInstances = next;
@@ -205,43 +96,6 @@ Scope {
 
     function windowInstance(moduleId, screenName) {
         windowRevision;
-        return windowInstances[widgetKey(moduleId, screenName)] || null;
-    }
-
-    function parseScanOutput(text) {
-        var lines = text.split("\n");
-        var parsed = {};
-
-        for (var i = 0; i < lines.length; i++) {
-            var line = lines[i].trim();
-            if (!line)
-                continue;
-
-            var parts = line.split("|");
-            if (parts.length < 5)
-                continue;
-
-            var id = parts[0];
-            var hasWidget = parts[1] === "true";
-            var hasPopup = parts[2] === "true";
-            var hasService = parts[3] === "true";
-            var basePath = parts[4];
-
-            if (!id)
-                continue;
-
-            parsed[id] = {
-                id: id,
-                basePath: basePath,
-                hasWidget: hasWidget,
-                hasPopup: hasPopup,
-                hasService: hasService
-            };
-        }
-
-        packages = parsed;
-        ready = true;
-        packagesRevision += 1;
-        loaded();
+        return windowInstances[instanceKey(moduleId, screenName)] || null;
     }
 }

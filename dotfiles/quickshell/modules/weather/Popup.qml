@@ -6,21 +6,16 @@ import "../../helpers" as Helpers
 import "../../components" as Components
 import "../../config" as AppConfig
 
-PanelWindow {
+// Content only — Core.PackagePopup provides window/placement/state/click-out/IPC.
+Item {
     id: root
-    property int barHeight: AppConfig.Config.theme.barHeight
     property bool popupOpen: false
     property real latitude: AppConfig.Config.weather.latitude
     property real longitude: AppConfig.Config.weather.longitude
     property string cityName: AppConfig.Config.weather.city
 
-    anchors.top: true
-    exclusionMode: ExclusionMode.Ignore
-    margins.top: barHeight + AppConfig.Config.theme.popupTopGap
     implicitWidth: 1020
     implicitHeight: 380
-    visible: popupOpen
-    color: "transparent"
 
     // Current weather
     property real temperature: 0
@@ -816,7 +811,7 @@ PanelWindow {
                         text: modelData.label
                         color: Helpers.Colors.textMuted
                         font.family: AppConfig.Config.theme.fontFamily
-                        font.pixelSize: AppConfig.Config.theme.fontSizeTiny
+                        font.pixelSize: AppConfig.Config.theme.popupFontSizeTiny
                     }
                 }
 

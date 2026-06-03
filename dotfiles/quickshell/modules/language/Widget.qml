@@ -2,6 +2,7 @@ import QtQuick
 import Quickshell.Hyprland
 import Quickshell.Io
 import "../../helpers" as Helpers
+import "../../config" as AppConfig
 
 Item {
     id: root
@@ -10,11 +11,21 @@ Item {
 
     property string layout: ""
 
+    property color langColor: {
+        switch (layout) {
+            case "en": return "#42a5f5";
+            case "uk": return "#ffb74d";
+            case "ru": return "#ef5350";
+            case "de": return "#a6e3a1";
+            case "es": return "#f38ba8";
+            default: return Helpers.Colors.textDefault;
+        }
+    }
+
     Connections {
         target: Hyprland
         function onRawEvent(event) {
             if (event.name === "activelayout") {
-                // event data format: "keyboard_name,layout_name"
                 var parts = event.data.split(",");
                 if (parts.length >= 2) {
                     root.layout = parts[parts.length - 1].trim().substring(0, 2).toLowerCase();
@@ -23,7 +34,6 @@ Item {
         }
     }
 
-    // Fetch initial layout via Hyprland request socket
     Socket {
         id: initSocket
         path: Hyprland.requestSocketPath
@@ -51,9 +61,10 @@ Item {
     Text {
         id: langText
         anchors.centerIn: parent
-        text: root.layout
-        color: Helpers.Colors.textDefault
-        font.family: "DejaVuSansM Nerd Font"
-        font.pixelSize: 12
+        text: root.layout.charAt(0).toUpperCase()
+        color: root.langColor
+        font.family: AppConfig.Config.theme.fontFamily
+        font.pixelSize: AppConfig.Config.theme.fontSizeDefault
+        font.bold: true
     }
 }

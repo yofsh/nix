@@ -6,18 +6,13 @@ import "../../helpers" as Helpers
 import "../../components" as Components
 import "../../config" as AppConfig
 
-PanelWindow {
+// Content only — Core.PackagePopup provides window/placement/state/click-out/IPC.
+Item {
     id: root
-    property int barHeight: AppConfig.Config.theme.barHeight
     property bool popupOpen: false
 
-    anchors.top: true
-    exclusionMode: ExclusionMode.Ignore
-    margins.top: barHeight + AppConfig.Config.theme.popupTopGap
     implicitWidth: popupGrid.width + 40
     implicitHeight: popupGrid.height + 32
-    visible: popupOpen
-    color: "transparent"
 
     property var sensorGroups: []
 

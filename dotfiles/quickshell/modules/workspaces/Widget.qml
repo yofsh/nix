@@ -2,11 +2,18 @@ import QtQuick
 import Quickshell
 import Quickshell.Hyprland
 import "../../helpers" as Helpers
+import "../../config" as AppConfig
 
 Item {
     id: root
-    implicitWidth: wsRow.implicitWidth + 4
+    implicitWidth: wsRow.implicitWidth + 8
     implicitHeight: parent ? parent.height : 30
+
+    Rectangle {
+        anchors.fill: parent
+        radius: AppConfig.Config.theme.interactiveHoverRadius || 4
+        color: Qt.rgba(Helpers.Colors.accent.r, Helpers.Colors.accent.g, Helpers.Colors.accent.b, 0.14)
+    }
 
     property var specialIcons: ({
         "special:ha": "󰟐",
@@ -137,8 +144,8 @@ Item {
                     anchors.verticalCenter: parent.verticalCenter
                     anchors.verticalCenterOffset: modelData.isSpecial ? 1 : 0
                     text: modelData.label
-                    font.family: "DejaVuSansM Nerd Font"
-                    font.pixelSize: modelData.isSpecial ? 14 : 13
+                    font.family: AppConfig.Config.theme.fontFamily
+                    font.pixelSize: modelData.isSpecial ? AppConfig.Config.theme.fontSizeIcon : AppConfig.Config.theme.fontSizeDefault
                     font.bold: true
                     horizontalAlignment: Text.AlignHCenter
                     color: {
@@ -154,9 +161,9 @@ Item {
                     acceptedButtons: Qt.LeftButton
                     onClicked: {
                         if (modelData.isSpecial) {
-                            Hyprland.dispatch("togglespecialworkspace " + modelData.name.replace("special:", ""));
+                            Hyprland.dispatch('hl.dsp.workspace.toggle_special("' + modelData.name.replace("special:", "") + '")');
                         } else {
-                            Hyprland.dispatch("workspace " + modelData.wsId);
+                            Hyprland.dispatch('hl.dsp.focus({workspace=' + modelData.wsId + '})');
                         }
                     }
                 }
@@ -174,9 +181,10 @@ Item {
             _scrollAccum += wheel.angleDelta.y;
             if (Math.abs(_scrollAccum) < 120) return;
             if (_scrollAccum > 0)
-                Hyprland.dispatch("workspace e+1");
+                Hyprland.dispatch('hl.dsp.focus({workspace="e+1"})');
             else
-                Hyprland.dispatch("workspace e-1");
+                Hyprland.dispatch('hl.dsp.focus({workspace="e-1"})');
+
             _scrollAccum = 0;
         }
     }

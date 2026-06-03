@@ -5,8 +5,15 @@ import "../../config" as AppConfig
 
 Item {
     id: root
-    implicitWidth: row.implicitWidth + 4
+    implicitWidth: row.implicitWidth + 10
     implicitHeight: parent ? parent.height : 22
+    property bool interactive: true   // opens its popup via context.togglePopup()
+
+    Rectangle {
+        anchors.fill: parent
+        radius: AppConfig.Config.theme.interactiveHoverRadius || 4
+        color: Qt.rgba(0.1, 0.7, 0.7, 0.12)
+    }
 
     property var context: null
     property bool hovered: false
@@ -114,7 +121,7 @@ Item {
         Text {
             text: root.dataLoaded ? root.weatherIcon(root.weatherCode, root.isDay) : "󰖐"
             color: root.dataLoaded ? root.tempColor(root.temperature) : Helpers.Colors.textMuted
-            font.family: "DejaVuSansM Nerd Font"
+            font.family: AppConfig.Config.theme.fontFamily
             font.pixelSize: 12
             anchors.verticalCenter: parent.verticalCenter
         }
@@ -122,7 +129,7 @@ Item {
         Text {
             text: root.dataLoaded ? Math.round(root.temperature) + "°" : "--"
             color: root.dataLoaded ? root.tempColor(root.temperature) : Helpers.Colors.textMuted
-            font.family: "DejaVuSansM Nerd Font"
+            font.family: AppConfig.Config.theme.fontFamily
             font.pixelSize: 12
             anchors.verticalCenter: parent.verticalCenter
         }
@@ -131,7 +138,7 @@ Item {
             visible: root.aqLoaded
             text: root.euAqi
             color: root.aqiColor(root.euAqi)
-            font.family: "DejaVuSansM Nerd Font"
+            font.family: AppConfig.Config.theme.fontFamily
             font.pixelSize: 12
             anchors.verticalCenter: parent.verticalCenter
         }

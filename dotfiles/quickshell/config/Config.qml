@@ -31,12 +31,18 @@ QtObject {
         spacingSmall: 4,
         spacingMedium: 6,
         spacingDefault: 8,
-        fontSizeTiny: 8,
-        fontSizeXSmall: 9,
-        fontSizeSmall: 10,
-        fontSizeBody: 11,
-        fontSizeDefault: 12,
-        fontSizeMedium: 13,
+        fontSizeTiny: 10,
+        fontSizeXSmall: 11,
+        fontSizeSmall: 12,
+        fontSizeBody: 13,
+        fontSizeDefault: 14,
+        fontSizeMedium: 15,
+        popupFontSizeTiny: 11,
+        popupFontSizeXSmall: 12,
+        popupFontSizeSmall: 13,
+        popupFontSizeBody: 14,
+        popupFontSizeDefault: 16,
+        popupFontSizeMedium: 17,
         fontSizeIcon: 14,
         fontSizeIconLarge: 15,
         fontSizeTitleLarge: 24,
@@ -50,6 +56,7 @@ QtObject {
             textMuted: "#80ffffff",
             cpu: "#ff9800",
             cpuUser: "#4caf50",
+            gpu: "#26c6da",
             memory: "#80c882",
             battery: "#1abc9c",
             batteryCharging: "#4caf50",
@@ -93,6 +100,11 @@ QtObject {
         powerSaverColor: "#89b4fa"
     })
 
+    readonly property var gpu: Core.ConfigService.section("gpu", {
+        usageColor: "#4dd0e1",
+        memColor: "#80c882"
+    })
+
     readonly property var notifications: Core.ConfigService.section("notifications", {
         position: "top-left",
         horizontalOffset: 400,
@@ -133,7 +145,8 @@ QtObject {
         dictatePidFile: "/tmp/voice_dictate.pid",
         claudePidFile: "/tmp/voice_claude.pid",
         streamPidFile: "/tmp/voice_stream.pid",
-        transcribingFlag: "/tmp/voice_transcribing"
+        transcribingFlag: "/tmp/voice_transcribing",
+        typingFlag: "/tmp/voice_typing"
     })
 
     readonly property var weather: Core.ConfigService.section("weather", {
@@ -148,10 +161,8 @@ QtObject {
         haHistoryDays: 4
     })
 
-    readonly property var bar: Core.ConfigService.section("bar", {
-        left: [],
-        center: [],
-        right: []
+    readonly property var daemon: Core.ConfigService.section("daemon", {
+        socket: "/run/user/1000/qs-daemon.sock"
     })
 
     readonly property var modules: Core.ConfigService.section("modules", {})

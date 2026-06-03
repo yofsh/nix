@@ -3,24 +3,41 @@ import Quickshell.Io
 import Quickshell.Wayland
 import QtQuick
 import "../../config" as AppConfig
+import "../../core" as Core
 
+// Standalone window (needs WlrLayershell keyboard focus for arrow-key nav), so
+// unlike other popups it can't be a content Item under PackagePopup — it wires its
+// own open-state + IPC. `screen` is the inherited PanelWindow property (set by host).
 PanelWindow {
     id: root
-    property var context: null
+    readonly property var context: Core.ModuleContext {
+        moduleId: "wallpaper"
+        screen: root.screen
+    }
     property int barHeight: AppConfig.Config.theme.barHeight
-    property bool popupOpen: false
+
+    property int popupRevision: Core.PopupService.revision
+    readonly property bool popupOpen: {
+        popupRevision;
+        return Core.PopupService.isOpen("wallpaper", root.screen && root.screen.name ? root.screen.name : "global");
+    }
 
     function closePopup() {
         revertAndClose();
     }
 
-    onDismissed: {
-        if (context)
-            context.closePopup();
+    onDismissed: context.closePopup()
+
+    IpcHandler {
+        target: "wallpaper"
+        function toggle() { root.context.togglePopup(); }
+        function open() { root.context.openPopup(); }
+        function close() { root.context.closePopup(); }
     }
 
     anchors.top: true
     anchors.bottom: true
+    margins.top: barHeight + AppConfig.Config.theme.popupTopGap
     exclusionMode: ExclusionMode.Ignore
     property real screenRatio: screen ? screen.width / screen.height : 16/9
     property real cardHeight: screen ? Math.floor((screen.height - 30 - 28 * 8) / 7) : 100

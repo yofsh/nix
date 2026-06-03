@@ -1,6 +1,7 @@
 import QtQuick
 import Quickshell.Io
 import "../../helpers" as Helpers
+import "../../config" as AppConfig
 
 Item {
     id: root
@@ -16,7 +17,6 @@ Item {
     property string label1: ""
     property string path1: ""
 
-    property bool hovered: false
     property bool popupOpen: false
     property int temp0: path0 && file0.path ? Math.round(parseInt(file0.text().trim()) / 1000) || 0 : 0
     property int temp1: path1 && file1.path ? Math.round(parseInt(file1.text().trim()) / 1000) || 0 : 0
@@ -121,28 +121,25 @@ Item {
 
         Text {
             visible: root.path0 !== ""
-            text: (root.hovered ? root.label0 + " " : "") + (root.temp0 > 0 ? root.temp0 + "°" : "--")
+            text: root.temp0 > 0 ? root.temp0 + "°" : "--"
             color: root.temp0 > 0 ? root.tempColor(root.temp0) : Helpers.Colors.textMuted
-            font.family: "DejaVuSansM Nerd Font"
-            font.pixelSize: 9
+            font.family: AppConfig.Config.theme.fontFamily
+            font.pixelSize: AppConfig.Config.theme.fontSizeSmall
         }
 
         Text {
             visible: root.path1 !== ""
-            text: (root.hovered ? root.label1 + " " : "") + (root.temp1 > 0 ? root.temp1 + "°" : "--")
+            text: root.temp1 > 0 ? root.temp1 + "°" : "--"
             color: root.temp1 > 0 ? root.tempColor(root.temp1) : Helpers.Colors.textMuted
-            font.family: "DejaVuSansM Nerd Font"
-            font.pixelSize: 9
+            font.family: AppConfig.Config.theme.fontFamily
+            font.pixelSize: AppConfig.Config.theme.fontSizeSmall
         }
     }
 
     MouseArea {
         anchors.fill: parent
-        hoverEnabled: true
         acceptedButtons: Qt.LeftButton
         cursorShape: Qt.PointingHandCursor
         onClicked: root.popupOpen = !root.popupOpen
-        onEntered: root.hovered = true
-        onExited: root.hovered = false
     }
 }

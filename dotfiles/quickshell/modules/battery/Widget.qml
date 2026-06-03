@@ -1,6 +1,7 @@
 import QtQuick
 import Quickshell.Services.UPower
 import "../../helpers" as Helpers
+import "../../config" as AppConfig
 
 Item {
     id: root
@@ -80,8 +81,8 @@ Item {
             anchors.horizontalCenter: parent.horizontalCenter
             text: root.consumptionText
             color: root.textColor
-            font.family: "DejaVuSansM Nerd Font"
-            font.pixelSize: 9
+            font.family: AppConfig.Config.theme.fontFamily
+            font.pixelSize: AppConfig.Config.theme.fontSizeSmall
         }
 
         Row {
@@ -91,15 +92,15 @@ Item {
             Text {
                 text: root.batteryText
                 color: root.textColor
-                font.family: "DejaVuSansM Nerd Font"
-                font.pixelSize: 9
+                font.family: AppConfig.Config.theme.fontFamily
+                font.pixelSize: AppConfig.Config.theme.fontSizeSmall
             }
 
             Text {
                 text: root.timeText !== "" ? " " + root.timeText : ""
                 color: Helpers.Colors.textMuted
-                font.family: "DejaVuSansM Nerd Font"
-                font.pixelSize: 9
+                font.family: AppConfig.Config.theme.fontFamily
+                font.pixelSize: AppConfig.Config.theme.fontSizeSmall
                 visible: root.timeText !== ""
             }
         }

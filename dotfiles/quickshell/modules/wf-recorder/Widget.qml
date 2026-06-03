@@ -1,6 +1,7 @@
 import QtQuick
 import Quickshell.Io
 import "../../helpers" as Helpers
+import "../../config" as AppConfig
 
 Item {
     id: root
@@ -15,7 +16,7 @@ Item {
         anchors.verticalCenter: parent.verticalCenter
         text: " ● "
         color: Helpers.Colors.mutedRed
-        font.family: "DejaVuSansM Nerd Font"
+        font.family: AppConfig.Config.theme.fontFamily
         font.pixelSize: 12
     }
 

@@ -1,5 +1,6 @@
 import QtQuick
 import "../../helpers" as Helpers
+import "../../config" as AppConfig
 import "../../core" as Core
 
 Item {
@@ -19,7 +20,7 @@ Item {
     property bool dnd: notificationsWindow ? notificationsWindow.dnd : false
 
     property string displayText: {
-        if (dnd) return count > 0 ? "󰵙 " + count : "󰂞";
+        if (dnd) return count > 0 ? "󰂛 " + count : "󰂛";
         if (count > 0) return "󰂚 " + count;
         return "󰂚";
     }
@@ -28,9 +29,9 @@ Item {
         id: notifText
         anchors.verticalCenter: parent.verticalCenter
         text: root.displayText
-        color: root.count > 0 ? Helpers.Colors.textDefault : Helpers.Colors.textMuted
-        font.family: "DejaVuSansM Nerd Font"
-        font.pixelSize: 14
+        color: root.dnd ? "#ff9800" : root.count > 0 ? Helpers.Colors.textDefault : Helpers.Colors.textMuted
+        font.family: AppConfig.Config.theme.fontFamily
+        font.pixelSize: AppConfig.Config.theme.fontSizeIcon
     }
 
     MouseArea {

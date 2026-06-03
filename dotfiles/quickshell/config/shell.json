@@ -3,11 +3,11 @@
     "fontFamily": "DejaVuSansM Nerd Font",
     "barHeight": 26,
     "surfaceRadius": 14,
-    "barRadius": 6,
+    "barRadius": 5,
     "cardRadiusSmall": 8,
     "surfaceOpacity": 0.8,
     "surfaceOpacityStrong": 0.85,
-    "surfaceColor": "#11000000",
+    "surfaceColor": "#33000000",
     "surfaceTopBleed": 0,
     "popupTopGap": 12,
     "popupSlideDuration": 150,
@@ -18,7 +18,7 @@
     "spacingCompact": 2,
     "spacingSmall": 4,
     "spacingMedium": 6,
-    "spacingDefault": 8,
+    "spacingDefault": 10,
     "fontSizeTiny": 8,
     "fontSizeXSmall": 9,
     "fontSizeSmall": 10,
@@ -38,6 +38,7 @@
       "textMuted": "#80ffffff",
       "cpu": "#ff9800",
       "cpuUser": "#4caf50",
+      "gpu": "#26c6da",
       "memory": "#80c882",
       "battery": "#1abc9c",
       "batteryCharging": "#4caf50",
@@ -66,6 +67,9 @@
     "performanceColor": "#f38ba8",
     "balancedColor": "#a6e3a1",
     "powerSaverColor": "#89b4fa"
+  },
+  "gpu": {
+    "usageColor": "#4dd0e1"
   },
   "notifications": {
     "position": "top-left",
@@ -113,38 +117,11 @@
     "dictatePidFile": "/tmp/voice_dictate.pid",
     "claudePidFile": "/tmp/voice_claude.pid",
     "streamPidFile": "/tmp/voice_stream.pid",
-    "transcribingFlag": "/tmp/voice_transcribing"
+    "transcribingFlag": "/tmp/voice_transcribing",
+    "typingFlag": "/tmp/voice_typing"
   },
-  "bar": {
-    "left": [
-      "window-title",
-      "workspaces",
-      "voice-recording",
-      "privacy-indicators",
-      "transmission",
-      "yts",
-      "media",
-      "backlight",
-      "network",
-      "ping-gw",
-      "ping",
-      "system",
-      "cpu",
-      "temperature",
-      "weather",
-      "battery",
-      "airpods"
-    ],
-    "center": [],
-    "right": [
-      "clock",
-      "khal",
-      "headset-battery",
-      "language",
-      "notification-icon",
-      "volume",
-      "systray"
-    ]
+  "daemon": {
+    "socket": "/run/user/1000/qs-daemon.sock"
   },
   "modules": {
     "wallpaper": {

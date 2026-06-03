@@ -6,18 +6,13 @@ import "../../helpers" as Helpers
 import "../../components" as Components
 import "../../config" as AppConfig
 
-PanelWindow {
+// Content only — Core.PackagePopup provides window/placement/state/click-out/IPC.
+Item {
     id: root
-    property int barHeight: AppConfig.Config.theme.barHeight
     property bool popupOpen: false
 
-    anchors.top: true
-    exclusionMode: ExclusionMode.Ignore
-    margins.top: barHeight + AppConfig.Config.theme.popupTopGap
     implicitWidth: 1260
     implicitHeight: 560
-    visible: popupOpen
-    color: "transparent"
 
     property var statsData: []
     property string ifaceName: ""
@@ -420,7 +415,7 @@ PanelWindow {
                     }
                     color: Helpers.Colors.cpu
                     font.family: AppConfig.Config.theme.fontFamily
-                    font.pixelSize: AppConfig.Config.theme.fontSizeBody
+                    font.pixelSize: AppConfig.Config.theme.popupFontSizeBody
                     anchors.verticalCenter: parent.verticalCenter
                 }
 
@@ -428,7 +423,7 @@ PanelWindow {
                     text: root.loadAvg ? "Load " + root.loadAvg : ""
                     color: Helpers.Colors.textMuted
                     font.family: AppConfig.Config.theme.fontFamily
-                    font.pixelSize: AppConfig.Config.theme.fontSizeBody
+                    font.pixelSize: AppConfig.Config.theme.popupFontSizeBody
                     anchors.verticalCenter: parent.verticalCenter
                 }
 
@@ -440,7 +435,7 @@ PanelWindow {
                     }
                     color: Helpers.Colors.memory
                     font.family: AppConfig.Config.theme.fontFamily
-                    font.pixelSize: AppConfig.Config.theme.fontSizeBody
+                    font.pixelSize: AppConfig.Config.theme.popupFontSizeBody
                     anchors.verticalCenter: parent.verticalCenter
                 }
 
@@ -453,7 +448,7 @@ PanelWindow {
                     }
                     color: Helpers.Colors.textMuted
                     font.family: AppConfig.Config.theme.fontFamily
-                    font.pixelSize: AppConfig.Config.theme.fontSizeBody
+                    font.pixelSize: AppConfig.Config.theme.popupFontSizeBody
                     anchors.verticalCenter: parent.verticalCenter
                 }
             }
@@ -504,7 +499,7 @@ PanelWindow {
                 anchors.left: parent.left; anchors.leftMargin: 6
                 text: "CPU"; color: Helpers.Colors.cpu
                 font.family: AppConfig.Config.theme.fontFamily
-                font.pixelSize: AppConfig.Config.theme.fontSizeTiny
+                font.pixelSize: AppConfig.Config.theme.popupFontSizeTiny
             }
 
             Canvas {
@@ -519,7 +514,7 @@ PanelWindow {
                     ctx.clearRect(0, 0, width, height);
                     if (root.statsData.length < 2) {
                         ctx.fillStyle = Helpers.Colors.textMuted;
-                        ctx.font = AppConfig.Config.theme.fontSizeBody + "px '" + AppConfig.Config.theme.fontFamily + "'";
+                        ctx.font = AppConfig.Config.theme.popupFontSizeBody + "px '" + AppConfig.Config.theme.fontFamily + "'";
                         ctx.textAlign = "center";
                         ctx.fillText("no data", width / 2, height / 2);
                         return;
@@ -542,7 +537,7 @@ PanelWindow {
             Text {
                 x: 6; y: cpuCanvas.y + cpuCanvas.height * 0.5 - 5
                 text: "50%"; color: Helpers.Colors.textMuted
-                font.family: AppConfig.Config.theme.fontFamily; font.pixelSize: AppConfig.Config.theme.fontSizeTiny
+                font.family: AppConfig.Config.theme.fontFamily; font.pixelSize: AppConfig.Config.theme.popupFontSizeTiny
             }
 
             // ──── Memory + Swap ────
@@ -552,7 +547,7 @@ PanelWindow {
                 anchors.left: parent.left; anchors.leftMargin: 6
                 text: "Mem"; color: Helpers.Colors.memory
                 font.family: AppConfig.Config.theme.fontFamily
-                font.pixelSize: AppConfig.Config.theme.fontSizeTiny
+                font.pixelSize: AppConfig.Config.theme.popupFontSizeTiny
             }
 
             Canvas {
@@ -585,7 +580,7 @@ PanelWindow {
             Text {
                 x: 6; y: memCanvas.y + memCanvas.height * 0.5 - 5
                 text: "50%"; color: Helpers.Colors.textMuted
-                font.family: AppConfig.Config.theme.fontFamily; font.pixelSize: AppConfig.Config.theme.fontSizeTiny
+                font.family: AppConfig.Config.theme.fontFamily; font.pixelSize: AppConfig.Config.theme.popupFontSizeTiny
             }
 
             // ──── Disk I/O ────
@@ -595,7 +590,7 @@ PanelWindow {
                 anchors.left: parent.left; anchors.leftMargin: 6
                 text: "Disk"; color: "#b39ddb"
                 font.family: AppConfig.Config.theme.fontFamily
-                font.pixelSize: AppConfig.Config.theme.fontSizeTiny
+                font.pixelSize: AppConfig.Config.theme.popupFontSizeTiny
             }
 
             Canvas {
@@ -635,7 +630,7 @@ PanelWindow {
             Text {
                 x: 6; y: ioCanvas.y + ioCanvas.height * 0.5 - 5
                 text: root.formatRate(root.ioMax * 0.5); color: Helpers.Colors.textMuted
-                font.family: AppConfig.Config.theme.fontFamily; font.pixelSize: AppConfig.Config.theme.fontSizeTiny
+                font.family: AppConfig.Config.theme.fontFamily; font.pixelSize: AppConfig.Config.theme.popupFontSizeTiny
             }
 
             // ──── Network ────
@@ -645,7 +640,7 @@ PanelWindow {
                 anchors.left: parent.left; anchors.leftMargin: 6
                 text: "Net"; color: "#42a5f5"
                 font.family: AppConfig.Config.theme.fontFamily
-                font.pixelSize: AppConfig.Config.theme.fontSizeTiny
+                font.pixelSize: AppConfig.Config.theme.popupFontSizeTiny
             }
 
             Canvas {
@@ -685,7 +680,7 @@ PanelWindow {
             Text {
                 x: 6; y: netCanvas.y + netCanvas.height * 0.5 - 5
                 text: root.formatRate(root.netMax * 0.5); color: Helpers.Colors.textMuted
-                font.family: AppConfig.Config.theme.fontFamily; font.pixelSize: AppConfig.Config.theme.fontSizeTiny
+                font.family: AppConfig.Config.theme.fontFamily; font.pixelSize: AppConfig.Config.theme.popupFontSizeTiny
             }
 
             // ──── Load + PSI ────
@@ -695,7 +690,7 @@ PanelWindow {
                 anchors.left: parent.left; anchors.leftMargin: 6
                 text: "Load"; color: "#ffb74d"
                 font.family: AppConfig.Config.theme.fontFamily
-                font.pixelSize: AppConfig.Config.theme.fontSizeTiny
+                font.pixelSize: AppConfig.Config.theme.popupFontSizeTiny
             }
 
             Canvas {
@@ -768,7 +763,7 @@ PanelWindow {
             Text {
                 x: 6; y: loadCanvas.y + loadCanvas.height * 0.5 - 5
                 text: (root.loadMax * 0.5).toFixed(1); color: Helpers.Colors.textMuted
-                font.family: AppConfig.Config.theme.fontFamily; font.pixelSize: AppConfig.Config.theme.fontSizeTiny
+                font.family: AppConfig.Config.theme.fontFamily; font.pixelSize: AppConfig.Config.theme.popupFontSizeTiny
             }
 
             // X-axis time labels (shared)
@@ -779,7 +774,7 @@ PanelWindow {
                     x: cpuCanvas.x + modelData.x - implicitWidth / 2
                     y: loadCanvas.y + loadCanvas.height + 3
                     text: modelData.label; color: Helpers.Colors.textMuted
-                    font.family: AppConfig.Config.theme.fontFamily; font.pixelSize: AppConfig.Config.theme.fontSizeTiny
+                    font.family: AppConfig.Config.theme.fontFamily; font.pixelSize: AppConfig.Config.theme.popupFontSizeTiny
                 }
             }
         }

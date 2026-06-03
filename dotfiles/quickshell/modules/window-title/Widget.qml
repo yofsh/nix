@@ -3,6 +3,7 @@ import Quickshell
 import Quickshell.Hyprland
 import Quickshell.Io
 import "../../helpers" as Helpers
+import "../../config" as AppConfig
 
 Item {
     id: root
@@ -88,8 +89,8 @@ Item {
                 width: root.expanded ? implicitWidth : parent.width
                 text: root.displayTitle
                 color: Helpers.Colors.windowTitle
-                font.family: "DejaVu Sans"
-                font.pixelSize: 12
+                font.family: AppConfig.Config.theme.fontFamily
+                font.pixelSize: AppConfig.Config.theme.fontSizeDefault
                 elide: Text.ElideNone
                 clip: true
             }

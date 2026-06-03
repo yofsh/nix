@@ -6,18 +6,14 @@ import "../../helpers" as Helpers
 import "../../components" as Components
 import "../../config" as AppConfig
 
-PanelWindow {
+// Content only — Core.PackagePopup (in BarHost) provides the window, placement,
+// open/close state, click-out and IPC. `popupOpen` is bound by the wrapper.
+Item {
     id: root
-    property int barHeight: AppConfig.Config.theme.barHeight
     property bool popupOpen: false
 
-    anchors.top: true
-    exclusionMode: ExclusionMode.Ignore
-    margins.top: barHeight + AppConfig.Config.theme.popupTopGap
     implicitWidth: 1260
     implicitHeight: 180
-    visible: popupOpen
-    color: "transparent"
 
     property var historyData: []   // [{time, pct, state}]
     property bool dataLoaded: false
@@ -147,7 +143,7 @@ PanelWindow {
                 }
                 color: Helpers.Colors.battery
                 font.family: AppConfig.Config.theme.fontFamily
-                font.pixelSize: AppConfig.Config.theme.fontSizeBody
+                font.pixelSize: AppConfig.Config.theme.popupFontSizeBody
             }
 
             // On-battery time
@@ -182,7 +178,7 @@ PanelWindow {
                     var d = root.historyData;
                     if (d.length < 2) {
                         ctx.fillStyle = Helpers.Colors.textMuted;
-                        ctx.font = AppConfig.Config.theme.fontSizeBody + "px '" + AppConfig.Config.theme.fontFamily + "'";
+                        ctx.font = AppConfig.Config.theme.popupFontSizeBody + "px '" + AppConfig.Config.theme.fontFamily + "'";
                         ctx.textAlign = "center";
                         ctx.fillText("no data", width / 2, height / 2);
                         return;
@@ -299,7 +295,7 @@ PanelWindow {
                                      d[hi].state === "fully-charged" ? " \u2713" : "";
                         var label = Math.round(d[hi].pct) + "%" + hState + "  " + hTime;
 
-                        ctx.font = AppConfig.Config.theme.fontSizeSmall + "px '" + AppConfig.Config.theme.fontFamily + "'";
+                        ctx.font = AppConfig.Config.theme.popupFontSizeSmall + "px '" + AppConfig.Config.theme.fontFamily + "'";
                         var tw = ctx.measureText(label).width;
                         var tx = hx + 8;
                         if (tx + tw + 8 > w) tx = hx - tw - 16;
@@ -358,7 +354,7 @@ PanelWindow {
                     text: modelData
                     color: Helpers.Colors.textMuted
                     font.family: AppConfig.Config.theme.fontFamily
-                    font.pixelSize: AppConfig.Config.theme.fontSizeTiny
+                    font.pixelSize: AppConfig.Config.theme.popupFontSizeTiny
                 }
             }
 
@@ -372,7 +368,7 @@ PanelWindow {
                     text: modelData.label
                     color: Helpers.Colors.textMuted
                     font.family: AppConfig.Config.theme.fontFamily
-                    font.pixelSize: AppConfig.Config.theme.fontSizeTiny
+                    font.pixelSize: AppConfig.Config.theme.popupFontSizeTiny
                 }
             }
         }

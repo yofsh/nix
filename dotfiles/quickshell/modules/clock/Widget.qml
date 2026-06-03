@@ -1,15 +1,22 @@
 import QtQuick
 import "../../helpers" as Helpers
+import "../../config" as AppConfig
 
 Item {
     id: root
-    implicitWidth: Math.max(timeLine.implicitWidth, dateLine.implicitWidth) + 10
+    implicitWidth: Math.max(timeLine.implicitWidth, dateLine.implicitWidth) + 12
     implicitHeight: parent ? parent.height : 22
 
     property bool altFormat: false
 
     property string timeStr: ""
     property string dateStr: ""
+
+    Rectangle {
+        anchors.fill: parent
+        radius: AppConfig.Config.theme.interactiveHoverRadius || 4
+        color: Qt.rgba(0.55, 0.3, 0.85, 0.12)
+    }
 
     Column {
         anchors.centerIn: parent
@@ -19,8 +26,8 @@ Item {
             id: timeLine
             anchors.horizontalCenter: parent.horizontalCenter
             color: Helpers.Colors.textDefault
-            font.family: "DejaVuSansM Nerd Font"
-            font.pixelSize: 11
+            font.family: AppConfig.Config.theme.fontFamily
+            font.pixelSize: AppConfig.Config.theme.fontSizeDefault
             font.bold: true
             text: root.timeStr
         }
@@ -29,8 +36,8 @@ Item {
             id: dateLine
             anchors.horizontalCenter: parent.horizontalCenter
             color: Helpers.Colors.textMuted
-            font.family: "DejaVuSansM Nerd Font"
-            font.pixelSize: 9
+            font.family: AppConfig.Config.theme.fontFamily
+            font.pixelSize: AppConfig.Config.theme.fontSizeSmall
             text: root.dateStr
         }
     }

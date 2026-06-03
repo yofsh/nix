@@ -1,6 +1,7 @@
 import QtQuick
 import Quickshell.Io
 import "../../helpers" as Helpers
+import "../../config" as AppConfig
 
 Item {
     id: root
@@ -42,16 +43,16 @@ Item {
             id: memText
             text: root.memPct
             color: Helpers.Colors.memory
-            font.family: "DejaVuSansM Nerd Font"
-            font.pixelSize: 10
+            font.family: AppConfig.Config.theme.fontFamily
+            font.pixelSize: AppConfig.Config.theme.fontSizeSmall
         }
 
         Text {
             id: swapText
             text: root.swapPct
-            color: "#a5d6a7"
-            font.family: "DejaVuSansM Nerd Font"
-            font.pixelSize: 10
+            color: Helpers.Colors.textMuted
+            font.family: AppConfig.Config.theme.fontFamily
+            font.pixelSize: AppConfig.Config.theme.fontSizeSmall
         }
     }
 

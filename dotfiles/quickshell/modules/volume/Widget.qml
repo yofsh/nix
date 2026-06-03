@@ -2,6 +2,7 @@ import QtQuick
 import Quickshell.Io
 import Quickshell.Services.Pipewire
 import "../../helpers" as Helpers
+import "../../config" as AppConfig
 
 Item {
     id: root
@@ -42,24 +43,24 @@ Item {
             visible: !root.isMuted
             text: root.vol + ""
             color: Helpers.Colors.textDefault
-            font.family: "DejaVuSansM Nerd Font"
-            font.pixelSize: 12
+            font.family: AppConfig.Config.theme.fontFamily
+            font.pixelSize: AppConfig.Config.theme.fontSizeDefault
         }
 
         Text {
             anchors.verticalCenter: parent.verticalCenter
             text: root.volumeIcon()
             color: root.isMuted ? Helpers.Colors.mutedRed : Helpers.Colors.textDefault
-            font.family: "DejaVuSansM Nerd Font"
-            font.pixelSize: 14
+            font.family: AppConfig.Config.theme.fontFamily
+            font.pixelSize: AppConfig.Config.theme.fontSizeIcon
         }
 
         Text {
             anchors.verticalCenter: parent.verticalCenter
             text: root.micIcon()
             color: root.sourceMuted ? Helpers.Colors.mutedRed : Helpers.Colors.textDefault
-            font.family: "DejaVuSansM Nerd Font"
-            font.pixelSize: 13
+            font.family: AppConfig.Config.theme.fontFamily
+            font.pixelSize: AppConfig.Config.theme.fontSizeIcon
         }
     }
 

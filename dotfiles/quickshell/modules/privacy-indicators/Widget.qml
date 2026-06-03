@@ -5,10 +5,9 @@ import "../../config" as AppConfig
 
 Item {
     id: root
-    implicitWidth: row.implicitWidth + 4
+    implicitWidth: visible ? row.implicitWidth + 4 : 0
     implicitHeight: parent ? parent.height : 30
-    visible: opacity > 0
-    opacity: anyActive ? 1.0 : 0.0
+    visible: anyActive
     Behavior on opacity { NumberAnimation { duration: 400; easing.type: Easing.InOutQuad } }
 
     property var context: null
@@ -81,36 +80,22 @@ Item {
 
     Process {
         id: checkProc
-        command: ["privacy-check"]
+        command: ["curl", "-s", "--unix-socket", AppConfig.Config.daemon.socket, "http://d/privacy/check"]
         running: true
 
         stdout: StdioCollector {
             onStreamFinished: {
                 var text = this.text.trim();
-                var mic = false, cam = false, screen = false;
-                var micA = "", camA = "", screenA = "";
+                root.micActive = false; root.camActive = false; root.screenActive = false;
+                root.micApps = ""; root.camApps = ""; root.screenApps = "";
                 if (text) {
-                    var lines = text.split("\n");
-                    for (var i = 0; i < lines.length; i++) {
-                        var line = lines[i];
-                        if (line.indexOf("MIC:") === 0) {
-                            mic = true;
-                            micA = line.substring(4);
-                        } else if (line.indexOf("CAM:") === 0) {
-                            cam = true;
-                            camA = line.substring(4);
-                        } else if (line.indexOf("SCREEN:") === 0) {
-                            screen = true;
-                            screenA = line.substring(7);
-                        }
-                    }
+                    try {
+                        var d = JSON.parse(text);
+                        if (d.mic && d.mic.length > 0) { root.micActive = true; root.micApps = d.mic.join(","); }
+                        if (d.cam && d.cam.length > 0) { root.camActive = true; root.camApps = d.cam.join(","); }
+                        if (d.screen && d.screen.length > 0) { root.screenActive = true; root.screenApps = d.screen.join(","); }
+                    } catch (e) {}
                 }
-                root.micActive = mic;
-                root.camActive = cam;
-                root.screenActive = screen;
-                root.micApps = micA;
-                root.camApps = camA;
-                root.screenApps = screenA;
             }
         }
     }

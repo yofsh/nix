@@ -8,7 +8,6 @@ import "../popups" as Popups
 Scope {
     id: root
 
-    Core.ModuleScanner {}
     Core.ServiceHost {}
 
     QtObject {

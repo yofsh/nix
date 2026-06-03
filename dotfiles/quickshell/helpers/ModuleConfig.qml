@@ -20,6 +20,9 @@ QtObject {
             intervalMs: 2000,
             freqIntervalMs: 5000
         },
+        gpu: {
+            intervalMs: 2000
+        },
         "privacy-indicators": {
             intervalMs: 5000
         },

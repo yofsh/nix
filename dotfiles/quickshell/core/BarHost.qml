@@ -7,6 +7,38 @@ import "../helpers" as Helpers
 import "../components" as Components
 import "../popups" as Popups
 import "." as Core
+import "../config" as AppConfig
+// Bar widgets are statically linked (not Loader/Repeater) so Quickshell's
+// reloader can match them across reloads — module edits hot-reload smoothly.
+import "../modules/window-title" as M_window_title
+import "../modules/workspaces" as M_workspaces
+import "../modules/voice-recording" as M_voice_recording
+import "../modules/wf-recorder" as M_wf_recorder
+import "../modules/privacy-indicators" as M_privacy_indicators
+import "../modules/transmission" as M_transmission
+import "../modules/yts" as M_yts
+import "../modules/media" as M_media
+import "../modules/backlight" as M_backlight
+import "../modules/app-usage" as M_app_usage
+import "../modules/focus" as M_focus
+import "../modules/claude-usage" as M_claude_usage
+import "../modules/network" as M_network
+import "../modules/ping-gw" as M_ping_gw
+import "../modules/ping" as M_ping
+import "../modules/system-group" as M_system_group
+import "../modules/weather" as M_weather
+import "../modules/battery" as M_battery
+import "../modules/airpods" as M_airpods
+import "../modules/khal" as M_khal
+import "../modules/headset-battery" as M_headset_battery
+import "../modules/volume" as M_volume
+import "../modules/systray" as M_systray
+import "../modules/language" as M_language
+import "../modules/notification-icon" as M_notification_icon
+// popup-only modules (no bar widget): system/temperature are shown via system-group, wallpaper via keybind
+import "../modules/system" as M_system
+import "../modules/temperature" as M_temperature
+import "../modules/wallpaper" as M_wallpaper
 
 PanelWindow {
     id: barWindow
@@ -22,6 +54,9 @@ PanelWindow {
     property var submapBinds: []
     property real submapComboWidth: 0
     property var keybindsData: null
+    // Noticeably larger fonts for the submap cheatsheet overlay
+    readonly property int submapBindFontSize: Math.round((theme.fontSizeDefault || 14) * 1.5)
+    readonly property int submapTitleFontSize: Math.round((theme.fontSizeDefault || 14) * 1.9)
 
     anchors {
         top: true
@@ -29,13 +64,13 @@ PanelWindow {
         right: true
     }
 
-    margins.top: 4
+    margins.top: 0
     color: "transparent"
     implicitHeight: theme.barHeight || 22
 
     Process {
         id: keybindsProc
-        command: ["hypr-keybinds"]
+        command: ["curl", "-s", "--unix-socket", AppConfig.Config.daemon.socket, "http://d/keybinds/list"]
         running: true
         stdout: StdioCollector {
             onStreamFinished: {
@@ -53,7 +88,7 @@ PanelWindow {
         id: comboMeasure
         visible: false
         font.family: theme.fontFamily || "DejaVuSansM Nerd Font"
-        font.pixelSize: theme.fontSizeDefault || 12
+        font.pixelSize: barWindow.submapBindFontSize
         font.bold: true
     }
 
@@ -135,15 +170,25 @@ PanelWindow {
                 width: implicitWidth
                 height: parent.height
 
-                Repeater {
-                    model: Core.ModuleRegistry.ready ? Core.ModuleRegistry.barIds("left") : []
-
-                    Core.PackageWidgetLoader {
-                        required property var modelData
-                        moduleId: modelData
-                        screen: hostScreenInfo
-                    }
-                }
+                Core.PackageWidget { moduleId: "window-title"; screen: hostScreenInfo; M_window_title.Widget {} }
+                Core.PackageWidget { moduleId: "workspaces"; screen: hostScreenInfo; M_workspaces.Widget {} }
+                Core.PackageWidget { moduleId: "voice-recording"; screen: hostScreenInfo; M_voice_recording.Widget {} }
+                Core.PackageWidget { moduleId: "wf-recorder"; screen: hostScreenInfo; M_wf_recorder.Widget {} }
+                Core.PackageWidget { moduleId: "privacy-indicators"; screen: hostScreenInfo; M_privacy_indicators.Widget {} }
+                Core.PackageWidget { moduleId: "transmission"; screen: hostScreenInfo; M_transmission.Widget {} }
+                Core.PackageWidget { moduleId: "yts"; screen: hostScreenInfo; M_yts.Widget {} }
+                Core.PackageWidget { moduleId: "media"; screen: hostScreenInfo; M_media.Widget {} }
+                Core.PackageWidget { moduleId: "backlight"; screen: hostScreenInfo; M_backlight.Widget {} }
+                Core.PackageWidget { moduleId: "app-usage"; screen: hostScreenInfo; M_app_usage.Widget {} }
+                Core.PackageWidget { moduleId: "focus"; screen: hostScreenInfo; M_focus.Widget {} }
+                Core.PackageWidget { moduleId: "claude-usage"; screen: hostScreenInfo; M_claude_usage.Widget {} }
+                Core.PackageWidget { moduleId: "network"; screen: hostScreenInfo; M_network.Widget {} }
+                Core.PackageWidget { moduleId: "ping-gw"; screen: hostScreenInfo; M_ping_gw.Widget {} }
+                Core.PackageWidget { moduleId: "ping"; screen: hostScreenInfo; M_ping.Widget {} }
+                Core.PackageWidget { moduleId: "system-group"; screen: hostScreenInfo; M_system_group.Widget {} }
+                Core.PackageWidget { moduleId: "weather"; screen: hostScreenInfo; M_weather.Widget {} }
+                Core.PackageWidget { moduleId: "battery"; screen: hostScreenInfo; M_battery.Widget {} }
+                Core.PackageWidget { moduleId: "airpods"; screen: hostScreenInfo; M_airpods.Widget {} }
             }
 
             Row {
@@ -152,16 +197,7 @@ PanelWindow {
                 visible: children.length > 0
                 width: visible ? implicitWidth : 0
                 height: parent.height
-
-                Repeater {
-                    model: Core.ModuleRegistry.ready ? Core.ModuleRegistry.barIds("center") : []
-
-                    Core.PackageWidgetLoader {
-                        required property var modelData
-                        moduleId: modelData
-                        screen: hostScreenInfo
-                    }
-                }
+                // (no center widgets currently)
             }
 
             Row {
@@ -170,29 +206,30 @@ PanelWindow {
                 width: implicitWidth
                 height: parent.height
 
-                Repeater {
-                    model: Core.ModuleRegistry.ready ? Core.ModuleRegistry.barIds("right") : []
-
-                    Core.PackageWidgetLoader {
-                        required property var modelData
-                        moduleId: modelData
-                        screen: hostScreenInfo
-                    }
-                }
+                Core.PackageWidget { moduleId: "khal"; screen: hostScreenInfo; M_khal.Widget {} }
+                Core.PackageWidget { moduleId: "headset-battery"; screen: hostScreenInfo; M_headset_battery.Widget {} }
+                Core.PackageWidget { moduleId: "volume"; screen: hostScreenInfo; M_volume.Widget {} }
+                Core.PackageWidget { moduleId: "systray"; screen: hostScreenInfo; M_systray.Widget {} }
+                Core.PackageWidget { moduleId: "language"; screen: hostScreenInfo; M_language.Widget {} }
+                Core.PackageWidget { moduleId: "notification-icon"; screen: hostScreenInfo; M_notification_icon.Widget {} }
             }
         }
     }
 
-    Repeater {
-        model: Core.ModuleRegistry.ready ? Core.ModuleRegistry.popupIds() : []
+    // Popups — statically linked. PackagePopup provides each window's placement,
+    // open/close state, click-out and IPC; the module file is just content.
+    Core.PackagePopup { moduleId: "app-usage";    screen: hostScreenInfo; barWindow: barWindow; M_app_usage.Popup {} }
+    Core.PackagePopup { moduleId: "battery";      screen: hostScreenInfo; barWindow: barWindow; M_battery.Popup {} }
+    Core.PackagePopup { moduleId: "claude-usage"; screen: hostScreenInfo; barWindow: barWindow; M_claude_usage.Popup {} }
+    Core.PackagePopup { moduleId: "focus";        screen: hostScreenInfo; barWindow: barWindow; keyboardFocus: true; M_focus.Popup {} }
+    Core.PackagePopup { moduleId: "khal";         screen: hostScreenInfo; barWindow: barWindow; M_khal.Popup {} }
+    Core.PackagePopup { moduleId: "network";      screen: hostScreenInfo; barWindow: barWindow; ipc: false; M_network.Popup {} }
+    Core.PackagePopup { moduleId: "system";       screen: hostScreenInfo; barWindow: barWindow; M_system.Popup {} }
+    Core.PackagePopup { moduleId: "temperature";  screen: hostScreenInfo; barWindow: barWindow; M_temperature.Popup {} }
+    Core.PackagePopup { moduleId: "weather";      screen: hostScreenInfo; barWindow: barWindow; M_weather.Popup {} }
 
-        Core.PackagePopupLoader {
-            required property var modelData
-            moduleId: modelData
-            screen: hostScreenInfo
-            barWindow: barWindow
-        }
-    }
+    // wallpaper is its own window (WlrLayershell keyboard focus); host only sets screen
+    M_wallpaper.Popup { screen: hostScreenInfo }
 
     Popups.NotificationPopup {
         id: notifPopup
@@ -254,38 +291,47 @@ PanelWindow {
                 Column {
                     id: submapPopupCol
                     anchors.centerIn: parent
-                    spacing: theme.spacingCompact || 2
+                    spacing: theme.spacingMedium || 6
 
                     Text {
                         anchors.horizontalCenter: parent.horizontalCenter
                         text: barWindow.submapName
                         color: Helpers.Colors.submapFg
                         font.family: theme.fontFamily || "DejaVuSansM Nerd Font"
-                        font.pixelSize: theme.fontSizeDefault || 12
+                        font.pixelSize: barWindow.submapTitleFontSize
                         font.bold: true
                     }
 
-                    Repeater {
-                        model: barWindow.submapBinds
+                    Grid {
+                        anchors.horizontalCenter: parent.horizontalCenter
+                        columns: barWindow.submapBinds.length > 12 ? 3 : (barWindow.submapBinds.length > 5 ? 2 : 1)
+                        rowSpacing: theme.spacingSmall || 4
+                        columnSpacing: theme.spacingDefault * 2 || 16
+                        flow: Grid.TopToBottom
+                        rows: Math.ceil(barWindow.submapBinds.length / columns)
 
-                        Row {
-                            spacing: theme.spacingDefault || 8
+                        Repeater {
+                            model: barWindow.submapBinds
 
-                            Text {
-                                width: barWindow.submapComboWidth
-                                horizontalAlignment: Text.AlignRight
-                                text: modelData.combo
-                                color: Helpers.Colors.submapFg
-                                font.family: theme.fontFamily || "DejaVuSansM Nerd Font"
-                                font.pixelSize: theme.fontSizeDefault || 12
-                                font.bold: true
-                            }
+                            Row {
+                                spacing: theme.spacingDefault || 8
 
-                            Text {
-                                text: modelData.desc
-                                color: Helpers.Colors.textMuted
-                                font.family: theme.fontFamily || "DejaVuSansM Nerd Font"
-                                font.pixelSize: theme.fontSizeDefault || 12
+                                Text {
+                                    width: barWindow.submapComboWidth
+                                    horizontalAlignment: Text.AlignRight
+                                    text: modelData.combo
+                                    color: Helpers.Colors.submapFg
+                                    font.family: theme.fontFamily || "DejaVuSansM Nerd Font"
+                                    font.pixelSize: barWindow.submapBindFontSize
+                                    font.bold: true
+                                }
+
+                                Text {
+                                    text: modelData.desc
+                                    color: Helpers.Colors.textMuted
+                                    font.family: theme.fontFamily || "DejaVuSansM Nerd Font"
+                                    font.pixelSize: barWindow.submapBindFontSize
+                                }
                             }
                         }
                     }

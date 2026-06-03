@@ -5,14 +5,14 @@ import "../../config" as AppConfig
 
 Item {
     id: root
-    implicitWidth: row.implicitWidth + 4
+    implicitWidth: visible ? row.implicitWidth + 4 : 0
     implicitHeight: parent ? parent.height : 30
-    visible: opacity > 0
-    opacity: (recording || transcribing) ? 1.0 : 0.0
+    visible: recording || transcribing || typing
     Behavior on opacity { NumberAnimation { duration: 400; easing.type: Easing.InOutQuad } }
 
     property bool recording: false
     property bool transcribing: false
+    property bool typing: false
     property var spectrumLevels: new Array(24).fill(0)
 
     onRecordingChanged: {
@@ -27,14 +27,14 @@ Item {
         Text {
             id: icon
             anchors.verticalCenter: parent.verticalCenter
-            text: root.transcribing ? "" : ""
-            color: root.transcribing ? Helpers.Colors.cpu : Helpers.Colors.mutedRed
+            text: root.typing ? "" : root.transcribing ? "" : ""
+            color: root.typing ? Helpers.Colors.accent : root.transcribing ? Helpers.Colors.cpu : Helpers.Colors.mutedRed
             font.family: AppConfig.Config.theme.fontFamily
             font.pixelSize: AppConfig.Config.theme.fontSizeIcon
             Behavior on color { ColorAnimation { duration: 300 } }
 
             SequentialAnimation on opacity {
-                running: root.transcribing
+                running: root.transcribing && !root.typing
                 loops: Animation.Infinite
                 NumberAnimation { to: 0.3; duration: 800; easing.type: Easing.InOutSine }
                 NumberAnimation { to: 1.0; duration: 800; easing.type: Easing.InOutSine }
@@ -72,11 +72,11 @@ Item {
 
         Item {
             id: labelContainer
-            width: root.transcribing ? labelText.implicitWidth : 0
+            width: (root.transcribing || root.typing) ? labelText.implicitWidth : 0
             height: root.implicitHeight
             anchors.verticalCenter: parent.verticalCenter
             clip: true
-            opacity: root.transcribing ? 1.0 : 0.0
+            opacity: (root.transcribing || root.typing) ? 1.0 : 0.0
             Behavior on width { NumberAnimation { duration: 300; easing.type: Easing.InOutQuad } }
             Behavior on opacity { NumberAnimation { duration: 300 } }
 
@@ -84,7 +84,7 @@ Item {
                 id: labelText
                 anchors.verticalCenter: parent.verticalCenter
                 text: "\udb81\udd1f"
-                color: Helpers.Colors.cpu
+                color: root.typing ? Helpers.Colors.accent : Helpers.Colors.cpu
                 font.family: AppConfig.Config.theme.fontFamily
                 font.pixelSize: AppConfig.Config.theme.fontSizeIcon
             }
@@ -112,14 +112,14 @@ Item {
             "  kill \"$sp\" \"$pp\" 2>/dev/null",
             "  rm -f \"$spf\" /tmp/voice_stream.fifo",
             "fi",
-            "rm -f /tmp/voice_transcribing"
+            "rm -f /tmp/voice_transcribing /tmp/voice_typing"
         ].join("\n")]
         running: false
     }
 
     Process {
         id: spectrumProc
-        command: ["audio-spectrum"]
+        command: ["curl", "-sN", "--unix-socket", AppConfig.Config.daemon.socket, "http://d/audio/stream"]
         running: root.recording
         stdout: SplitParser {
             onRead: data => {
@@ -135,15 +135,15 @@ Item {
     Process {
         id: checkProc
         command: ["bash", "-c", [
-            "rec=false stt=false",
-            // Check PID files and verify process is alive; clean up stale ones
+            "rec=false stt=false typ=false",
             "for f in '" + AppConfig.Config.voice.dictatePidFile + "' '" + AppConfig.Config.voice.claudePidFile + "' '" + AppConfig.Config.voice.streamPidFile + "'; do",
             "  [ -f \"$f\" ] || continue",
             "  if kill -0 $(head -1 \"$f\") 2>/dev/null; then rec=true",
             "  else rm \"$f\"; fi",
             "done",
             "[ -f '" + AppConfig.Config.voice.transcribingFlag + "' ] && stt=true",
-            "echo $rec $stt"
+            "[ -f '" + AppConfig.Config.voice.typingFlag + "' ] && typ=true",
+            "echo $rec $stt $typ"
         ].join("\n")]
         running: true
 
@@ -152,6 +152,7 @@ Item {
                 var parts = this.text.trim().split(" ");
                 root.recording = parts[0] === "true";
                 root.transcribing = parts[1] === "true";
+                root.typing = parts[2] === "true";
             }
         }
     }
