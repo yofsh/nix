@@ -121,11 +121,20 @@ interface Totals {
   cost: number;
   active: number;  // seconds of active agent time (summed inter-message gaps < IDLE_GAP)
   path: string;
-  models: Record<string, number>; // model -> total tokens (for popup detail)
+  models: Record<string, { tokens: number; cost: number }>; // model -> tokens + cost
 }
 
 function newTotals(path: string): Totals {
   return { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0, active: 0, path, models: {} };
+}
+
+// model-name -> {tokens,cost} map → display list, cost-rounded, zero-usage
+// (<synthetic>) dropped, sorted by cost then tokens.
+function modelListFrom(m: Map<string, { tokens: number; cost: number }>) {
+  return Array.from(m.entries())
+    .map(([name, v]) => ({ name, tokens: v.tokens, cost: Math.round(v.cost * 100) / 100 }))
+    .filter((x) => x.tokens > 0)
+    .sort((a, b) => b.cost - a.cost || b.tokens - a.tokens);
 }
 
 // Gaps between consecutive messages in a session shorter than this count as
@@ -168,6 +177,21 @@ function readAppended(path: string, offset: number): { lines: string[]; offset: 
     return { lines: [], offset };
   } finally {
     if (fd !== null) closeSync(fd);
+  }
+}
+
+// Collect every .jsonl under `dir`, recursing into subdirectories — subagent
+// and workflow transcripts live in nested <session>/subagents/... folders, not
+// just directly under the project dir.
+function collectJsonl(dir: string, out: string[]) {
+  let entries: string[];
+  try { entries = readdirSync(dir); } catch { return; }
+  for (const e of entries) {
+    const p = join(dir, e);
+    let st;
+    try { st = statSync(p); } catch { continue; }
+    if (st.isDirectory()) collectJsonl(p, out);
+    else if (e.endsWith(".jsonl")) out.push(p);
   }
 }
 
@@ -256,7 +280,12 @@ export function create(): DaemonModule {
     t.cacheWrite += cacheWrite;
     t.cost += cost;
     t.active += activeMs / 1000;
-    if (msg.model) t.models[msg.model] = (t.models[msg.model] || 0) + input + output + cacheRead + cacheWrite;
+    if (msg.model) {
+      let mm = t.models[msg.model];
+      if (!mm) { mm = { tokens: 0, cost: 0 }; t.models[msg.model] = mm; }
+      mm.tokens += input + output + cacheRead + cacheWrite;
+      mm.cost += cost;
+    }
   }
 
   function scan() {
@@ -269,14 +298,11 @@ export function create(): DaemonModule {
 
     for (const dir of dirs) {
       const dirPath = join(PROJECTS_DIR, dir);
-      let files: string[];
-      try {
-        if (!statSync(dirPath).isDirectory()) continue;
-        files = readdirSync(dirPath).filter((f: string) => f.endsWith(".jsonl"));
-      } catch { continue; }
+      try { if (!statSync(dirPath).isDirectory()) continue; } catch { continue; }
+      const files: string[] = [];
+      collectJsonl(dirPath, files); // includes nested subagent/workflow transcripts
 
-      for (const file of files) {
-        const fp = join(dirPath, file);
+      for (const fp of files) {
         let st;
         try { st = statSync(fp); } catch { continue; }
         // Skip files untouched before the window and never seen.
@@ -302,9 +328,10 @@ export function create(): DaemonModule {
   function buildSummary() {
     const today = localDay(Date.now());
 
-    // Per-day totals + per-project breakdown (oldest -> newest), full window.
-    const days: { date: string; cost: number; tokens: number; active: number; projects: any[] }[] = [];
+    // Per-day totals + per-project & per-model breakdown (oldest -> newest), full window.
+    const days: { date: string; cost: number; tokens: number; active: number; projects: any[]; models: any[] }[] = [];
     const weekProjects = new Map<string, { cost: number; tokens: number; active: number; path: string }>();
+    const weekModels = new Map<string, { tokens: number; cost: number }>();
     let weekCost = 0, weekTokens = 0, weekActive = 0, maxDayCost = 0;
 
     for (let i = WINDOW_DAYS - 1; i >= 0; i--) {
@@ -315,6 +342,7 @@ export function create(): DaemonModule {
       const dayMap = byDay.get(ds);
       let dc = 0, dt = 0, da = 0;
       const dayProjects: { name: string; cost: number; tokens: number; active: number }[] = [];
+      const dayModels = new Map<string, { tokens: number; cost: number }>();
       if (dayMap) {
         for (const [name, t] of dayMap) {
           const tok = t.input + t.output + t.cacheRead + t.cacheWrite;
@@ -323,33 +351,48 @@ export function create(): DaemonModule {
           const wp = weekProjects.get(name) || { cost: 0, tokens: 0, active: 0, path: t.path };
           wp.cost += t.cost; wp.tokens += tok; wp.active += t.active;
           weekProjects.set(name, wp);
+          for (const model in t.models) {
+            const mv = t.models[model];
+            const dm = dayModels.get(model) || { tokens: 0, cost: 0 };
+            dm.tokens += mv.tokens; dm.cost += mv.cost; dayModels.set(model, dm);
+            const wm = weekModels.get(model) || { tokens: 0, cost: 0 };
+            wm.tokens += mv.tokens; wm.cost += mv.cost; weekModels.set(model, wm);
+          }
         }
         dayProjects.sort((a, b) => b.cost - a.cost || b.tokens - a.tokens);
       }
-      days.push({ date: ds, cost: Math.round(dc * 100) / 100, tokens: dt, active: Math.round(da), projects: dayProjects });
+      days.push({ date: ds, cost: Math.round(dc * 100) / 100, tokens: dt, active: Math.round(da), projects: dayProjects, models: modelListFrom(dayModels) });
       weekCost += dc; weekTokens += dt; weekActive += da;
       if (dc > maxDayCost) maxDayCost = dc;
     }
 
-    // Today's per-project breakdown.
+    // Today's per-project breakdown + per-model totals (summed across projects).
     const todayMap = byDay.get(today);
     const todayProjects: any[] = [];
+    const todayModels = new Map<string, { tokens: number; cost: number }>();
     let tCost = 0, tIn = 0, tOut = 0, tCR = 0, tCW = 0, tActive = 0;
     if (todayMap) {
       for (const [name, t] of todayMap) {
         const tokens = t.input + t.output + t.cacheRead + t.cacheWrite;
         tCost += t.cost; tIn += t.input; tOut += t.output; tCR += t.cacheRead; tCW += t.cacheWrite; tActive += t.active;
+        for (const model in t.models) {
+          const mv = t.models[model];
+          const acc = todayModels.get(model) || { tokens: 0, cost: 0 };
+          acc.tokens += mv.tokens; acc.cost += mv.cost;
+          todayModels.set(model, acc);
+        }
         todayProjects.push({
           name, path: t.path,
           cost: Math.round(t.cost * 100) / 100,
           tokens,
           active: Math.round(t.active),
           input: t.input, output: t.output, cacheRead: t.cacheRead, cacheWrite: t.cacheWrite,
-          models: Object.keys(t.models).sort((a, b) => t.models[b] - t.models[a]),
+          models: Object.keys(t.models).sort((a, b) => t.models[b].tokens - t.models[a].tokens),
         });
       }
       todayProjects.sort((a, b) => b.cost - a.cost || b.tokens - a.tokens);
     }
+    const todayModelList = modelListFrom(todayModels);
 
     summaryCache = {
       date: today,
@@ -359,6 +402,7 @@ export function create(): DaemonModule {
         totalActive: Math.round(tActive),
         input: tIn, output: tOut, cacheRead: tCR, cacheWrite: tCW,
         projects: todayProjects,
+        models: todayModelList,
       },
       week: {
         days,
@@ -369,6 +413,7 @@ export function create(): DaemonModule {
         projects: Array.from(weekProjects.entries())
           .map(([name, w]) => ({ name, path: w.path, cost: Math.round(w.cost * 100) / 100, tokens: w.tokens, active: Math.round(w.active) }))
           .sort((a, b) => b.cost - a.cost || b.tokens - a.tokens),
+        models: modelListFrom(weekModels),
       },
     };
   }

@@ -59,6 +59,12 @@ Item {
     readonly property int listReservedHeight: listReservedRows > 0
         ? listReservedRows * listRowH + (listReservedRows - 1) * listRowGap : 0
 
+    // Same idea for the by-model list — reserve for the 7-day model set (the
+    // superset of any single day's) so hovering doesn't resize the popup.
+    readonly property int listReservedModelRows: Math.min(6, (week && week.models) ? week.models.length : 0)
+    readonly property int listReservedModelHeight: listReservedModelRows > 0
+        ? listReservedModelRows * listRowH + (listReservedModelRows - 1) * listRowGap : 0
+
     function dayLabel(ds) {
         if (!ds) return "";
         var dt = new Date(ds + "T00:00:00");
@@ -97,6 +103,36 @@ Item {
         var m = Math.floor((s % 3600) / 60);
         if (h > 0) return h + "h" + (m < 10 ? "0" : "") + m + "m";
         return m + "m";
+    }
+
+    // "claude-opus-4-8" -> "Opus 4.8". Version digits sit either after the
+    // family (opus-4-8) or before it (3-5-haiku); date snapshots (>2 digits)
+    // are dropped so "opus-4-20250514" reads as "Opus 4".
+    function prettyModel(name) {
+        if (!name) return "unknown";
+        var s = name.toLowerCase();
+        if (s.indexOf("synthetic") >= 0) return "synthetic";
+        var fam = s.indexOf("opus") >= 0 ? "Opus"
+                : s.indexOf("sonnet") >= 0 ? "Sonnet"
+                : s.indexOf("haiku") >= 0 ? "Haiku" : "";
+        if (!fam) return name;
+        var key = fam.toLowerCase();
+        var after = s.match(new RegExp(key + "-(\\d+)(?:-(\\d+))?"));
+        var before = s.match(new RegExp("(\\d+)-(\\d+)-" + key));
+        var ver = "";
+        if (after && after[1] && after[1].length <= 2)
+            ver = after[1] + (after[2] && after[2].length <= 2 ? "." + after[2] : "");
+        else if (before)
+            ver = before[1] + "." + before[2];
+        return ver ? fam + " " + ver : fam;
+    }
+
+    function modelColor(name) {
+        var s = (name || "").toLowerCase();
+        if (s.indexOf("opus") >= 0) return "#cba6f7";   // mauve
+        if (s.indexOf("sonnet") >= 0) return "#89b4fa"; // blue
+        if (s.indexOf("haiku") >= 0) return "#a6e3a1";  // green
+        return "#585b70";
     }
 
     Process {
@@ -152,24 +188,34 @@ Item {
                     Item {
                         width: parent.width
                         height: 24
-                        Text {
+                        Row {
                             anchors.left: parent.left
                             anchors.verticalCenter: parent.verticalCenter
-                            text: "󰷧 Claude usage"
-                            color: Helpers.Colors.accent
-                            font.family: AppConfig.Config.theme.fontFamily
-                            font.pixelSize: AppConfig.Config.theme.popupFontSizeMedium
-                            font.bold: true
+                            spacing: 8
+                            Text {
+                                anchors.verticalCenter: parent.verticalCenter
+                                text: "󰷧"
+                                color: Helpers.Colors.accent
+                                font.family: AppConfig.Config.theme.fontFamily
+                                font.pixelSize: AppConfig.Config.theme.popupFontSizeMedium
+                            }
+                            Text {
+                                anchors.verticalCenter: parent.verticalCenter
+                                text: root.dateStr
+                                color: Helpers.Colors.textMuted
+                                font.family: AppConfig.Config.theme.fontFamily
+                                font.pixelSize: AppConfig.Config.theme.popupFontSizeSmall
+                            }
                         }
-                        Text {
+                        Components.StatDots {
                             anchors.right: parent.right
                             anchors.verticalCenter: parent.verticalCenter
-                            text: root.dateStr + "  ·  " + root.fmtCost(root.today ? root.today.totalCost : 0)
-                                  + "  ·  " + root.fmtTokens(root.today ? root.today.totalTokens : 0)
-                                  + "  ·   " + root.fmtDur(root.today ? root.today.totalActive : 0)
-                            color: Helpers.Colors.textMuted
-                            font.family: AppConfig.Config.theme.fontFamily
-                            font.pixelSize: AppConfig.Config.theme.popupFontSizeSmall
+                            boldFirst: true
+                            values: [
+                                root.fmtCost(root.today ? root.today.totalCost : 0),
+                                root.fmtTokens(root.today ? root.today.totalTokens : 0),
+                                root.fmtDur(root.today ? root.today.totalActive : 0)
+                            ]
                         }
                     }
 
@@ -279,6 +325,98 @@ Item {
                         }
                     }
 
+                    Rectangle {
+                        width: parent.width; height: 1; color: Qt.rgba(1, 1, 1, 0.08)
+                        visible: root.today && root.today.models && root.today.models.length > 0
+                    }
+
+                    // ── Today per-model ───────────────────────────────────
+                    Column {
+                        width: parent.width
+                        spacing: 8
+                        visible: root.today && root.today.models && root.today.models.length > 0
+
+                        Text {
+                            text: "Today by model"
+                            color: Helpers.Colors.textMuted
+                            font.family: AppConfig.Config.theme.fontFamily
+                            font.pixelSize: AppConfig.Config.theme.popupFontSizeSmall
+                            font.bold: true
+                        }
+
+                        Repeater {
+                            model: root.today ? root.today.models : []
+                            delegate: Column {
+                                id: mdl
+                                required property var modelData
+                                width: parent.width
+                                spacing: 4
+                                readonly property color barColor: root.modelColor(modelData.name)
+                                readonly property real frac: (root.today && root.today.totalTokens > 0)
+                                    ? (modelData.tokens / root.today.totalTokens) : 0
+
+                                Item {
+                                    width: parent.width
+                                    height: 18
+                                    Row {
+                                        anchors.left: parent.left
+                                        anchors.verticalCenter: parent.verticalCenter
+                                        spacing: 8
+                                        Rectangle {
+                                            width: 8; height: 8; radius: 4
+                                            anchors.verticalCenter: parent.verticalCenter
+                                            color: mdl.barColor
+                                        }
+                                        Text {
+                                            text: root.prettyModel(modelData.name)
+                                            color: Helpers.Colors.textDefault
+                                            font.family: AppConfig.Config.theme.fontFamily
+                                            font.pixelSize: AppConfig.Config.theme.popupFontSizeBody
+                                            font.bold: true
+                                            anchors.verticalCenter: parent.verticalCenter
+                                        }
+                                    }
+                                    Text {
+                                        id: mdlTok
+                                        anchors.right: mdlCost.left
+                                        anchors.rightMargin: 10
+                                        anchors.verticalCenter: parent.verticalCenter
+                                        text: root.fmtTokens(modelData.tokens)
+                                        color: Qt.rgba(1, 1, 1, 0.5)
+                                        font.family: AppConfig.Config.theme.fontFamily
+                                        font.pixelSize: AppConfig.Config.theme.popupFontSizeSmall
+                                    }
+                                    Text {
+                                        id: mdlCost
+                                        anchors.right: parent.right
+                                        anchors.verticalCenter: parent.verticalCenter
+                                        text: root.fmtCost(modelData.cost)
+                                        color: Helpers.Colors.textDefault
+                                        font.family: AppConfig.Config.theme.fontFamily
+                                        font.pixelSize: AppConfig.Config.theme.popupFontSizeSmall
+                                        width: 56
+                                        horizontalAlignment: Text.AlignRight
+                                    }
+                                }
+
+                                Item {
+                                    width: parent.width
+                                    height: 5
+                                    Rectangle {
+                                        width: parent.width; height: 5; radius: 3
+                                        color: Qt.rgba(1, 1, 1, 0.06)
+                                    }
+                                    Rectangle {
+                                        width: Math.max(0, parent.width * mdl.frac)
+                                        height: 5; radius: 3
+                                        color: mdl.barColor
+                                        Behavior on width { NumberAnimation { duration: 300; easing.type: Easing.OutCubic } }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
                     Rectangle { width: parent.width; height: 1; color: Qt.rgba(1, 1, 1, 0.08) }
 
                     // ── 7-day trend ───────────────────────────────────────
@@ -297,14 +435,14 @@ Item {
                                 font.pixelSize: AppConfig.Config.theme.popupFontSizeSmall
                                 font.bold: true
                             }
-                            Text {
+                            Components.StatDots {
                                 anchors.right: parent.right
-                                text: root.fmtCost(root.week ? root.week.totalCost : 0)
-                                      + "  ·  " + root.fmtTokens(root.week ? root.week.totalTokens : 0)
-                                      + "  ·   " + root.fmtDur(root.week ? root.week.totalActive : 0)
-                                color: Helpers.Colors.textMuted
-                                font.family: AppConfig.Config.theme.fontFamily
-                                font.pixelSize: AppConfig.Config.theme.popupFontSizeSmall
+                                anchors.verticalCenter: parent.verticalCenter
+                                values: [
+                                    root.fmtCost(root.week ? root.week.totalCost : 0),
+                                    root.fmtTokens(root.week ? root.week.totalTokens : 0),
+                                    root.fmtDur(root.week ? root.week.totalActive : 0)
+                                ]
                             }
                         }
 
@@ -467,6 +605,13 @@ Item {
                             return src.length > 10 ? src.slice(0, 10) : src;
                         }
 
+                        // Models for the same scope (hovered day, else 7-day totals).
+                        readonly property var listModels: {
+                            var src = root.hoveredDay ? (root.hoveredDay.models || [])
+                                                      : (root.week ? (root.week.models || []) : []);
+                            return src.length > 6 ? src.slice(0, 6) : src;
+                        }
+
                         Item {
                             width: parent.width
                             height: 16
@@ -479,12 +624,14 @@ Item {
                                 font.pixelSize: AppConfig.Config.theme.popupFontSizeSmall
                                 font.bold: true
                             }
-                            Text {
+                            Components.StatDots {
                                 anchors.right: parent.right
-                                text: root.hoveredDay ? (root.fmtCost(root.hoveredDay.cost) + "  ·  " + root.fmtTokens(root.hoveredDay.tokens) + "  ·  " + root.fmtDur(root.hoveredDay.active || 0)) : ""
-                                color: Helpers.Colors.textMuted
-                                font.family: AppConfig.Config.theme.fontFamily
-                                font.pixelSize: AppConfig.Config.theme.popupFontSizeXSmall
+                                anchors.verticalCenter: parent.verticalCenter
+                                visible: !!root.hoveredDay
+                                fontSize: AppConfig.Config.theme.popupFontSizeXSmall
+                                values: root.hoveredDay
+                                    ? [root.fmtCost(root.hoveredDay.cost), root.fmtTokens(root.hoveredDay.tokens), root.fmtDur(root.hoveredDay.active || 0)]
+                                    : []
                             }
                         }
 
@@ -551,6 +698,85 @@ Item {
                                     anchors.rightMargin: 8
                                     anchors.verticalCenter: parent.verticalCenter
                                             text: modelData.name || ""
+                                            color: Helpers.Colors.textDefault
+                                            font.family: AppConfig.Config.theme.fontFamily
+                                            font.pixelSize: AppConfig.Config.theme.popupFontSizeSmall
+                                            elide: Text.ElideRight
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        // ── By-model breakdown (same hovered-day / 7-day scope) ─
+                        Item {
+                            width: parent.width
+                            height: 16
+                            visible: byProjCol.listModels.length > 0
+                            Text {
+                                anchors.left: parent.left
+                                anchors.verticalCenter: parent.verticalCenter
+                                text: root.hoveredDay ? (root.dayLabel(root.hoveredDay.date) + " by model")
+                                                      : "7-day by model"
+                                color: root.hoveredDay ? Helpers.Colors.accent : Helpers.Colors.textMuted
+                                font.family: AppConfig.Config.theme.fontFamily
+                                font.pixelSize: AppConfig.Config.theme.popupFontSizeSmall
+                                font.bold: true
+                            }
+                        }
+
+                        Item {
+                            width: parent.width
+                            height: root.listReservedModelHeight
+                            visible: byProjCol.listModels.length > 0
+
+                            Column {
+                                width: parent.width
+                                spacing: 5
+
+                                Repeater {
+                                    model: byProjCol.listModels
+                                    Item {
+                                        required property var modelData
+                                        width: parent.width
+                                        height: 18
+                                        Text {
+                                            id: mCost
+                                            anchors.right: parent.right
+                                            anchors.verticalCenter: parent.verticalCenter
+                                            text: root.fmtCost(modelData.cost)
+                                            color: Qt.rgba(1, 1, 1, 0.6)
+                                            font.family: AppConfig.Config.theme.fontFamily
+                                            font.pixelSize: AppConfig.Config.theme.popupFontSizeSmall
+                                            width: 70
+                                            horizontalAlignment: Text.AlignRight
+                                        }
+                                        Text {
+                                            id: mToks
+                                            anchors.right: mCost.left
+                                            anchors.rightMargin: 8
+                                            anchors.verticalCenter: parent.verticalCenter
+                                            text: root.fmtTokens(modelData.tokens)
+                                            color: Qt.rgba(1, 1, 1, 0.45)
+                                            font.family: AppConfig.Config.theme.fontFamily
+                                            font.pixelSize: AppConfig.Config.theme.popupFontSizeXSmall
+                                            width: 60
+                                            horizontalAlignment: Text.AlignRight
+                                        }
+                                        Rectangle {
+                                            id: mDot
+                                            width: 8; height: 8; radius: 4
+                                            anchors.left: parent.left
+                                            anchors.verticalCenter: parent.verticalCenter
+                                            color: root.modelColor(modelData.name)
+                                        }
+                                        Text {
+                                            anchors.left: mDot.right
+                                            anchors.leftMargin: 8
+                                            anchors.right: mToks.left
+                                            anchors.rightMargin: 8
+                                            anchors.verticalCenter: parent.verticalCenter
+                                            text: root.prettyModel(modelData.name)
                                             color: Helpers.Colors.textDefault
                                             font.family: AppConfig.Config.theme.fontFamily
                                             font.pixelSize: AppConfig.Config.theme.popupFontSizeSmall
