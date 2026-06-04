@@ -5,7 +5,7 @@ import "../../config" as AppConfig
 
 Item {
     id: root
-    implicitWidth: row.implicitWidth + 6
+    implicitWidth: Math.max(topLine.implicitWidth, botLine.implicitWidth) + 12
     implicitHeight: parent ? parent.height : 30
 
     property var context: null
@@ -58,34 +58,36 @@ Item {
         onTriggered: loadProc.running = true
     }
 
-    Row {
-        id: row
-        anchors.centerIn: parent
-        spacing: 5
+    // Grouped translucent background, matching the other bar widgets (gold tint).
+    Rectangle {
+        anchors.fill: parent
+        radius: AppConfig.Config.theme.interactiveHoverRadius || 4
+        color: Qt.rgba(0.95, 0.7, 0.2, 0.12)
+    }
 
+    Column {
+        anchors.centerIn: parent
+        spacing: -2
+
+        // Top line — total time on PC today
         Text {
-            anchors.verticalCenter: parent.verticalCenter
-            text: root.totalText + ""
+            id: topLine
+            anchors.horizontalCenter: parent.horizontalCenter
+            text: root.totalText
             color: Helpers.Colors.textDefault
             font.family: AppConfig.Config.theme.fontFamily
-            font.pixelSize: AppConfig.Config.theme.fontSizeDefault
+            font.pixelSize: AppConfig.Config.theme.fontSizeSmall
             font.bold: true
         }
 
+        // Bottom line — current streak since last break (or "break" when idle)
         Text {
-            anchors.verticalCenter: parent.verticalCenter
-            text: "·"
-            color: Helpers.Colors.textMuted
-            font.family: AppConfig.Config.theme.fontFamily
-            font.pixelSize: AppConfig.Config.theme.fontSizeDefault
-        }
-
-        Text {
-            anchors.verticalCenter: parent.verticalCenter
-            text: root.onBreak ? " break" : (" " + root.formatTime(root.streakSeconds))
+            id: botLine
+            anchors.horizontalCenter: parent.horizontalCenter
+            text: root.onBreak ? "break" : root.formatTime(root.streakSeconds)
             color: root.streakColor
             font.family: AppConfig.Config.theme.fontFamily
-            font.pixelSize: AppConfig.Config.theme.fontSizeDefault
+            font.pixelSize: AppConfig.Config.theme.fontSizeSmall
             font.bold: true
         }
     }

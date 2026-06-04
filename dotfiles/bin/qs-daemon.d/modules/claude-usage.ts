@@ -18,6 +18,37 @@ const WINDOW_DAYS = 7;
 const SCAN_INTERVAL = 30_000;
 
 // ---------------------------------------------------------------------------
+// Subscription rate-limit utilization — the numbers `/usage` shows: the 5-hour
+// rolling window and the weekly (7-day) limits, overall + per-model. Pulled
+// from the OAuth usage endpoint with the access token Claude Code stores (and
+// keeps refreshed) in .credentials.json. We read the token fresh on every poll,
+// so we always ride on Claude Code's latest refresh and never touch the refresh
+// flow ourselves — an expired or missing token just yields no limits.
+// ---------------------------------------------------------------------------
+
+const CREDENTIALS_PATH = join(process.env.CLAUDE_CONFIG_DIR || `${homedir()}/.claude`, ".credentials.json");
+const USAGE_ENDPOINT = "https://api.anthropic.com/api/oauth/usage";
+const LIMITS_INTERVAL = 900_000; // 15 min — utilization changes slowly; no need to poll often
+
+function readAccessToken(): string | null {
+  try {
+    const o = JSON.parse(readFileSync(CREDENTIALS_PATH, "utf-8"))?.claudeAiOauth;
+    if (!o?.accessToken) return null;
+    if (o.expiresAt && Date.now() > o.expiresAt) return null; // stale — Claude Code refreshes on next use
+    return o.accessToken as string;
+  } catch {
+    return null;
+  }
+}
+
+// One window object (five_hour / seven_day / …) -> {utilization, resetsAt} | null.
+function normWindow(w: any): { utilization: number; resetsAt: string | null } | null {
+  return w && typeof w.utilization === "number"
+    ? { utilization: w.utilization, resetsAt: w.resets_at ?? null }
+    : null;
+}
+
+// ---------------------------------------------------------------------------
 // Project roots — how working directories are grouped into project buckets.
 //
 // A cwd at or under one of these roots collapses to that root (deepest match
@@ -203,6 +234,40 @@ export function create(): DaemonModule {
   const fileLastTs = new Map<string, number>(); // filepath -> last message ts (ms), for active-time gaps
   let summaryCache: object | null = null;
   let timer: ReturnType<typeof setInterval> | null = null;
+  let limitsCache: object | null = null;
+  let limitsTimer: ReturnType<typeof setInterval> | null = null;
+
+  // Fold the latest fetched limits into the served summary right away, without
+  // waiting for the next file scan to rebuild it.
+  function patchSummaryLimits() {
+    if (summaryCache) (summaryCache as any).limits = limitsCache;
+  }
+
+  async function fetchLimits() {
+    const token = readAccessToken();
+    if (!token) { limitsCache = null; patchSummaryLimits(); return; }
+    try {
+      const res = await fetch(USAGE_ENDPOINT, {
+        headers: { Authorization: `Bearer ${token}`, "anthropic-beta": "oauth-2025-04-20" },
+      });
+      if (!res.ok) {
+        if (res.status === 401) limitsCache = null; // bad token; keep stale on transient errors
+        patchSummaryLimits();
+        return;
+      }
+      const d: any = await res.json();
+      limitsCache = {
+        fiveHour: normWindow(d.five_hour),
+        sevenDay: normWindow(d.seven_day),
+        sevenDayOpus: normWindow(d.seven_day_opus),
+        sevenDaySonnet: normWindow(d.seven_day_sonnet),
+        fetchedAt: Date.now(),
+      };
+    } catch {
+      // network hiccup — keep the last known limits
+    }
+    patchSummaryLimits();
+  }
 
   const projectCache = new Map<string, { name: string; path: string }>();
   function projectName(cwd: string | undefined, dirName: string): { name: string; path: string } {
@@ -396,6 +461,7 @@ export function create(): DaemonModule {
 
     summaryCache = {
       date: today,
+      limits: limitsCache,
       today: {
         totalCost: Math.round(tCost * 100) / 100,
         totalTokens: tIn + tOut + tCR + tCW,
@@ -423,9 +489,12 @@ export function create(): DaemonModule {
 
     init(ctx: DaemonContext) {
       scan();
+      fetchLimits();
       timer = setInterval(scan, SCAN_INTERVAL);
+      limitsTimer = setInterval(fetchLimits, LIMITS_INTERVAL);
       ctx.signal.addEventListener("abort", () => {
         if (timer) { clearInterval(timer); timer = null; }
+        if (limitsTimer) { clearInterval(limitsTimer); limitsTimer = null; }
       });
     },
 
@@ -438,6 +507,7 @@ export function create(): DaemonModule {
 
     shutdown() {
       if (timer) { clearInterval(timer); timer = null; }
+      if (limitsTimer) { clearInterval(limitsTimer); limitsTimer = null; }
     },
   };
 }

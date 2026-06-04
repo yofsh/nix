@@ -24,6 +24,7 @@ Item {
     property var usageData: null
     property var today: null
     property var week: null
+    property var limits: null   // subscription rate-limit utilization (5h / weekly / per-model)
     property string dateStr: ""
     property int hoverDay: -1   // index into week.days under the cursor, -1 = none
 
@@ -77,9 +78,40 @@ Item {
         if (!usageData) return;
         today = usageData.today || null;
         week = usageData.week || null;
+        limits = usageData.limits || null;
         dateStr = usageData.date || "";
         rebuildColors();
         weekCanvas.requestPaint();
+    }
+
+    // Subscription rate-limit windows -> display rows (overall first, per-model
+    // indented as sub-rows; only the windows the endpoint actually reports).
+    function limitRows() {
+        if (!limits) return [];
+        var rows = [];
+        if (limits.fiveHour) rows.push({ label: "5-hour", sub: false, w: limits.fiveHour });
+        if (limits.sevenDay) rows.push({ label: "Weekly", sub: false, w: limits.sevenDay });
+        if (limits.sevenDayOpus) rows.push({ label: "Opus", sub: true, w: limits.sevenDayOpus });
+        if (limits.sevenDaySonnet) rows.push({ label: "Sonnet", sub: true, w: limits.sevenDaySonnet });
+        return rows;
+    }
+
+    // ISO reset timestamp -> "16:30" (today) or "Mon 15:00" (another day), local time.
+    function fmtReset(iso) {
+        if (!iso) return "";
+        var d = new Date(iso);
+        if (isNaN(d.getTime())) return "";
+        function pad(n) { return (n < 10 ? "0" : "") + n; }
+        var hm = d.getHours() + ":" + pad(d.getMinutes());
+        if (d.toDateString() === new Date().toDateString()) return hm;
+        return ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][d.getDay()] + " " + hm;
+    }
+
+    // green < 50% < amber < 80% < red
+    function limitColor(pct) {
+        if (pct >= 80) return Helpers.Colors.mutedRed;
+        if (pct >= 50) return "#ff9800";
+        return Helpers.Colors.accent;
     }
 
     function fmtCost(c) {
@@ -220,6 +252,96 @@ Item {
                     }
 
                     Rectangle { width: parent.width; height: 1; color: Qt.rgba(1, 1, 1, 0.08) }
+
+                    // ── Usage limits (subscription rate windows) ──────────
+                    Column {
+                        width: parent.width
+                        spacing: 8
+                        visible: !!root.limits
+
+                        Text {
+                            text: "Usage limits"
+                            color: Helpers.Colors.textMuted
+                            font.family: AppConfig.Config.theme.fontFamily
+                            font.pixelSize: AppConfig.Config.theme.popupFontSizeSmall
+                            font.bold: true
+                        }
+
+                        Repeater {
+                            model: root.limitRows()
+                            delegate: Item {
+                                required property var modelData
+                                width: parent.width
+                                height: 18
+
+                                Text {
+                                    id: limLabel
+                                    anchors.left: parent.left
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    leftPadding: modelData.sub ? 10 : 0
+                                    width: 88
+                                    text: (modelData.sub ? "· " : "") + modelData.label
+                                    color: modelData.sub ? Qt.rgba(1, 1, 1, 0.5) : Helpers.Colors.textDefault
+                                    font.family: AppConfig.Config.theme.fontFamily
+                                    font.pixelSize: AppConfig.Config.theme.popupFontSizeBody
+                                    font.bold: !modelData.sub
+                                    elide: Text.ElideRight
+                                }
+
+                                Text {
+                                    id: limReset
+                                    anchors.right: parent.right
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    width: 72
+                                    horizontalAlignment: Text.AlignRight
+                                    text: root.fmtReset(modelData.w.resetsAt)
+                                    color: Qt.rgba(1, 1, 1, 0.4)
+                                    font.family: AppConfig.Config.theme.fontFamily
+                                    font.pixelSize: AppConfig.Config.theme.popupFontSizeSmall
+                                }
+
+                                Text {
+                                    id: limPct
+                                    anchors.right: limReset.left
+                                    anchors.rightMargin: 10
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    width: 34
+                                    horizontalAlignment: Text.AlignRight
+                                    text: Math.round(modelData.w.utilization) + "%"
+                                    color: root.limitColor(modelData.w.utilization)
+                                    font.family: AppConfig.Config.theme.fontFamily
+                                    font.pixelSize: AppConfig.Config.theme.popupFontSizeSmall
+                                    font.bold: true
+                                }
+
+                                Item {
+                                    anchors.left: limLabel.right
+                                    anchors.leftMargin: 4
+                                    anchors.right: limPct.left
+                                    anchors.rightMargin: 10
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    height: 6
+                                    Rectangle {
+                                        anchors.fill: parent
+                                        radius: 3
+                                        color: Qt.rgba(1, 1, 1, 0.06)
+                                    }
+                                    Rectangle {
+                                        width: Math.max(0, parent.width * Math.min(1, modelData.w.utilization / 100))
+                                        height: parent.height
+                                        radius: 3
+                                        color: root.limitColor(modelData.w.utilization)
+                                        Behavior on width { NumberAnimation { duration: 300; easing.type: Easing.OutCubic } }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    Rectangle {
+                        width: parent.width; height: 1; color: Qt.rgba(1, 1, 1, 0.08)
+                        visible: !!root.limits
+                    }
 
                     // ── Today per-project ─────────────────────────────────
                     Column {
