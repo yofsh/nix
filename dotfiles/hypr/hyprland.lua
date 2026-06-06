@@ -83,7 +83,7 @@ hl.config({
 
   input      = {
     kb_layout                   = "us,ru,ua",
-    kb_options                  = "grp:caps_toggle",
+    kb_options                  = "caps:menu",
     natural_scroll              = false,
     repeat_rate                 = 80,
     repeat_delay                = 190,
@@ -590,6 +590,14 @@ hl.bind("SUPER + ALT + E", hl.dsp.exec_cmd("ha toggle light.svet_v_spalne"), { d
 
 hl.bind("SUPER + CTRL + l", hl.dsp.exec_cmd("hyprctl switchxkblayout all 0 && hyprlock"), { description = "Lock screen" })
 hl.bind("SUPER + SHIFT + R", hl.dsp.exec_cmd("hyprctl reload"), { description = "Reload Hyprland" })
+
+------------------------------------------------------------------------
+-- Keyboard layout
+------------------------------------------------------------------------
+
+-- Caps Lock = Menu keysym (via kb_options caps:menu)
+hl.bind("Menu", hl.dsp.exec_cmd("lang-toggle"), { description = "Layout: toggle EN / RU (Caps Lock)" })
+hl.bind("CTRL + Menu", hl.dsp.exec_cmd("hyprctl switchxkblayout all 2"), { description = "Layout → Ukrainian (Ctrl+Caps)" })
 
 ------------------------------------------------------------------------
 -- Helper: exec then reset submap

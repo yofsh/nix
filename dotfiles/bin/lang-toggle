@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+# lang-toggle — toggle keyboard layout between English (group 0) and Russian (group 1).
+# From any other layout (e.g. Ukrainian, group 2) it returns to English.
+# Ukrainian is reached separately via `hyprctl switchxkblayout all 2` (CTRL+ALT+space).
+
+km=$(hyprctl devices -j | jq -r '.keyboards[] | select(.main) | .active_keymap')
+
+if [[ "$km" == "English (US)" ]]; then
+  hyprctl switchxkblayout all 1   # en -> ru
+else
+  hyprctl switchxkblayout all 0   # ru / ua -> en
+fi
