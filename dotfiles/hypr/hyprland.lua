@@ -786,7 +786,9 @@ hl.define_submap("Bedroom", function()
     hl.bind("CTRL + " .. l.key, hl.dsp.exec_cmd("ha down " .. l.entity),
       { repeating = true, description = l.icon .. " " .. l.label .. " dimmer" })
     hl.bind("ALT + " .. l.key, hl.dsp.exec_cmd("ha next_preset " .. l.preset),
-      { description = l.icon .. " " .. l.label .. " preset" })
+      { description = l.icon .. " " .. l.label .. " next preset" })
+    hl.bind("ALT + SHIFT + " .. l.key, hl.dsp.exec_cmd("ha prev_preset " .. l.preset),
+      { description = l.icon .. " " .. l.label .. " prev preset" })
   end
   for _, s in ipairs(scenes) do
     hl.bind(s.key, hl.dsp.exec_cmd("ha scene " .. s.scene), { description = s.desc })

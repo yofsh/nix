@@ -64,8 +64,8 @@ case $ACTION in
     fi
     ;;
 
-  next_preset)
-    # Cycle to next option on a select entity (e.g. WLED preset)
+  next_preset|prev_preset)
+    # Cycle to next/previous option on a select entity (e.g. WLED preset)
     state=$(api "$HA_URL/api/states/$ENTITY")
     name=$(echo "$state" | jq -r --arg entity "$ENTITY" '.attributes.friendly_name // $entity')
     current=$(echo "$state" | jq -r '.state')
@@ -76,7 +76,13 @@ case $ACTION in
       notify "$name" "No presets"
     else
       idx=$(echo "$options" | jq -r --arg c "$current" 'to_entries | map(select(.value == $c)) | .[0].key // -1')
-      next_idx=$(( (idx + 1) % count ))
+      if [ "$ACTION" = "next_preset" ]; then
+        next_idx=$(( (idx + 1) % count ))
+      elif [ "$idx" -lt 0 ]; then
+        next_idx=$(( count - 1 ))  # current unknown: prev lands on last preset
+      else
+        next_idx=$(( (idx - 1 + count) % count ))
+      fi
       next_val=$(echo "$options" | jq -r ".[$next_idx]")
       api -X POST -d "{\"entity_id\":\"$ENTITY\",\"option\":\"$next_val\"}" "$HA_URL/api/services/select/select_option" >/dev/null &
       notify "$name" "$next_val"
