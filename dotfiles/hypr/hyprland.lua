@@ -17,7 +17,7 @@ local EXT_MON    = {
   mode = "5120x1440@240",
   position = "0x0",
   scale = 1.0,
-  vrr = 2,
+  vrr = 1,
   bitdepth = 10,
   -- cm = "auto",
   -- sdrbrightness = 1.0,
@@ -105,7 +105,7 @@ hl.config({
   debug      = {
     overlay      = false,
     disable_logs = 1,
-    vfr          = true,
+    vfr          = false,
   },
 
   render     = {
@@ -114,6 +114,12 @@ hl.config({
   },
 
   binds      = { workspace_back_and_forth = true },
+
+  -- when only one window is on a screen, pad it to this aspect ratio (centered)
+  -- instead of stretching full-width on the ultrawide. bump to "21 9" for wider.
+  layout     = {
+    single_window_aspect_ratio = "16 9",
+  },
 
   dwindle    = { preserve_split = true },
 
@@ -124,8 +130,10 @@ hl.config({
   },
 
   scrolling  = {
-    column_width           = 0.2,
-    explicit_column_widths = "0.15, 0.333, 0.45, 0.666",
+    column_width             = 0.25,
+    explicit_column_widths   = "0.15, 0.333, 0.45, 0.666",
+    fullscreen_on_one_column = false, -- don't stretch a lone column full-width
+    focus_fit_method         = 0,     -- 0 = center focused column, 1 = fit (left-park)
   },
 
   xwayland   = {
@@ -265,7 +273,7 @@ local specials = {
   { key = "G",     name = "audio",    desc = "Wiremix",   cmd = "[float; size 1100 (monitor_h*0.6); center] foot -e 'wiremix'" },
   { key = "N",     name = "obsidian", desc = "Obsidian",  cmd = "[float; size 1500 (monitor_h*0.9); center] obsidian" },
   { key = "grave", name = "term",     desc = "Terminal",  cmd = term_rule },
-  { key = "R",     name = "gpt",      desc = "GPT",       cmd = "firefox --new-window 'https://gpt.yof.sh'" },
+  -- { key = "R",     name = "gpt",      desc = "GPT",       cmd = "firefox --new-window 'https://gpt.yof.sh'" }, -- disabled: SUPER+R opens the submap launcher
   { key = "M",     name = "music",    desc = "Music",     cmd = "firefox --new-window 'https://music.youtube.com'" },
   { key = "W",     name = "tg",       desc = "Telegram",  cmd = "Telegram" },
 }
@@ -451,10 +459,12 @@ hl.bind("SUPER + F3", hl.dsp.exec_cmd("setsid " .. term .. [[ -e zsh -c 'source 
   { description = "Neovim" })
 
 local debug_overlay = false
-hl.bind("SUPER + F10", function()
+local function toggle_debug_overlay()
   debug_overlay = not debug_overlay
   hl.config({ debug = { overlay = debug_overlay } })
-end, { description = "Toggle debug overlay" })
+end
+hl.bind("SUPER + F10", toggle_debug_overlay, { description = "Toggle debug overlay (FPS)" })
+hl.bind("CTRL + F11", toggle_debug_overlay, { description = "Toggle debug overlay (FPS)" })
 
 for _, l in ipairs({ { k = "F4", layout = "dwindle" }, { k = "F5", layout = "master" }, { k = "F6", layout = "scrolling" } }) do
   local layout = l.layout
@@ -634,13 +644,13 @@ end)
 hl.bind("SUPER + CTRL + E", hl.dsp.submap("Monitor"), { description = "System stats submap" })
 hl.define_submap("Monitor", function()
   for _, m in ipairs({
-    { key = "E",         qs = "ping",        desc = "Pings" },
-    { key = "SHIFT + E", qs = "ping fast",   desc = "Pings 0.5s" },
-    { key = "S",         qs = "temperature", desc = "Sensors" },
-    { key = "B",         qs = "battery",     desc = "Battery" },
-    { key = "W",         qs = "weather",     desc = "Weather" },
-    { key = "M",         qs = "system",      desc = "System stats" },
-    { key = "K",         qs = "khal",        desc = "Khal agenda" },
+    { key = "E",         qs = "ping",         desc = "Pings" },
+    { key = "SHIFT + E", qs = "ping fast",    desc = "Pings 0.5s" },
+    { key = "S",         qs = "temperature",  desc = "Sensors" },
+    { key = "B",         qs = "battery",      desc = "Battery" },
+    { key = "W",         qs = "weather",      desc = "Weather" },
+    { key = "M",         qs = "system",       desc = "System stats" },
+    { key = "K",         qs = "khal",         desc = "Khal agenda" },
     { key = "F",         qs = "focus",        desc = "Focus timer" },
     { key = "U",         qs = "app-usage",    desc = "Wellbeing / usage" },
     { key = "C",         qs = "claude-usage", desc = "Claude usage" },
@@ -852,6 +862,30 @@ hl.define_submap("Power", "reset", function()
   hl.bind("l", hl.dsp.exec_cmd("hyprctl switchxkblayout all 0 && hyprlock"), { description = "Lock" })
   hl.bind("r", hl.dsp.exec_cmd("reboot"), { description = "Reboot" })
   hl.bind("b", hl.dsp.exec_cmd("systemctl reboot --firmware-setup"), { description = "Reboot → firmware setup" })
+  hl.bind("escape", hl.dsp.submap("reset"))
+end)
+
+------------------------------------------------------------------------
+-- Submap launcher / aggregator (left-hand keys jump to any submap)
+------------------------------------------------------------------------
+
+hl.bind("SUPER + R", hl.dsp.submap("Launcher"), { description = "Launcher submap" })
+hl.define_submap("Launcher", function()
+  for _, s in ipairs({
+    { key = "A", target = "AI",            desc = "🤖 AI" },
+    { key = "B", target = "Bookmarks",     desc = "🔖 Bookmarks" },
+    { key = "D", target = "Bedroom",       desc = "🛏️ Bedroom" },
+    { key = "E", target = "Monitor",       desc = "📊 System stats" },
+    { key = "G", target = "Master Layout", desc = "🪟 Master layout" },
+    { key = "Q", target = "Power",         desc = "⏻ Power" },
+    { key = "R", target = "resize",        desc = "↔ Resize" },
+    { key = "S", target = "Services",      desc = "🔧 Services" },
+    { key = "T", target = "Translate",     desc = "🌐 Translate" },
+    { key = "V", target = "YTS",           desc = "🎬 YTS" },
+    { key = "W", target = "Wallpaper",     desc = "🖼 Wallpaper" },
+  }) do
+    hl.bind(s.key, hl.dsp.submap(s.target), { description = s.desc })
+  end
   hl.bind("escape", hl.dsp.submap("reset"))
 end)
 
