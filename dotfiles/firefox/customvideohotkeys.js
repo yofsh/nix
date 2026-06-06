@@ -21,7 +21,7 @@
     return s.toFixed(s % 1 ? 2 : 1) + "×";
   }
 
-  function setAllVideosSpeed(speed) {
+  function applySpeed(speed, sticky) {
     document.querySelectorAll("video").forEach((v) => (v.playbackRate = speed));
     document.querySelectorAll("iframe").forEach((iframe) => {
       try {
@@ -30,7 +30,22 @@
           .forEach((v) => (v.playbackRate = speed));
       } catch (_) {}
     });
-    showSpeedOverlay(speed);
+    if (_bubbleEl) _bubbleEl.textContent = fmtSpeed(speed);
+    showHud(fmtSpeed(speed), "", sticky);
+  }
+
+  function setAllVideosSpeed(speed) {
+    applySpeed(speed, false);
+  }
+
+  function fmtTime(s) {
+    if (!isFinite(s)) return "--:--";
+    s = Math.max(0, Math.floor(s));
+    const h = Math.floor(s / 3600);
+    const m = Math.floor((s % 3600) / 60);
+    const sec = s % 60;
+    const pad = (n) => String(n).padStart(2, "0");
+    return h ? `${h}:${pad(m)}:${pad(sec)}` : `${m}:${pad(sec)}`;
   }
 
   function matchHotkey(hotkey, e) {
@@ -54,37 +69,68 @@
     );
   }
 
-  // --- Speed overlay (center-bottom toast) ---
+  // --- Screen-center HUD (speed + gesture feedback) ---
 
   let _overlayEl = null;
+  let _overlayMain = null;
+  let _overlaySub = null;
   let _overlayTimeout;
 
-  function showSpeedOverlay(speed) {
-    if (!_overlayEl) {
-      _overlayEl = document.createElement("div");
-      Object.assign(_overlayEl.style, {
-        position: "fixed",
-        bottom: "60px",
-        left: "50%",
-        transform: "translateX(-50%)",
-        zIndex: "2147483647",
-        background: "rgba(220, 80, 255, 0.9)",
-        color: "#fff",
-        font: "bold 20px/1 monospace",
-        padding: "10px 18px",
-        borderRadius: "8px",
-        pointerEvents: "none",
-        opacity: "0",
-        transition: "opacity 0.15s",
-        textShadow: "0 1px 3px rgba(0,0,0,0.5)",
-      });
-      document.documentElement.appendChild(_overlayEl);
-    }
-    _overlayEl.textContent = fmtSpeed(speed);
+  function ensureOverlay() {
+    if (_overlayEl) return;
+    _overlayEl = document.createElement("div");
+    Object.assign(_overlayEl.style, {
+      position: "fixed",
+      top: "50%",
+      left: "50%",
+      zIndex: "2147483647",
+      display: "flex",
+      flexDirection: "column",
+      alignItems: "center",
+      background: "rgba(20, 22, 30, 0.72)",
+      borderRadius: "18px",
+      border: "1px solid rgba(200, 160, 255, 0.35)",
+      boxShadow: "0 12px 40px rgba(0,0,0,0.45)",
+      backdropFilter: "blur(14px)",
+      WebkitBackdropFilter: "blur(14px)",
+      padding: "22px 34px",
+      pointerEvents: "none",
+      opacity: "0",
+      transform: "translate(-50%, -50%) scale(0.92)",
+      transition: "opacity 0.18s ease, transform 0.18s ease",
+    });
+    _overlayMain = document.createElement("div");
+    Object.assign(_overlayMain.style, {
+      color: "#e9d5ff",
+      font: "600 48px/1 system-ui, sans-serif",
+      letterSpacing: "1px",
+      textShadow: "0 2px 10px rgba(160, 80, 255, 0.5)",
+    });
+    _overlaySub = document.createElement("div");
+    Object.assign(_overlaySub.style, {
+      color: "rgba(233, 213, 255, 0.7)",
+      font: "500 18px/1 system-ui, sans-serif",
+      letterSpacing: "0.5px",
+      marginTop: "12px",
+    });
+    _overlayEl.append(_overlayMain, _overlaySub);
+    document.documentElement.appendChild(_overlayEl);
+  }
+
+  function showHud(main, sub, sticky) {
+    ensureOverlay();
+    _overlayMain.textContent = main;
+    _overlaySub.textContent = sub || "";
+    _overlaySub.style.display = sub ? "block" : "none";
     _overlayEl.style.opacity = "1";
+    _overlayEl.style.transform = "translate(-50%, -50%) scale(1)";
     clearTimeout(_overlayTimeout);
-    _overlayTimeout = setTimeout(() => (_overlayEl.style.opacity = "0"), 800);
-    if (_bubbleEl) _bubbleEl.textContent = fmtSpeed(speed);
+    if (!sticky) {
+      _overlayTimeout = setTimeout(() => {
+        _overlayEl.style.opacity = "0";
+        _overlayEl.style.transform = "translate(-50%, -50%) scale(0.92)";
+      }, 800);
+    }
   }
 
   // --- Speed bubble (bottom-left, hover to pick speed) ---
@@ -240,6 +286,88 @@
     setAllVideosSpeed(newSpeed);
   }
 
+  // --- Middle-button drag: horizontal = seek, vertical = speed ---
+
+  const SEEK_SEC_PER_PX = 0.15; // 200px drag ≈ ±30s
+  const SPEED_PER_PX = 0.0025; // 400px drag ≈ ±1.0×
+  const GESTURE_THRESHOLD = 8; // px before a gesture engages
+
+  let _gesture = null;
+  let _suppressAuxClick = false;
+
+  function onGestureDown(e) {
+    if (e.button !== 1) return;
+    const video = getFirstVideo();
+    if (!video) return;
+    _gesture = {
+      startX: e.clientX,
+      startY: e.clientY,
+      axis: null,
+      video,
+      startTime: video.currentTime,
+      startSpeed: video.playbackRate,
+      pendingSeek: null,
+    };
+    e.preventDefault(); // stop autoscroll
+    window.addEventListener("mousemove", onGestureMove, true);
+    window.addEventListener("mouseup", onGestureUp, true);
+  }
+
+  function onGestureMove(e) {
+    if (!_gesture) return;
+    const dx = e.clientX - _gesture.startX;
+    const dy = e.clientY - _gesture.startY;
+
+    if (!_gesture.axis) {
+      if (Math.hypot(dx, dy) < GESTURE_THRESHOLD) return;
+      _gesture.axis = Math.abs(dx) > Math.abs(dy) ? "seek" : "speed";
+    }
+    e.preventDefault();
+
+    const v = _gesture.video;
+    if (_gesture.axis === "seek") {
+      const delta = Math.round(dx * SEEK_SEC_PER_PX);
+      const dur = isFinite(v.duration) ? v.duration : Infinity;
+      const target = Math.max(0, Math.min(dur, _gesture.startTime + delta));
+      _gesture.pendingSeek = target;
+      showHud(
+        (delta >= 0 ? "» +" : "« −") + Math.abs(delta) + "s",
+        fmtTime(target) + " / " + fmtTime(v.duration),
+        true,
+      );
+    } else {
+      const raw = _gesture.startSpeed - dy * SPEED_PER_PX;
+      const speed = Math.max(0.1, Math.round(raw * 20) / 20);
+      applySpeed(speed, true);
+    }
+  }
+
+  function onGestureUp(e) {
+    window.removeEventListener("mousemove", onGestureMove, true);
+    window.removeEventListener("mouseup", onGestureUp, true);
+    const g = _gesture;
+    _gesture = null;
+    if (!g || !g.axis) return; // plain middle-click: leave it alone
+
+    e.preventDefault();
+    _suppressAuxClick = true; // swallow the trailing middle-click
+
+    if (g.axis === "seek" && g.pendingSeek != null) {
+      g.video.currentTime = g.pendingSeek;
+      showHud(fmtTime(g.pendingSeek), "", false);
+    } else {
+      showHud(fmtSpeed(g.video.playbackRate), "", false);
+    }
+  }
+
+  function onAuxClick(e) {
+    if (_suppressAuxClick) {
+      _suppressAuxClick = false;
+      e.preventDefault();
+      e.stopPropagation();
+    }
+  }
+
   // --- Keyboard hotkeys ---
 
   function handleKeyDown(e) {
@@ -274,6 +402,8 @@
   function init() {
     const isExcluded = EXCLUDED_SITES.some((s) => location.hostname.includes(s));
     document.body.addEventListener("wheel", handleWheel);
+    document.body.addEventListener("mousedown", onGestureDown, true);
+    window.addEventListener("auxclick", onAuxClick, true);
     if (!isExcluded) document.body.addEventListener("keydown", handleKeyDown, false);
     checkForVideos();
     setInterval(checkForVideos, 2000);
