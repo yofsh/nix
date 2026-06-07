@@ -5,7 +5,7 @@ import "../../config" as AppConfig
 
 Item {
     id: root
-    implicitWidth: row.implicitWidth + 10
+    implicitWidth: col.implicitWidth + 10
     implicitHeight: parent ? parent.height : 22
     property bool interactive: true   // opens its popup via context.togglePopup()
 
@@ -113,34 +113,50 @@ Item {
         onTriggered: { weatherProc.running = true; aqProc.running = true; }
     }
 
-    Row {
-        id: row
+    // Two-liner: weather icon + temperature on top, air quality below.
+    Column {
+        id: col
         anchors.centerIn: parent
-        spacing: 4
+        spacing: -2
 
-        Text {
-            text: root.dataLoaded ? root.weatherIcon(root.weatherCode, root.isDay) : "󰖐"
-            color: root.dataLoaded ? root.tempColor(root.temperature) : Helpers.Colors.textMuted
-            font.family: AppConfig.Config.theme.fontFamily
-            font.pixelSize: 12
-            anchors.verticalCenter: parent.verticalCenter
+        Row {
+            spacing: 3
+
+            Text {
+                text: root.dataLoaded ? root.weatherIcon(root.weatherCode, root.isDay) : "󰖐"
+                color: root.dataLoaded ? root.tempColor(root.temperature) : Helpers.Colors.textMuted
+                font.family: AppConfig.Config.theme.fontFamily
+                font.pixelSize: AppConfig.Config.theme.fontSizeSmall
+                anchors.verticalCenter: parent.verticalCenter
+            }
+
+            Text {
+                text: root.dataLoaded ? Math.round(root.temperature) + "°" : "--"
+                color: root.dataLoaded ? root.tempColor(root.temperature) : Helpers.Colors.textMuted
+                font.family: AppConfig.Config.theme.fontFamily
+                font.pixelSize: AppConfig.Config.theme.fontSizeSmall
+                anchors.verticalCenter: parent.verticalCenter
+            }
         }
 
-        Text {
-            text: root.dataLoaded ? Math.round(root.temperature) + "°" : "--"
-            color: root.dataLoaded ? root.tempColor(root.temperature) : Helpers.Colors.textMuted
-            font.family: AppConfig.Config.theme.fontFamily
-            font.pixelSize: 12
-            anchors.verticalCenter: parent.verticalCenter
-        }
+        Row {
+            spacing: 3
 
-        Text {
-            visible: root.aqLoaded
-            text: root.euAqi
-            color: root.aqiColor(root.euAqi)
-            font.family: AppConfig.Config.theme.fontFamily
-            font.pixelSize: 12
-            anchors.verticalCenter: parent.verticalCenter
+            Text {
+                text: "󰌪"   // leaf — air quality marker
+                color: root.aqLoaded ? root.aqiColor(root.euAqi) : Helpers.Colors.textMuted
+                font.family: AppConfig.Config.theme.fontFamily
+                font.pixelSize: AppConfig.Config.theme.fontSizeSmall
+                anchors.verticalCenter: parent.verticalCenter
+            }
+
+            Text {
+                text: root.aqLoaded ? root.euAqi : "--"
+                color: root.aqLoaded ? root.aqiColor(root.euAqi) : Helpers.Colors.textMuted
+                font.family: AppConfig.Config.theme.fontFamily
+                font.pixelSize: AppConfig.Config.theme.fontSizeSmall
+                anchors.verticalCenter: parent.verticalCenter
+            }
         }
     }
 
