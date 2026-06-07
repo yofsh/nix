@@ -4,6 +4,14 @@ log() {
 	printf '[%s] [yts] %s\n' "$ts" "$1" >&2
 }
 
+# Report a user-facing failure reason. Logs it to stderr (worker log) and, if
+# fd 3 is open, writes the clean message there so the caller can capture the
+# exact reason into _processing.json (stdout is reserved for the result).
+err_reason() {
+	log "$1"
+	{ printf '%s' "$1" >&3; } 2>/dev/null || true
+}
+
 extract_video_id() {
 	local url="$1" vid
 	vid=$(printf '%s' "$url" | grep -oP '(?:youtube\.com/(?:watch\?.*?v=|embed/|v/|shorts/)|youtu\.be/)\K[a-zA-Z0-9_-]{11}' | head -1) || true

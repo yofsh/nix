@@ -220,13 +220,13 @@ download_transcript() {
 
 	# All attempts exhausted
 	if [[ "$last_error" == *"Sign in to confirm"* ]] || [[ "$last_error" == *"not a bot"* ]]; then
-		printf 'YouTube bot detection — try updating browser cookies' >&2
+		err_reason 'YouTube bot detection — try updating browser cookies'
 	elif [[ "$last_error" == *"reloaded"* ]]; then
-		printf 'YouTube session expired — re-login in browser and retry' >&2
+		err_reason 'YouTube session expired — re-login in browser and retry'
 	elif [[ "$last_error" == *"429"* ]] || [[ "$last_error" == *"Too Many Requests"* ]]; then
-		printf 'Rate limited by YouTube' >&2
+		err_reason 'Rate limited by YouTube'
 	else
-		printf 'No subtitles available for this video' >&2
+		err_reason 'No subtitles available for this video'
 	fi
 	return 1
 }
@@ -337,13 +337,13 @@ generate_summary() {
 
 	# Find claude CLI
 	claude_bin=$(command -v claude 2>/dev/null) || {
-		printf 'claude CLI not found' >&2
+		err_reason 'claude CLI not found'
 		return 1
 	}
 
 	# Run claude with 5-minute timeout
 	summary=$(printf '%s' "$full_prompt" | timeout 300 "$claude_bin" --print --no-session-persistence 2>/dev/null) || {
-		printf 'Claude CLI failed or timed out' >&2
+		err_reason 'Claude CLI failed or timed out (300s)'
 		return 1
 	}
 
@@ -359,12 +359,12 @@ generate_summary() {
 	# Validate length and structure
 	local summary_len=${#summary}
 	if [[ "$summary_len" -lt 200 ]]; then
-		printf 'Summary generation failed - response too short (%d chars)' "$summary_len" >&2
+		err_reason "Summary generation failed - response too short ($summary_len chars)"
 		return 1
 	fi
 
 	if [[ "$summary" != *"##"* ]]; then
-		printf 'Summary generation failed - missing section headers' >&2
+		err_reason 'Summary generation failed - missing section headers'
 		return 1
 	fi
 
@@ -636,10 +636,15 @@ cmd_worker() {
 		log "Using existing transcript: $existing_transcript"
 		cp "$existing_transcript" "$tmp_transcript"
 	else
-		if ! transcript=$(download_transcript "$url" "$vid"); then
-			_worker_fail "${transcript:-Failed to download transcript}" "downloading_transcript"
+		local dl_err reason
+		dl_err=$(mktemp)
+		if ! transcript=$(download_transcript "$url" "$vid" 3>"$dl_err"); then
+			reason=$(<"$dl_err")
+			rm -f "$dl_err"
+			_worker_fail "${reason:-Failed to download transcript}" "downloading_transcript"
 			return 1
 		fi
+		rm -f "$dl_err"
 		printf '%s' "$transcript" >"$tmp_transcript"
 	fi
 
@@ -666,10 +671,15 @@ cmd_worker() {
 
 	# --- Stage: generating_summary ---
 	set_stage "$vid" "generating_summary" "$title" "$url"
-	if ! summary=$(generate_summary "$lang" "$tmp_transcript" "$tmp_comments"); then
-		_worker_fail "${summary:-Failed to generate summary}" "generating_summary"
+	local gen_err gen_reason
+	gen_err=$(mktemp)
+	if ! summary=$(generate_summary "$lang" "$tmp_transcript" "$tmp_comments" 3>"$gen_err"); then
+		gen_reason=$(<"$gen_err")
+		rm -f "$gen_err"
+		_worker_fail "${gen_reason:-Failed to generate summary}" "generating_summary"
 		return 1
 	fi
+	rm -f "$gen_err"
 
 	# --- Stage: saving ---
 	set_stage "$vid" "saving" "$title" "$url"
