@@ -1,6 +1,37 @@
 import { readFileSync, readdirSync } from "fs";
+import { networkInterfaces } from "os";
 import type { DaemonModule, DaemonContext } from "../types.ts";
 import { run, closeControllers, nowSec } from "../util.ts";
+
+// ─── net-status ───────────────────────────────────────────────────────────────
+// Single source of truth for network status, consumed by the bar widget AND the
+// popup over one always-on `net/stream`. The bar widget is a PURE CONSUMER — it
+// does no spawning of its own; everything it shows comes from this stream.
+//
+// Two tiers, by cost:
+//   • FAST tick (2 Hz, /net/stream) is SPAWN-FREE. Every field it computes comes
+//     from sysfs/procfs or libuv getifaddrs — no subprocesses:
+//       signal  → /proc/net/wireless          up/down/speed → /sys/class/net/<if>/…
+//       rx/tx   → …/statistics/{rx,tx}_bytes   ipv4 → os.networkInterfaces()
+//       gateway → /proc/net/route             dns  → /run/systemd/resolve/resolv.conf
+//       wifi radio → /sys/class/rfkill/*
+//   • The Wi-Fi connection state shown in the bar (connected/connecting/
+//     disconnected) is ALSO spawn-free: derived from operstate + carrier. It is
+//     coarse (no NetworkManager substates) on purpose — that keeps nmcli OUT of
+//     the always-on path entirely.
+//   • SLOW detail (SSID, Wi-Fi gen/band/bitrate/MLO, channel, station stats) is
+//     for the POPUP only and needs `iw` (NOT nmcli). It is not polled per tick:
+//     the spawn-free tick watches the Wi-Fi operstate and, on a change (a sysfs
+//     "edge"), refreshes the `iw` detail once; a slow SLOW_MS poll is the safety
+//     net. The fast tick merges the cache; spawns happen only on real change.
+//
+// Spawning per-tick (the old design: ~8 spawns × 2 Hz) is what we deliberately
+// avoid here — see dotfiles/quickshell/CLAUDE.md "Daemon is the single source".
+// nmcli appears ONLY in the user-driven routes below (wifi-list/scan/connect/
+// toggle); those may spawn freely since they're on-demand and transient.
+// ───────────────────────────────────────────────────────────────────────────────
+
+const SLOW_MS = 5000; // safety re-poll for wifi detail + tailscale (events do the rest)
 
 function listIfaces(): string[] {
   try {
@@ -39,10 +70,90 @@ function readIfaceFile(iface: string, name: string): string {
   }
 }
 
+// ─── spawn-free primitives (sysfs / procfs / getifaddrs) ──────────────────────
+
+// IPv4 address of an interface via libuv getifaddrs — no `ip` subprocess.
 function ipv4For(iface: string): string {
-  const out = run(["ip", "-4", "-o", "addr", "show", "dev", iface]);
-  const m = out.match(/inet (\d+\.\d+\.\d+\.\d+)/);
-  return m ? m[1] : "";
+  if (!iface) return "";
+  const addrs = networkInterfaces()[iface] || [];
+  for (const a of addrs) {
+    if ((a.family === "IPv4" || (a as any).family === 4) && !a.internal) return a.address;
+  }
+  return "";
+}
+
+// Wi-Fi signal in dBm from /proc/net/wireless (only lists associated ifaces).
+function wifiSignalDbm(iface: string): number | null {
+  try {
+    const t = readFileSync("/proc/net/wireless", "utf-8");
+    for (const line of t.split("\n")) {
+      const c = line.indexOf(":");
+      if (c < 0) continue;
+      if (line.slice(0, c).trim() !== iface) continue;
+      // cols after "iface:": status  link  level  noise  …  (values carry a "." suffix)
+      const cols = line.slice(c + 1).trim().split(/\s+/);
+      const level = parseFloat(cols[2]);
+      return isNaN(level) ? null : Math.round(level);
+    }
+  } catch {}
+  return null;
+}
+
+// Default gateway + dev from /proc/net/route (hex, little-endian) — no `ip route`.
+function hexLeToIp(hex: string): string {
+  if (hex.length !== 8) return "";
+  const o: number[] = [];
+  for (let i = 0; i < 4; i++) o.push(parseInt(hex.slice(i * 2, i * 2 + 2), 16));
+  return o.reverse().join(".");
+}
+
+function parseGateway(): GatewayStatus {
+  let raw: string;
+  try { raw = readFileSync("/proc/net/route", "utf-8"); } catch { return { gateway: "", dev: "", src: "" }; }
+  let best: { gw: string; dev: string; metric: number } | null = null;
+  const lines = raw.split("\n");
+  for (let i = 1; i < lines.length; i++) {
+    const f = lines[i].trim().split(/\s+/);
+    if (f.length < 11) continue;
+    if (f[1] !== "00000000") continue;            // default route only
+    if (!(parseInt(f[3], 16) & 0x2)) continue;    // RTF_GATEWAY
+    const metric = parseInt(f[6], 10) || 0;
+    if (!best || metric < best.metric) best = { gw: hexLeToIp(f[2]), dev: f[0], metric };
+  }
+  if (!best) return { gateway: "", dev: "", src: "" };
+  return { gateway: best.gw, dev: best.dev, src: ipv4For(best.dev) };
+}
+
+// Effective upstream DNS from systemd-resolved's real resolv.conf (falls back to
+// /etc/resolv.conf). The 127.0.0.53 stub is skipped so we surface real servers.
+function dnsCheap(): string[] {
+  for (const p of ["/run/systemd/resolve/resolv.conf", "/etc/resolv.conf"]) {
+    try {
+      const out: string[] = [];
+      for (const line of readFileSync(p, "utf-8").split("\n")) {
+        const m = line.match(/^\s*nameserver\s+(\S+)/);
+        if (m && m[1] !== "127.0.0.53") out.push(m[1]);
+      }
+      if (out.length) return out.slice(0, 4);
+    } catch {}
+  }
+  return [];
+}
+
+// Wi-Fi radio soft/hard-block state from rfkill — no `nmcli radio`.
+function checkWifiRadio(): boolean {
+  try {
+    for (const d of readdirSync("/sys/class/rfkill")) {
+      const base = `/sys/class/rfkill/${d}`;
+      let type = "";
+      try { type = readFileSync(`${base}/type`, "utf-8").trim(); } catch {}
+      if (type !== "wlan") continue;
+      const soft = readFileSync(`${base}/soft`, "utf-8").trim();
+      const hard = readFileSync(`${base}/hard`, "utf-8").trim();
+      return soft === "0" && hard === "0";
+    }
+  } catch {}
+  return true; // assume enabled when rfkill is unreadable
 }
 
 // ---------------------------------------------------------------------------
@@ -81,6 +192,7 @@ function searchFloat(pattern: string | RegExp, src: string, group = 1): number |
 interface WifiStatus {
   connected: boolean;
   iface: string;
+  status?: string;          // coarse sysfs state: connected | connecting | disconnected
   ssid?: string;
   bssid?: string;
   freq?: number;
@@ -109,26 +221,21 @@ interface WifiStatus {
   dns?: string[];
 }
 
-function parseWifi(iface: string): WifiStatus | null {
-  if (!iface) return null;
-
+// SLOW path: the expensive `iw`-derived Wi-Fi detail. Returns {} when not
+// associated. Signal/IP/byte-counters are intentionally NOT here — those are
+// cheap and read fresh each tick by buildWifi().
+function fetchWifiDetail(iface: string): Partial<WifiStatus> {
+  if (!iface) return {};
   const link = run(["iw", "dev", iface, "link"]);
-  if (!link.trim() || link.includes("Not connected")) {
-    return { connected: false, iface };
-  }
+  if (!link.trim() || link.includes("Not connected")) return {};
 
   const station = run(["iw", "dev", iface, "station", "dump"]);
   const info = run(["iw", "dev", iface, "info"]);
 
-  const out: WifiStatus = {
-    connected: true,
-    iface,
+  const out: Partial<WifiStatus> = {
     ssid: search(/SSID: (.+)/, link) || "",
     bssid: search(/Connected to ([0-9a-f:]{17})/, link) || "",
     freq: searchFloat(/freq: ([\d.]+)/, link) || 0.0,
-    signal_dbm: searchInt(/signal: (-?\d+)/, link),
-    rx_bytes: searchInt(/RX: (\d+) bytes/, link) || 0,
-    tx_bytes: searchInt(/TX: (\d+) bytes/, link) || 0,
     tx_mbps: 0.0,
     rx_mbps: 0.0,
     tx_mod: "",
@@ -173,8 +280,8 @@ function parseWifi(iface: string): WifiStatus | null {
   }
 
   // Wi-Fi generation hint
-  const txMod = out.tx_mod!;
-  const freq = out.freq!;
+  const txMod = out.tx_mod || "";
+  const freq = out.freq || 0;
   if (txMod.includes("EHT")) {
     out.gen = "7";
   } else if (txMod.includes("HE")) {
@@ -189,9 +296,40 @@ function parseWifi(iface: string): WifiStatus | null {
 
   out.band = bandLabel(freq);
   out.mlo = /^MLD |Link \d+ BSSID/m.test(link);
-
-  out.ip = ipv4For(iface);
   return out;
+}
+
+// Coarse Wi-Fi state from sysfs alone — no nmcli. operstate "up" = associated +
+// configured; "dormant" or a present carrier without "up" = mid-connect; else
+// down. Deliberately omits NetworkManager's fine substates (those need nmcli).
+function wifiCoarseStatus(iface: string): string {
+  const op = readIfaceFile(iface, "operstate");
+  if (op === "up") return "connected";
+  if (op === "dormant" || readIfaceFile(iface, "carrier") === "1") return "connecting";
+  return "disconnected";
+}
+
+// FAST path: spawn-free Wi-Fi status. When connected, merges the cached `iw`
+// detail (for the popup) with cheap live fields (signal/ip/bytes). Otherwise
+// reports only the coarse sysfs status.
+function buildWifi(detail: Partial<WifiStatus>): WifiStatus | null {
+  const iface = findWiface();
+  if (!iface) return null;
+  const status = wifiCoarseStatus(iface);
+  if (status === "connected") {
+    return {
+      ...detail,
+      connected: true,
+      iface,
+      status,
+      signal_dbm: wifiSignalDbm(iface),
+      ip: ipv4For(iface),
+      rx_bytes: parseInt(readIfaceFile(iface, "statistics/rx_bytes"), 10) || 0,
+      tx_bytes: parseInt(readIfaceFile(iface, "statistics/tx_bytes"), 10) || 0,
+      dns: dnsCheap(),
+    };
+  }
+  return { connected: false, iface, status };
 }
 
 // ---------------------------------------------------------------------------
@@ -213,6 +351,7 @@ interface EthernetStatus {
   dns?: string[];
 }
 
+// FAST path: fully spawn-free (sysfs + getifaddrs).
 function parseEthernet(iface: string): EthernetStatus | null {
   if (!iface) return null;
 
@@ -248,72 +387,6 @@ interface GatewayStatus {
   src: string;
 }
 
-function parseGateway(): GatewayStatus {
-  const out = run(["ip", "route", "get", "1.1.1.1"]);
-  const gw = out.match(/via (\S+)/);
-  const dev = out.match(/dev (\S+)/);
-  const src = out.match(/src (\S+)/);
-  return {
-    gateway: gw ? gw[1] : "",
-    dev: dev ? dev[1] : "",
-    src: src ? src[1] : "",
-  };
-}
-
-// ---------------------------------------------------------------------------
-// DNS
-// ---------------------------------------------------------------------------
-
-type ResolvectlMap = Record<string, string[]>;
-
-function parseResolvectlDns(): ResolvectlMap {
-  const raw = run(["resolvectl", "dns"], 1000);
-  if (!raw) return {};
-  const out: ResolvectlMap = {};
-  for (const line of raw.split("\n")) {
-    const m = line.match(/^\s*Link\s+\d+\s+\(([^)]+)\):\s*(.*)$/);
-    if (m) {
-      out[m[1]] = m[2].trim().split(/\s+/).filter(Boolean);
-    } else if (line.startsWith("Global:")) {
-      const servers = line.split(":")[1].trim().split(/\s+/).filter(Boolean);
-      if (servers.length) out["__global__"] = servers;
-    }
-  }
-  return out;
-}
-
-function parseNmcliDns(iface: string): string[] {
-  const raw = run(["nmcli", "-g", "IP4.DNS", "device", "show", iface], 1000);
-  return raw
-    .replace(/\|/g, " ")
-    .split(/\s+/)
-    .filter(Boolean);
-}
-
-function parseResolvConf(): string[] {
-  const servers: string[] = [];
-  try {
-    const text = readFileSync("/etc/resolv.conf", "utf-8");
-    for (const line of text.split("\n")) {
-      const m = line.match(/^\s*nameserver\s+(\S+)/);
-      if (m) servers.push(m[1]);
-    }
-  } catch {
-    // ignore
-  }
-  return servers;
-}
-
-function dnsFor(iface: string, resolvectlMap: ResolvectlMap): string[] {
-  if (!iface) return [];
-  if (resolvectlMap[iface]?.length) {
-    return resolvectlMap[iface].slice(0, 4);
-  }
-  const nm = parseNmcliDns(iface);
-  if (nm.length) return nm.slice(0, 4);
-  return [];
-}
-
 // ---------------------------------------------------------------------------
 // Tailscale
 // ---------------------------------------------------------------------------
@@ -332,6 +405,7 @@ interface TailscaleStatus {
   magic_dns?: string;
 }
 
+// SLOW path: refreshed on SLOW_MS / events, not per tick.
 function parseTailscale(): TailscaleStatus {
   const raw = run(["tailscale", "status", "--json"], 2000);
   if (!raw.trim()) return { installed: false };
@@ -376,7 +450,7 @@ function parseTailscale(): TailscaleStatus {
 }
 
 // ---------------------------------------------------------------------------
-// Collect all status
+// Status shape
 // ---------------------------------------------------------------------------
 
 interface NetStatus {
@@ -387,10 +461,6 @@ interface NetStatus {
   ethernet: EthernetStatus | null;
   tailscale: TailscaleStatus;
   wifi_enabled: boolean;
-}
-
-function checkWifiRadio(): boolean {
-  return run(["nmcli", "radio", "wifi"]).trim() === "enabled";
 }
 
 interface WifiScanNetwork extends ScannedAP {
@@ -564,45 +634,18 @@ function listWifiNetworks(rescan: boolean): WifiScanNetwork[] {
   }));
 }
 
-function collectStatus(): NetStatus {
-  const wiface = findWiface();
-  const eiface = findEiface();
-  const resolvectl = parseResolvectlDns();
-
-  const wifi = wiface ? parseWifi(wiface) : null;
-  if (wifi) wifi.dns = dnsFor(wiface, resolvectl);
-
-  const ethernet = eiface ? parseEthernet(eiface) : null;
-  if (ethernet) ethernet.dns = dnsFor(eiface, resolvectl);
-
-  const gateway = parseGateway();
-
-  // Effective system DNS = whichever DNS the default-route iface uses.
-  // Falls back to resolvectl global or /etc/resolv.conf as last resort.
-  let sysDns = dnsFor(gateway.dev, resolvectl);
-  if (!sysDns.length) {
-    sysDns = (resolvectl["__global__"] ?? []).slice(0, 4);
-  }
-  if (!sysDns.length) {
-    sysDns = parseResolvConf().slice(0, 4);
-  }
-
-  return {
-    ts: nowSec(),
-    gateway,
-    dns: sysDns,
-    wifi,
-    ethernet,
-    tailscale: parseTailscale(),
-    wifi_enabled: checkWifiRadio(),
-  };
-}
-
 export function create(): DaemonModule {
   let cached: NetStatus | null = null;
-  let timer: ReturnType<typeof setInterval> | null = null;
+  let fastTimer: ReturnType<typeof setInterval> | null = null;
+  let slowTimer: ReturnType<typeof setInterval> | null = null;
+  let lastWifiOp = ""; // last Wi-Fi operstate, to detect connect/disconnect edges
   const streamControllers = new Set<ReadableStreamDefaultController<Uint8Array>>();
   const encoder = new TextEncoder();
+
+  // Cached popup-only detail (the only fields that cost a subprocess, via `iw`).
+  // Refreshed on a Wi-Fi operstate edge + every SLOW_MS, merged by the fast tick.
+  let wifiDetail: Partial<WifiStatus> = {};
+  let tailscaleCache: TailscaleStatus = { installed: false };
 
   const prevBytes: Record<string, { rx: number; tx: number; ts: number }> = {};
   const trafficHistory: Array<{ rx: number; tx: number }> = [];
@@ -626,11 +669,45 @@ export function create(): DaemonModule {
     prevBytes[entry.iface] = { rx, tx, ts: now };
   }
 
+  // ── SLOW refreshers (the only `iw`/tailscale spawns, for the popup) ──
+  function refreshWifi() {
+    const iface = findWiface();
+    wifiDetail =
+      iface && readIfaceFile(iface, "operstate") === "up"
+        ? fetchWifiDetail(iface) // iw link/station/info
+        : {};
+  }
+  function refreshTailscale() {
+    tailscaleCache = parseTailscale();
+  }
+
+  // ── FAST tick — spawn-free, 2 Hz ──
   function tick() {
     try {
-      cached = collectStatus();
-      attachRates(cached.wifi, cached.ts);
-      attachRates(cached.ethernet, cached.ts);
+      const ts = nowSec();
+      // Watch the Wi-Fi operstate (sysfs); on a connect/disconnect edge, refresh
+      // the popup `iw` detail once — this is our event source, no nmcli monitor.
+      const wiface = findWiface();
+      const op = wiface ? readIfaceFile(wiface, "operstate") : "";
+      if (op !== lastWifiOp) {
+        lastWifiOp = op;
+        refreshWifi();
+      }
+      const wifi = buildWifi(wifiDetail);
+      const eiface = findEiface();
+      const ethernet = eiface ? parseEthernet(eiface) : null;
+      if (ethernet) ethernet.dns = dnsCheap();
+      cached = {
+        ts,
+        gateway: parseGateway(),
+        dns: dnsCheap(),
+        wifi,
+        ethernet,
+        tailscale: tailscaleCache,
+        wifi_enabled: checkWifiRadio(),
+      };
+      attachRates(cached.wifi, ts);
+      attachRates(cached.ethernet, ts);
       const rxR = (cached.wifi?.rx_rate || 0) + (cached.ethernet?.rx_rate || 0);
       const txR = (cached.wifi?.tx_rate || 0) + (cached.ethernet?.tx_rate || 0);
       trafficHistory.push({ rx: rxR, tx: txR });
@@ -656,19 +733,25 @@ export function create(): DaemonModule {
     }
   }
 
+  function cleanup() {
+    for (const t of [fastTimer, slowTimer]) if (t) clearInterval(t);
+    fastTimer = slowTimer = null;
+    closeControllers(streamControllers);
+  }
+
   return {
     name: "net",
 
     init(ctx: DaemonContext) {
+      refreshWifi();
+      refreshTailscale();
       tick();
-      timer = setInterval(tick, 500);
-      ctx.signal.addEventListener("abort", () => {
-        if (timer) {
-          clearInterval(timer);
-          timer = null;
-        }
-        closeControllers(streamControllers);
-      });
+      fastTimer = setInterval(tick, 500);
+      // Safety re-poll for popup `iw` detail (live bitrate/station stats while
+      // connected) + tailscale. The 2 Hz tick's operstate-edge handles connects.
+      slowTimer = setInterval(() => { refreshWifi(); refreshTailscale(); }, SLOW_MS);
+
+      ctx.signal.addEventListener("abort", () => cleanup());
     },
 
     routes: {
@@ -745,6 +828,7 @@ export function create(): DaemonModule {
         } else {
           run(["tailscale", "up"], 10000);
         }
+        refreshTailscale();
         return Response.json({ was_running: ts.running, running: !ts.running });
       },
 
@@ -780,11 +864,7 @@ export function create(): DaemonModule {
     },
 
     shutdown() {
-      if (timer) {
-        clearInterval(timer);
-        timer = null;
-      }
-      closeControllers(streamControllers);
+      cleanup();
     },
   };
 }

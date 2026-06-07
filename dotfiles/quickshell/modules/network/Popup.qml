@@ -54,6 +54,45 @@ Item {
     property bool wifiEnabled: true
     property var trafficHistory: []
     readonly property int trafficMaxHistory: 300
+
+    // ─── Top processes by traffic (procmon/netprocs, grouped by app) ──────
+    // [{name, count, rx, tx, total (bytes in window), rxr/txr (now), rxa/txa (avg)}]
+    property var trafficProcs: []
+    // Speed shown next to the accumulated total: true = instant, false = 1-min avg.
+    property bool trafficNow: true
+    readonly property real trafficProcMax: {
+        var m = 0;
+        for (var i = 0; i < trafficProcs.length; i++) {
+            var t = trafficProcs[i].total || 0;
+            if (t > m) m = t;
+        }
+        return m > 0 ? m : 1;
+    }
+    function prettyProcName(comm) {
+        if (!comm) return "?";
+        return ("" + comm).replace(/^\./, "").replace(/-wrappe?d?$/, "");
+    }
+
+    // Resolve an app icon from the executable name (cached per name).
+    property var procIconCache: ({})
+    function procIconFor(name) {
+        var n = prettyProcName(name);
+        if (root.procIconCache[n] !== undefined) return root.procIconCache[n];
+        var src = "";
+        var entry = DesktopEntries.heuristicLookup(n);
+        if (entry && entry.icon) src = Quickshell.iconPath(entry.icon, true) || "";
+        if (!src) src = Quickshell.iconPath(n.toLowerCase(), true) || "";
+        if (!src) src = Quickshell.iconPath("application-x-executable", true) || "";
+        root.procIconCache[n] = src;
+        return src;
+    }
+    function applyNetProcLine(line) {
+        if (!line) return;
+        try {
+            var d = JSON.parse(line.trim());
+            root.trafficProcs = d.procs || [];
+        } catch (e) { /* ignore */ }
+    }
     property var wifiNetworks: []
     property int wifiNetworkCount: 0
     property bool wifiScanLoading: false
@@ -87,9 +126,12 @@ Item {
                 root._dnsTestPending = true;
             loadWifiNetworks();
             loadBtStatus();
+            netProcStream.running = true;
         } else {
             statusLoop.running = false;
+            netProcStream.running = false;
             root.trafficHistory = [];
+            root.trafficProcs = [];
             root.passwordInputBssid = "";
             root.wifiConnectError = "";
             root.btActionError = "";
@@ -194,6 +236,15 @@ Item {
         if (bytesPerSec < 1048576) return (bytesPerSec / 1024).toFixed(1) + " KB/s";
         if (bytesPerSec < 1073741824) return (bytesPerSec / 1048576).toFixed(1) + " MB/s";
         return (bytesPerSec / 1073741824).toFixed(1) + " GB/s";
+    }
+
+    // Heat-map the realtime speed by magnitude so heavy talkers stand out.
+    function rateColor(bytesPerSec) {
+        if (!bytesPerSec || bytesPerSec < 1024) return Helpers.Colors.textMuted; // <1 KB/s idle
+        if (bytesPerSec < 262144) return "#66bb6a";        // green   <256 KB/s
+        if (bytesPerSec < 1048576) return "#42a5f5";       // blue    <1 MB/s
+        if (bytesPerSec < 10485760) return "#ffa726";      // orange  <10 MB/s
+        return "#ef5350";                                  // red     ≥10 MB/s
     }
 
     function signalIconForPct(signal) {
@@ -323,6 +374,22 @@ Item {
         stdout: SplitParser {
             onRead: line => root.applyStatus(line)
         }
+    }
+
+    // ─── Per-process traffic stream (only sampled while popup is open) ────
+    Process {
+        id: netProcStream
+        command: ["curl", "-sN", "--unix-socket", root._sock, "http://d/procmon/netprocs"]
+        running: false
+        onRunningChanged: if (!running && root.popupOpen) netProcRestart.restart()
+        stdout: SplitParser {
+            onRead: line => root.applyNetProcLine(line)
+        }
+    }
+    Timer {
+        id: netProcRestart
+        interval: 500
+        onTriggered: if (root.popupOpen) netProcStream.running = true
     }
 
     function applyStatus(raw) {
@@ -1610,6 +1677,266 @@ Item {
                                 ctx.fillText(root.fmtRate(maxVal / 2), 2, halfH * 0.5 + 3);
                                 ctx.fillText(root.fmtRate(maxVal / 2), 2, halfH * 1.5 + 3);
                                 ctx.fillText("↓ " + root.fmtRate(maxVal), 2, height - 3);
+                            }
+                        }
+                    }
+                }
+            }
+
+            // ── Top processes by traffic ─────────────────────────────────
+            Rectangle {
+                width: parent.width
+                height: trafficProcCol.implicitHeight + 22
+                color: Qt.rgba(1, 1, 1, 0.04)
+                radius: 8
+
+                Column {
+                    id: trafficProcCol
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    anchors.top: parent.top
+                    anchors.margins: 12
+                    anchors.topMargin: 10
+                    spacing: 3
+
+                    Item {
+                        width: trafficProcCol.width
+                        height: 18
+                        Row {
+                            anchors.left: parent.left
+                            anchors.verticalCenter: parent.verticalCenter
+                            spacing: 8
+                            Text {
+                                anchors.verticalCenter: parent.verticalCenter
+                                text: String.fromCodePoint(0xF04E1)   // 󰓡 swap-vertical
+                                color: "#42a5f5"
+                                font.family: AppConfig.Config.theme.fontFamily
+                                font.pixelSize: 14
+                            }
+                            Text {
+                                anchors.verticalCenter: parent.verticalCenter
+                                text: "Top processes by traffic"
+                                color: Helpers.Colors.textDefault
+                                font.family: AppConfig.Config.theme.fontFamily
+                                font.pixelSize: AppConfig.Config.theme.popupFontSizeBody
+                                font.bold: true
+                            }
+                            Text {
+                                anchors.verticalCenter: parent.verticalCenter
+                                text: "TCP · speed + total used (1 min)"
+                                color: Helpers.Colors.textMuted
+                                font.family: AppConfig.Config.theme.fontFamily
+                                font.pixelSize: AppConfig.Config.theme.popupFontSizeTiny
+                            }
+                            // Bar legend
+                            Rectangle {
+                                anchors.verticalCenter: parent.verticalCenter
+                                width: 8; height: 8; radius: 2
+                                color: Qt.rgba(0.26, 0.65, 0.96, 0.8)
+                            }
+                            Text {
+                                anchors.verticalCenter: parent.verticalCenter
+                                text: "down"
+                                color: Helpers.Colors.textMuted
+                                font.family: AppConfig.Config.theme.fontFamily
+                                font.pixelSize: AppConfig.Config.theme.popupFontSizeTiny
+                            }
+                            Rectangle {
+                                anchors.verticalCenter: parent.verticalCenter
+                                width: 8; height: 8; radius: 2
+                                color: Qt.rgba(1.0, 0.65, 0.15, 0.8)
+                            }
+                            Text {
+                                anchors.verticalCenter: parent.verticalCenter
+                                text: "up"
+                                color: Helpers.Colors.textMuted
+                                font.family: AppConfig.Config.theme.fontFamily
+                                font.pixelSize: AppConfig.Config.theme.popupFontSizeTiny
+                            }
+                        }
+                        // Speed-mode toggle
+                        Rectangle {
+                            anchors.right: parent.right
+                            anchors.verticalCenter: parent.verticalCenter
+                            width: tpChipText.implicitWidth + 16
+                            height: 18
+                            radius: 4
+                            color: tpChipMa.containsMouse ? Qt.rgba(1, 1, 1, 0.12) : Qt.rgba(1, 1, 1, 0.06)
+                            Text {
+                                id: tpChipText
+                                anchors.centerIn: parent
+                                text: (root.trafficNow ? "now" : "1 min avg") + "  ⇄"
+                                color: Helpers.Colors.textMuted
+                                font.family: AppConfig.Config.theme.fontFamily
+                                font.pixelSize: AppConfig.Config.theme.popupFontSizeTiny
+                            }
+                            MouseArea {
+                                id: tpChipMa
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: root.trafficNow = !root.trafficNow
+                            }
+                        }
+                    }
+
+                    Rectangle { width: parent.width; height: 1; color: Qt.rgba(1, 1, 1, 0.07) }
+
+                    // Column headers, aligned over the speed / total cell pairs
+                    Item {
+                        width: trafficProcCol.width
+                        height: 12
+                        visible: root.trafficProcs.length > 0
+                        Text {
+                            anchors.right: parent.right
+                            anchors.rightMargin: 8
+                            width: 162
+                            horizontalAlignment: Text.AlignHCenter
+                            text: "total · 1 min"
+                            color: Helpers.Colors.textMuted
+                            font.family: AppConfig.Config.theme.fontFamily
+                            font.pixelSize: AppConfig.Config.theme.popupFontSizeTiny
+                        }
+                        Text {
+                            anchors.right: parent.right
+                            anchors.rightMargin: 192
+                            width: 184
+                            horizontalAlignment: Text.AlignHCenter
+                            text: root.trafficNow ? "realtime speed" : "avg speed · 1 min"
+                            color: Helpers.Colors.textMuted
+                            font.family: AppConfig.Config.theme.fontFamily
+                            font.pixelSize: AppConfig.Config.theme.popupFontSizeTiny
+                        }
+                    }
+
+                    Text {
+                        visible: root.trafficProcs.length === 0
+                        text: "No TCP traffic"
+                        color: Helpers.Colors.textMuted
+                        font.family: AppConfig.Config.theme.fontFamily
+                        font.pixelSize: AppConfig.Config.theme.popupFontSizeSmall
+                    }
+
+                    Repeater {
+                        model: root.trafficProcs
+                        delegate: Item {
+                            required property var modelData
+                            width: trafficProcCol.width
+                            height: 24
+
+                            // Usage bar: width = total (rx+tx) vs the busiest app,
+                            // split into download (blue) + upload (orange) segments.
+                            Rectangle {
+                                id: tpBar
+                                anchors.left: parent.left
+                                anchors.verticalCenter: parent.verticalCenter
+                                height: parent.height - 4
+                                radius: 4
+                                clip: true
+                                color: "transparent"
+                                width: Math.max(0, Math.min(1, (modelData.total || 0) / root.trafficProcMax)) * parent.width
+                                Row {
+                                    anchors.fill: parent
+                                    Rectangle {
+                                        width: tpBar.width * ((modelData.total > 0) ? (modelData.rx / modelData.total) : 0)
+                                        height: parent.height
+                                        color: Qt.rgba(0.26, 0.65, 0.96, 0.33)   // download
+                                    }
+                                    Rectangle {
+                                        width: tpBar.width * ((modelData.total > 0) ? (modelData.tx / modelData.total) : 0)
+                                        height: parent.height
+                                        color: Qt.rgba(1.0, 0.65, 0.15, 0.33)     // upload
+                                    }
+                                }
+                            }
+
+                            Image {
+                                id: tpIcon
+                                anchors.left: parent.left
+                                anchors.leftMargin: 7
+                                anchors.verticalCenter: parent.verticalCenter
+                                width: 16
+                                height: 16
+                                sourceSize.width: 16
+                                sourceSize.height: 16
+                                smooth: true
+                                source: root.procIconFor(modelData.name)
+                                visible: source != ""
+                            }
+                            Text {
+                                id: tpName
+                                anchors.left: tpIcon.visible ? tpIcon.right : parent.left
+                                anchors.leftMargin: tpIcon.visible ? 7 : 8
+                                anchors.verticalCenter: parent.verticalCenter
+                                width: parent.width * 0.42
+                                elide: Text.ElideRight
+                                text: root.prettyProcName(modelData.name)
+                                color: Helpers.Colors.textDefault
+                                font.family: AppConfig.Config.theme.fontFamily
+                                font.pixelSize: AppConfig.Config.theme.popupFontSizeSmall
+                            }
+                            Text {
+                                visible: (modelData.count || 1) > 1
+                                anchors.left: tpName.right
+                                anchors.leftMargin: 6
+                                anchors.verticalCenter: parent.verticalCenter
+                                text: "×" + modelData.count
+                                color: Helpers.Colors.textMuted
+                                opacity: 0.7
+                                font.family: AppConfig.Config.theme.fontFamily
+                                font.pixelSize: AppConfig.Config.theme.popupFontSizeTiny
+                            }
+
+                            // ── accumulated total used (right column pair) ──
+                            Text {
+                                id: tpUpTotal
+                                anchors.right: parent.right
+                                anchors.rightMargin: 8
+                                anchors.verticalCenter: parent.verticalCenter
+                                width: 76
+                                horizontalAlignment: Text.AlignRight
+                                text: "↑ " + root.fmtBytes(modelData.tx || 0)
+                                color: Helpers.Colors.textMuted
+                                font.family: AppConfig.Config.theme.fontFamily
+                                font.pixelSize: AppConfig.Config.theme.popupFontSizeSmall
+                            }
+                            Text {
+                                id: tpDownTotal
+                                anchors.right: tpUpTotal.left
+                                anchors.rightMargin: 10
+                                anchors.verticalCenter: parent.verticalCenter
+                                width: 76
+                                horizontalAlignment: Text.AlignRight
+                                text: "↓ " + root.fmtBytes(modelData.rx || 0)
+                                color: Helpers.Colors.textMuted
+                                font.family: AppConfig.Config.theme.fontFamily
+                                font.pixelSize: AppConfig.Config.theme.popupFontSizeSmall
+                            }
+                            // ── realtime speed (left column pair) ──
+                            Text {
+                                id: tpUpSpeed
+                                anchors.right: tpDownTotal.left
+                                anchors.rightMargin: 22
+                                anchors.verticalCenter: parent.verticalCenter
+                                width: 88
+                                horizontalAlignment: Text.AlignRight
+                                text: "↑ " + root.fmtRate(root.trafficNow ? (modelData.txr || 0) : (modelData.txa || 0))
+                                color: root.rateColor(root.trafficNow ? (modelData.txr || 0) : (modelData.txa || 0))
+                                font.bold: true
+                                font.family: AppConfig.Config.theme.fontFamily
+                                font.pixelSize: AppConfig.Config.theme.popupFontSizeSmall
+                            }
+                            Text {
+                                anchors.right: tpUpSpeed.left
+                                anchors.rightMargin: 8
+                                anchors.verticalCenter: parent.verticalCenter
+                                width: 88
+                                horizontalAlignment: Text.AlignRight
+                                text: "↓ " + root.fmtRate(root.trafficNow ? (modelData.rxr || 0) : (modelData.rxa || 0))
+                                color: root.rateColor(root.trafficNow ? (modelData.rxr || 0) : (modelData.rxa || 0))
+                                font.bold: true
+                                font.family: AppConfig.Config.theme.fontFamily
+                                font.pixelSize: AppConfig.Config.theme.popupFontSizeSmall
                             }
                         }
                     }

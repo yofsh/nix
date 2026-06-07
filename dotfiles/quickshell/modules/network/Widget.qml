@@ -4,6 +4,11 @@ import "../../helpers" as Helpers
 import "../../config" as AppConfig
 import "../../core" as Core
 
+// Pure consumer of the qs-daemon `net/stream`. The daemon is the single source
+// of truth for network status (see dotfiles/quickshell/CLAUDE.md "Daemon is the
+// single source"); this widget spawns NOTHING. The bar deliberately shows only
+// the essentials — signal icon, connection type, coarse status, traffic — not
+// SSID/band/gen/MLO/IP (those live in the popup).
 Item {
     id: root
     implicitWidth: netRow.implicitWidth + 8
@@ -16,8 +21,6 @@ Item {
     }
 
     property var context: null
-    property var config: Helpers.ModuleConfig.resolve("network")
-    readonly property int effectiveStatusIntervalMs: config.intervalMs
 
     property int pingServiceRevision: Core.ModuleRegistry.serviceRevision
     readonly property var pingService: {
@@ -25,9 +28,9 @@ Item {
         return Core.ModuleRegistry.serviceInstance("ping");
     }
 
-    property string wifiOutput: ""
-    property string ethOutput: ""
-    property string activeIface: ""
+    // ─── State from the daemon stream ─────────────────────────────────────
+    property var wifi: null         // d.wifi  (see net-status.ts WifiStatus)
+    property var ethernet: null     // d.ethernet
     property string rxRate: ""
     property string txRate: ""
     property real rxRateNum: 0
@@ -36,12 +39,6 @@ Item {
     property bool pingActive: pingService ? pingService.active : false
     // Popup state — left-click toggles; PackagePopup mirrors this to show the popup.
     property bool popupOpen: false
-    property string netInfo: ""
-    property string wifiName: netInfo ? netInfo.split("|")[0] || "" : ""
-    property string netIp: netInfo ? netInfo.split("|")[1] || "" : ""
-    property string wifiGen: netInfo ? netInfo.split("|")[2] || "" : ""
-    property string wifiBand: netInfo ? netInfo.split("|")[3] || "" : ""
-    property bool mlo: netInfo ? netInfo.split("|")[4] === "MLO" : false
 
     // Graph history (2Hz from daemon = 30s visible)
     property int maxHistory: 60
@@ -49,28 +46,20 @@ Item {
     property real maxTxKb: 0
     property real maxRxKb: 0
 
-    property color genColor: {
-        if (wifiGen === "7") return "#bb86fc";    // purple
-        if (wifiGen === "6E") return "#4dd0e1";   // cyan
-        if (wifiGen === "6") return "#66bb6a";    // green
-        if (wifiGen === "5") return "#ffa726";    // orange
-        if (wifiGen === "4") return "#ef5350";    // red
-        return "#757575";                          // gray / legacy
-    }
-
     function formatRate(bytesPerSec) {
         var kb = Math.round(bytesPerSec / 1024);
         return kb.toString();
     }
 
-    readonly property string _sock: AppConfig.Config.daemon.socket
-
-    function refreshStatus() {
-        if (!netProc.running)
-            netProc.running = true;
-        if (!infoProc.running)
-            infoProc.running = true;
+    // dBm → 0..100% (matches the daemon's dbmToPct).
+    function dbmToPct(dbm) {
+        if (dbm === undefined || dbm === null) return 0;
+        if (dbm >= -40) return 100;
+        if (dbm <= -80) return 0;
+        return Math.round((dbm + 80) * 2.5);
     }
+
+    readonly property string _sock: AppConfig.Config.daemon.socket
 
     function applyTrafficTick(rxBytes, txBytes) {
         root.rxRateNum = rxBytes / 1024;
@@ -97,6 +86,11 @@ Item {
         if (!raw) return;
         try {
             var d = JSON.parse(raw.trim());
+
+            // Connection state (signal, coarse status, ethernet up/down)
+            if (d.wifi !== undefined) root.wifi = d.wifi;
+            if (d.ethernet !== undefined) root.ethernet = d.ethernet;
+
             // Seed history from daemon backlog on first message
             if (d.traffic_history && d.traffic_history.length > 0 && root.netHistory.length === 0) {
                 var h = [];
@@ -124,40 +118,14 @@ Item {
         } catch (e) { /* ignore parse errors */ }
     }
 
-    property int signalStrength: {
-        if (!wifiOutput) return -1;
-        var parts = wifiOutput.split("|");
-        if (parts[3] !== "connected") return -1;
-        return parseInt(parts[1]) || 0;
-    }
+    property bool isWifi: wifi !== null && wifi.connected === true
+    property bool isEthernet: ethernet !== null && ethernet.connected === true
+    property int signalStrength: isWifi ? dbmToPct(wifi.signal_dbm) : -1
 
-    property bool isWifi: wifiOutput && wifiOutput.split("|")[3] === "connected"
-    property bool isEthernet: ethOutput && ethOutput.split("|")[3] === "connected"
-    property string connectionStatus: {
-        if (!wifiOutput) return "";
-        var parts = wifiOutput.split("|");
-        return parts[3] || "";
-    }
-    property bool showStatus: connectionStatus !== "" && connectionStatus !== "connected"
+    // Coarse sysfs status: connected | connecting | disconnected (no nmcli).
+    property string connectionStatus: wifi ? (wifi.status || "") : ""
+    property bool showStatus: connectionStatus === "connecting"
     property bool isConnected: isWifi || isEthernet
-
-    property string connectingName: {
-        if (!wifiOutput) return "";
-        var parts = wifiOutput.split("|");
-        return parts[4] || "";
-    }
-
-    property color statusColor: {
-        if (connectionStatus === "preparing") return "#ffa726";      // orange
-        if (connectionStatus === "configuring") return "#ffa726";    // orange
-        if (connectionStatus === "authenticating") return "#ab47bc"; // purple
-        if (connectionStatus === "getting-ip") return "#42a5f5";     // blue
-        if (connectionStatus === "verifying") return "#42a5f5";      // blue
-        if (connectionStatus === "deactivating") return "#ef5350";   // red
-        if (connectionStatus === "failed") return "#ef5350";         // red
-        if (connectionStatus === "unavailable") return "#757575";    // gray
-        return Helpers.Colors.disconnected;
-    }
 
     property color signalColor: {
         var s = signalStrength;
@@ -182,24 +150,12 @@ Item {
         return String.fromCodePoint(0xF0928);                        // nf-md-wifi_strength_4
     }
 
-    function statusIconText() {
-        if (connectionStatus === "preparing") return String.fromCodePoint(0xF04E6);     // nf-md-swap_horizontal
-        if (connectionStatus === "configuring") return String.fromCodePoint(0xF0493);   // nf-md-tune
-        if (connectionStatus === "authenticating") return String.fromCodePoint(0xF0341); // nf-md-lock_open
-        if (connectionStatus === "getting-ip") return String.fromCodePoint(0xF0A5F);    // nf-md-ip_network
-        if (connectionStatus === "verifying") return String.fromCodePoint(0xF04E6);     // nf-md-swap_horizontal
-        if (connectionStatus === "deactivating") return String.fromCodePoint(0xF05AA);  // nf-md-wifi_off
-        if (connectionStatus === "failed") return String.fromCodePoint(0xF0029);        // nf-md-alert
-        if (connectionStatus === "unavailable") return String.fromCodePoint(0xF05AA);   // nf-md-wifi_off
-        return String.fromCodePoint(0xF092E);                                           // nf-md-wifi_strength_off_outline
-    }
-
     Row {
         id: netRow
         anchors.verticalCenter: parent.verticalCenter
         spacing: 2
 
-        // Graph with overlaid traffic info
+        // Traffic graph with overlaid rate readout
         Item {
             anchors.verticalCenter: parent.verticalCenter
             width: root.maxHistory
@@ -247,49 +203,6 @@ Item {
                             ctx.fillRect(x, halfH, 1, rxH);
                         }
                     }
-                }
-            }
-
-            Row {
-                anchors.verticalCenter: parent.verticalCenter
-                anchors.left: parent.left
-                anchors.leftMargin: 2
-                spacing: 4
-
-                Text {
-                    anchors.verticalCenter: parent.verticalCenter
-                    text: root.wifiName
-                    color: Helpers.Colors.textDefault
-                    font.family: AppConfig.Config.theme.fontFamily
-                    font.pixelSize: 10
-                }
-
-                Text {
-                    anchors.verticalCenter: parent.verticalCenter
-                    visible: root.isWifi && root.wifiBand !== ""
-                    text: root.wifiBand
-                    color: root.wifiBand === "6G" ? "#bb86fc" : root.wifiBand === "5G" ? "#42a5f5" : "#8d6e63"
-                    font.family: AppConfig.Config.theme.fontFamily
-                    font.pixelSize: 10
-                }
-
-                Text {
-                    anchors.verticalCenter: parent.verticalCenter
-                    visible: root.isWifi && root.wifiGen !== ""
-                    text: root.wifiGen
-                    color: root.genColor
-                    font.family: AppConfig.Config.theme.fontFamily
-                    font.pixelSize: 10
-                    font.bold: true
-                }
-
-                Text {
-                    anchors.verticalCenter: parent.verticalCenter
-                    visible: root.mlo
-                    text: "MLO"
-                    color: "#bb86fc"
-                    font.family: AppConfig.Config.theme.fontFamily
-                    font.pixelSize: 10
                 }
             }
 
@@ -355,39 +268,27 @@ Item {
             font.pixelSize: AppConfig.Config.theme.fontSizeIcon
         }
 
+        // Wi-Fi signal icon (or wifi-off when down). Hidden while a connecting
+        // indicator is showing and no ethernet is up.
         Text {
             id: wifiIcon
             anchors.verticalCenter: parent.verticalCenter
             visible: root.isWifi || (!root.isEthernet && !root.showStatus)
             text: root.wifiIconText()
-            color: root.iconColor
+            color: root.isWifi ? root.signalColor : root.iconColor
             opacity: root.isConnected ? 0.9 : 0.6
             font.family: AppConfig.Config.theme.fontFamily
             font.pixelSize: AppConfig.Config.theme.fontSizeIcon
         }
 
-        // Status icon + network name (non-connected states)
-        Row {
+        // Connecting indicator (coarse sysfs state — no SSID/name)
+        Text {
             anchors.verticalCenter: parent.verticalCenter
             visible: root.showStatus
-            spacing: 3
-
-            Text {
-                anchors.verticalCenter: parent.verticalCenter
-                text: root.statusIconText()
-                color: root.statusColor
-                font.family: AppConfig.Config.theme.fontFamily
-                font.pixelSize: 12
-            }
-
-            Text {
-                anchors.verticalCenter: parent.verticalCenter
-                visible: root.connectingName !== ""
-                text: root.connectingName
-                color: root.statusColor
-                font.family: AppConfig.Config.theme.fontFamily
-                font.pixelSize: 10
-            }
+            text: String.fromCodePoint(0xF04E6)   // nf-md-swap_horizontal
+            color: "#ffa726"
+            font.family: AppConfig.Config.theme.fontFamily
+            font.pixelSize: AppConfig.Config.theme.fontSizeIcon
         }
     }
 
@@ -407,40 +308,7 @@ Item {
         }
     }
 
-
-    Process {
-        id: infoProc
-        command: ["bash", "-c", [
-            "AIFACE='" + root.activeIface + "'",
-            "[ -z \"$AIFACE\" ] && exit 0",
-            "IP=$(ip -4 -o addr show dev $AIFACE 2>/dev/null | awk '{print $4}' | cut -d/ -f1)",
-            "if [ -d /sys/class/net/$AIFACE/wireless ]; then",
-            "  LINK=$(iw dev $AIFACE link 2>/dev/null)",
-            "  SSID=$(echo \"$LINK\" | grep -oP 'SSID: \\K.*')",
-            "  [ -z \"$SSID\" ] && { echo \"WiFi|${IP}\"; exit 0; }",
-            "  FREQ=$(echo \"$LINK\" | grep -oP 'freq: \\K\\d+')",
-            "  if echo \"$LINK\" | grep -q 'EHT-'; then GEN='7'",
-            "  elif echo \"$LINK\" | grep -q 'HE-'; then",
-            "    if [ \"${FREQ:-0}\" -ge 5925 ]; then GEN='6E'; else GEN='6'; fi",
-            "  elif echo \"$LINK\" | grep -q 'VHT-'; then GEN='5'",
-            "  elif echo \"$LINK\" | grep -q 'HT-'; then GEN='4'",
-            "  else GEN='?'; fi",
-            "  if [ \"${FREQ:-0}\" -ge 5925 ]; then BAND='6G'",
-            "  elif [ \"${FREQ:-0}\" -ge 5000 ]; then BAND='5G'",
-            "  else BAND='2.4G'; fi",
-            "  if echo \"$LINK\" | grep -qE '^MLD |Link [0-9]+ BSSID'; then MLO='MLO'; else MLO=''; fi",
-            "  echo \"${SSID}||${GEN}|${BAND}|${MLO}\"",
-            "else",
-            "  echo \"|\"",
-            "fi"
-        ].join("\n")]
-        running: false
-        stdout: StdioCollector {
-            onStreamFinished: root.netInfo = this.text.trim()
-        }
-    }
-
-    // Traffic data from daemon stream (persists across QS restarts)
+    // Single always-on source: the daemon net stream (persists across QS restarts)
     Process {
         id: daemonStream
         command: ["curl", "-sN", "--unix-socket", root._sock, "http://d/net/stream"]
@@ -450,87 +318,4 @@ Item {
             onRead: data => root.applyDaemonLine(data)
         }
     }
-
-    Process {
-        id: netProc
-        command: ["bash", "-c", [
-            "WIFACE=$(ls /sys/class/net/ 2>/dev/null | grep -E '^wl' | head -1)",
-            "EIFACE=$(ls /sys/class/net/ 2>/dev/null | grep -E '^(eth|enp|eno|ens)' | head -1)",
-            "HAS_OUTPUT=0",
-            "# Ethernet (only emitted when link is up)",
-            "if [ -n \"$EIFACE\" ] && [ \"$(cat /sys/class/net/$EIFACE/operstate 2>/dev/null)\" = 'up' ]; then",
-            "  echo \"ethernet||${EIFACE}|connected\"",
-            "  HAS_OUTPUT=1",
-            "fi",
-            "# WiFi (always emitted when interface exists, even disconnected, for status display)",
-            "if [ -n \"$WIFACE\" ]; then",
-            "  OPSTATE=$(cat /sys/class/net/$WIFACE/operstate 2>/dev/null)",
-            "  if [ \"$OPSTATE\" = 'up' ]; then",
-            "    DBM=$(iw dev $WIFACE link 2>/dev/null | grep -oP 'signal: \\K-?\\d+')",
-            "    if [ -n \"$DBM\" ]; then",
-            "      if [ \"$DBM\" -gt -40 ]; then SIGNAL=100",
-            "      elif [ \"$DBM\" -lt -80 ]; then SIGNAL=0",
-            "      else SIGNAL=$(( (DBM + 80) * 25 / 10 )); fi",
-            "    else SIGNAL=0; fi",
-            "    echo \"wifi|${SIGNAL}|${WIFACE}|connected\"",
-            "  else",
-            "    STATE_NUM=$(nmcli -g GENERAL.STATE device show $WIFACE 2>/dev/null | head -1 | grep -oP '^\\d+')",
-            "    CONN=$(nmcli -g GENERAL.CONNECTION device show $WIFACE 2>/dev/null | head -1)",
-            "    case \"$STATE_NUM\" in",
-            "      20) STATUS='unavailable' ;;",
-            "      30) STATUS='disconnected' ;;",
-            "      40) STATUS='preparing' ;;",
-            "      50) STATUS='configuring' ;;",
-            "      60) STATUS='authenticating' ;;",
-            "      70) STATUS='getting-ip' ;;",
-            "      80|90) STATUS='verifying' ;;",
-            "      110) STATUS='deactivating' ;;",
-            "      120) STATUS='failed' ;;",
-            "      *) STATUS='disconnected' ;;",
-            "    esac",
-            "    echo \"wifi|0|${WIFACE}|${STATUS}|${CONN}\"",
-            "  fi",
-            "  HAS_OUTPUT=1",
-            "fi",
-            "if [ \"$HAS_OUTPUT\" = '0' ]; then",
-            "  echo 'disconnected|||disconnected'",
-            "fi"
-        ].join("\n")]
-        running: true
-
-        stdout: StdioCollector {
-            onStreamFinished: {
-                var text = this.text.trim();
-                var lines = text.length ? text.split("\n") : [];
-                var newWifi = "";
-                var newEth = "";
-                for (var i = 0; i < lines.length; i++) {
-                    var line = lines[i];
-                    var kind = line.split("|")[0];
-                    if (kind === "wifi") newWifi = line;
-                    else if (kind === "ethernet") newEth = line;
-                    // "disconnected" fallback: leave both empty
-                }
-                root.wifiOutput = newWifi;
-                root.ethOutput = newEth;
-
-                // Pick the primary interface for traffic / info: prefer ethernet when up.
-                var iface = "";
-                if (newEth) iface = newEth.split("|")[2] || "";
-                else if (newWifi && newWifi.split("|")[3] === "connected") iface = newWifi.split("|")[2] || "";
-                if (iface !== root.activeIface) {
-                    root.activeIface = iface;
-                }
-            }
-        }
-    }
-
-    Timer {
-        id: statusTimer
-        interval: root.effectiveStatusIntervalMs
-        running: true
-        repeat: true
-        onTriggered: root.refreshStatus()
-    }
-
 }
