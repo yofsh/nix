@@ -10,13 +10,14 @@ fi
 
 common="use lowercase, use comma instead of semicolons, prefer joining sentences with commas over splitting with periods when still readable"
 es_rules="no accents except ñ or when omitting changes meaning, no inverted punctuation marks, lowercase first letter of sentences"
+raw='output only the resulting text — never prefix it with a label like "translation:", no surrounding quotes, no commentary'
 
 case "$preset" in
-  en)     prompt="Translate to English, output only the translation, $common" ;;
-  ru)     prompt="Translate to Russian, output only the translation, $common" ;;
-  es)     prompt="Translate to Spanish, output only the translation, $es_rules, $common" ;;
-  fix)    prompt="Fix grammar and show updated text, keep original text structure, $common" ;;
-  formal) prompt="Make this text more formal, $common" ;;
+  en)     prompt="Translate to English. $raw. $common" ;;
+  ru)     prompt="Translate to Russian. $raw. $common" ;;
+  es)     prompt="Translate to Spanish. $raw. $es_rules, $common" ;;
+  fix)    prompt="Fix grammar and show updated text, keep original text structure. $raw. $common" ;;
+  formal) prompt="Make this text more formal. $raw. $common" ;;
   *)      echo "Unknown preset: $preset" >&2; exit 1 ;;
 esac
 

@@ -26,8 +26,12 @@ fi
 notify "Translating" "$original"
 
 start=$SECONDS
-res=$(printf '%s\n\nText:\n%s' "$request" "$original" | claude -p)
+res=$(printf '%s\n\nText:\n%s' "$request" "$original" | claude -p \
+  --append-system-prompt 'Output only the resulting text. Never add a label or "Translation:" prefix, surrounding quotes, preamble, or explanation.')
 elapsed=$(( SECONDS - start ))
+
+# safety net: strip a leading label the model may still add (e.g. "Translation:")
+res=$(printf '%s' "$res" | sed -E '1s/^[[:space:]]*(translation|traducción|traduccion|перевод)[[:space:]]*:[[:space:]]*//I')
 
 if [[ "$mode" == "replace" ]]; then
   wl-copy "$res"

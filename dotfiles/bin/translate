@@ -60,7 +60,28 @@ remove_umlauts() {
   echo "$1" | sed 's/á/a/g; s/é/e/g; s/í/i/g; s/ó/o/g; s/ú/u/g; s/ü/u/g; s/ñ/n/g; s/Á/A/g; s/É/E/g; s/Í/I/g; s/Ó/O/g; s/Ú/U/g; s/Ü/U/g; s/¿//g;'
 }
 
-original=$(wl-paste -p)
+get_selection() {
+  local saved text="" cls
+  saved=$(wl-paste 2>/dev/null)        # back up real clipboard
+  wl-copy --clear                       # sentinel to detect when copy lands
+
+  cls=$(hyprctl activewindow -j 2>/dev/null | jq -r '.class // empty')
+  case "$cls" in
+    foot|footclient) wtype -M ctrl -M shift c ;;   # terminal: Ctrl+Shift+C
+    *)               wtype -M ctrl c ;;            # everything else: Ctrl+C
+  esac
+
+  for _ in $(seq 1 20); do              # poll up to ~1s for the app to fill clipboard
+    text=$(wl-paste --no-newline 2>/dev/null)
+    [[ -n "$text" ]] && break
+    sleep 0.05
+  done
+
+  printf '%s' "$saved" | wl-copy        # restore real clipboard
+  printf '%s' "$text"
+}
+
+original=$(get_selection)
 
 if [[ "$mode" == "replace" ]]; then
   send_notification "Getting $lang_pango replacement for:" "$original"
