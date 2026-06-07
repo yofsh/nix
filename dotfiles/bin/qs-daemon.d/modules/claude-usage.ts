@@ -1,4 +1,4 @@
-import { readdirSync, statSync, openSync, readSync, closeSync, existsSync, readFileSync } from "fs";
+import { readdirSync, statSync, openSync, readSync, closeSync, existsSync, readFileSync, watch } from "fs";
 import { join, basename, dirname } from "path";
 import { homedir } from "os";
 import type { DaemonModule, DaemonContext } from "../types.ts";
@@ -15,7 +15,14 @@ import type { DaemonModule, DaemonContext } from "../types.ts";
 
 const PROJECTS_DIR = join(process.env.CLAUDE_CONFIG_DIR || `${homedir()}/.claude`, "projects");
 const WINDOW_DAYS = 7;
-const SCAN_INTERVAL = 30_000;
+
+// Claude Code appends to ~/.claude/projects/**/<session>.jsonl as it runs, so we
+// rescan on a filesystem event (debounced to coalesce a burst of appends) rather
+// than unconditionally on a timer. scan() is incremental (per-file byte offsets),
+// so a rescan only reads the appended tail. A slow safety scan backstops events
+// the watcher drops, rolls the 7-day window across midnight, and prunes.
+const WATCH_DEBOUNCE_MS = 1500; // coalesce a burst of JSONL appends
+const SAFETY_SCAN_MS = 5 * 60_000;
 
 // ---------------------------------------------------------------------------
 // Subscription rate-limit utilization — the numbers `/usage` shows: the 5-hour
@@ -233,7 +240,10 @@ export function create(): DaemonModule {
   const seen = new Set<string>();             // dedup: msgId|reqId
   const fileLastTs = new Map<string, number>(); // filepath -> last message ts (ms), for active-time gaps
   let summaryCache: object | null = null;
-  let timer: ReturnType<typeof setInterval> | null = null;
+  let safetyTimer: ReturnType<typeof setInterval> | null = null;
+  let watcher: ReturnType<typeof watch> | null = null;
+  let scanDebounce: ReturnType<typeof setTimeout> | null = null;
+  let needRearm = false;
   let limitsCache: object | null = null;
   let limitsTimer: ReturnType<typeof setInterval> | null = null;
 
@@ -484,18 +494,49 @@ export function create(): DaemonModule {
     };
   }
 
+  // Run the debounced rescan, then re-arm the watcher if a structural change
+  // occurred. Bun's recursive watch does NOT auto-watch subdirs created after it
+  // armed (a new project dir fires one `rename`, but later appends inside it are
+  // missed), so on any `rename` we tear down and rebuild the watch over the
+  // now-current tree. Appends fire `change`, not `rename`, so steady-state work
+  // never re-arms; the debounce coalesces a workflow's burst of new files.
+  function onDebouncedScan() {
+    scan();
+    if (needRearm) { needRearm = false; armWatch(); }
+  }
+
+  function armWatch() {
+    try { watcher?.close(); } catch {}
+    watcher = null;
+    if (!existsSync(PROJECTS_DIR)) return;
+    try {
+      watcher = watch(PROJECTS_DIR, { recursive: true }, (event: string) => {
+        if (event === "rename") needRearm = true;
+        if (scanDebounce) clearTimeout(scanDebounce);
+        scanDebounce = setTimeout(onDebouncedScan, WATCH_DEBOUNCE_MS);
+      });
+      watcher.on("error", () => { try { watcher?.close(); } catch {} watcher = null; });
+    } catch {}
+  }
+
+  function cleanup() {
+    if (scanDebounce) { clearTimeout(scanDebounce); scanDebounce = null; }
+    if (safetyTimer) { clearInterval(safetyTimer); safetyTimer = null; }
+    if (limitsTimer) { clearInterval(limitsTimer); limitsTimer = null; }
+    try { watcher?.close(); } catch {}
+    watcher = null;
+  }
+
   return {
     name: "claude-usage",
 
     init(ctx: DaemonContext) {
       scan();
       fetchLimits();
-      timer = setInterval(scan, SCAN_INTERVAL);
+      armWatch();
+      safetyTimer = setInterval(scan, SAFETY_SCAN_MS);
       limitsTimer = setInterval(fetchLimits, LIMITS_INTERVAL);
-      ctx.signal.addEventListener("abort", () => {
-        if (timer) { clearInterval(timer); timer = null; }
-        if (limitsTimer) { clearInterval(limitsTimer); limitsTimer = null; }
-      });
+      ctx.signal.addEventListener("abort", () => cleanup());
     },
 
     routes: {
@@ -505,9 +546,6 @@ export function create(): DaemonModule {
       },
     },
 
-    shutdown() {
-      if (timer) { clearInterval(timer); timer = null; }
-      if (limitsTimer) { clearInterval(limitsTimer); limitsTimer = null; }
-    },
+    shutdown() { cleanup(); },
   };
 }
