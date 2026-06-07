@@ -53,7 +53,7 @@ Item {
             Text {
                 id: labelText
                 anchors.verticalCenter: parent.verticalCenter
-                text: entry.apps.replace(/,/g, ", ")
+                text: entry.apps
                 color: Helpers.Colors.textMuted
                 font.family: AppConfig.Config.theme.fontFamily
                 font.pixelSize: AppConfig.Config.theme.fontSizeSmall
@@ -78,32 +78,40 @@ Item {
         onExited: root.hovered = false
     }
 
-    Process {
-        id: checkProc
-        command: ["curl", "-s", "--unix-socket", AppConfig.Config.daemon.socket, "http://d/privacy/check"]
-        running: true
-
-        stdout: StdioCollector {
-            onStreamFinished: {
-                var text = this.text.trim();
-                root.micActive = false; root.camActive = false; root.screenActive = false;
-                root.micApps = ""; root.camApps = ""; root.screenApps = "";
-                if (text) {
-                    try {
-                        var d = JSON.parse(text);
-                        if (d.mic && d.mic.length > 0) { root.micActive = true; root.micApps = d.mic.join(","); }
-                        if (d.cam && d.cam.length > 0) { root.camActive = true; root.camApps = d.cam.join(","); }
-                        if (d.screen && d.screen.length > 0) { root.screenActive = true; root.screenApps = d.screen.join(","); }
-                    } catch (e) {}
-                }
-            }
+    // Format detected processes for the tooltip: "name [pid] full params".
+    function fmtApps(entries) {
+        if (!entries || !entries.length) return "";
+        var out = [];
+        for (var i = 0; i < entries.length; i++) {
+            var e = entries[i];
+            var s = e.name || "?";
+            if (e.pid) s += " [" + e.pid + "]";
+            if (e.params) s += "  " + e.params;
+            out.push(s);
         }
+        return out.join("    ·    ");
     }
 
-    Timer {
-        interval: root.config.intervalMs
+    function applyLine(text) {
+        if (!text) return;
+        try {
+            var d = JSON.parse(text.trim());
+            root.micActive = !!(d.mic && d.mic.length > 0);
+            root.camActive = !!(d.cam && d.cam.length > 0);
+            root.screenActive = !!(d.screen && d.screen.length > 0);
+            root.micApps = fmtApps(d.mic);
+            root.camApps = fmtApps(d.cam);
+            root.screenApps = fmtApps(d.screen);
+        } catch (e) { /* ignore parse errors */ }
+    }
+
+    // Event-driven: the daemon pushes {mic,cam,screen} on connect + on every
+    // change (mic via pactl-subscribe, screen/cam via pw-mon). No polling.
+    Process {
+        id: streamProc
+        command: ["curl", "-sN", "--unix-socket", AppConfig.Config.daemon.socket, "http://d/privacy/stream"]
         running: true
-        repeat: true
-        onTriggered: checkProc.running = true
+        onRunningChanged: if (!running) running = true   // auto-reconnect
+        stdout: SplitParser { onRead: line => root.applyLine(line) }
     }
 }

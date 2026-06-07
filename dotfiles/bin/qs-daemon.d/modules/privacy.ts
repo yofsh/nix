@@ -1,6 +1,7 @@
 import { readFileSync } from "fs";
-import { basename } from "path";
-import type { DaemonModule } from "../types.ts";
+import type { DaemonModule, DaemonContext } from "../types.ts";
+import { procParams, type ProcEntry } from "./procinfo.ts";
+import { scanCam } from "./scanner.ts";
 
 const CMD_TIMEOUT = 2000;
 
@@ -33,17 +34,6 @@ function pidAlive(pid: number): boolean {
   }
 }
 
-function readCmdline(pid: string): string {
-  try {
-    const raw = readFileSync(`/proc/${pid}/cmdline`);
-    // cmdline is null-separated; first element is the executable
-    const first = raw.toString("utf-8").split("\0")[0];
-    return first ? basename(first) : "";
-  } catch {
-    return "";
-  }
-}
-
 // ---------------------------------------------------------------------------
 // Voice PID exclusion
 // ---------------------------------------------------------------------------
@@ -71,7 +61,7 @@ function getVoicePids(): Set<string> {
 // Microphone check
 // ---------------------------------------------------------------------------
 
-async function checkMic(): Promise<string[]> {
+async function checkMic(): Promise<ProcEntry[]> {
   const voicePids = getVoicePids();
 
   const raw = await spawn(["pactl", "-f", "json", "list", "source-outputs"]);
@@ -84,7 +74,8 @@ async function checkMic(): Promise<string[]> {
     return [];
   }
 
-  const names = new Set<string>();
+  const out: ProcEntry[] = [];
+  const seen = new Set<number>();
   for (const entry of outputs) {
     // Skip corked (paused) streams
     if (entry.corked !== false) continue;
@@ -95,55 +86,29 @@ async function checkMic(): Promise<string[]> {
     if ((props["stream.monitor"] ?? "") === "true") continue;
 
     // Skip voice script PIDs
-    const pid = props["application.process.id"] ?? "";
-    if (pid && voicePids.has(pid)) continue;
+    const pidStr = props["application.process.id"] ?? "";
+    if (pidStr && voicePids.has(pidStr)) continue;
 
     const name = props["application.name"];
-    if (name) names.add(name);
+    if (!name) continue;
+    const pid = parseInt(pidStr, 10) || 0;
+    if (pid && seen.has(pid)) continue;
+    if (pid) seen.add(pid);
+    out.push({ name, pid, params: pid ? procParams(pid) : "" });
   }
 
-  return [...names].sort();
+  out.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : a.pid - b.pid));
+  return out;
 }
 
-// ---------------------------------------------------------------------------
-// Camera check
-// ---------------------------------------------------------------------------
-
-async function checkCam(): Promise<string[]> {
-  // fuser on common /dev/video devices
-  const raw = await spawn([
-    "fuser",
-    "/dev/video0",
-    "/dev/video1",
-    "/dev/video2",
-    "/dev/video3",
-  ]);
-  if (!raw.trim()) return [];
-
-  // fuser outputs PIDs separated by spaces
-  const pids = raw
-    .trim()
-    .split(/\s+/)
-    .filter(Boolean)
-    .map((s) => s.replace(/[^0-9]/g, ""))
-    .filter(Boolean);
-
-  const uniquePids = [...new Set(pids)];
-
-  const names = new Set<string>();
-  for (const pid of uniquePids) {
-    const name = readCmdline(pid);
-    if (name) names.add(name);
-  }
-
-  return [...names].sort();
-}
+// Camera check is delegated to the shared scanner worker (scanCam) — it walks
+// /proc/*/fd for /dev/video* holders off the main event loop, in-process.
 
 // ---------------------------------------------------------------------------
 // Screen share check
 // ---------------------------------------------------------------------------
 
-async function checkScreen(): Promise<string[]> {
+async function checkScreen(): Promise<ProcEntry[]> {
   const raw = await spawn(["pw-dump"]);
   if (!raw.trim()) return [];
 
@@ -168,40 +133,190 @@ async function checkScreen(): Promise<string[]> {
   if (portalIds.size === 0) return [];
 
   // Find streams targeting a portal source
-  const names = new Set<string>();
+  const out: ProcEntry[] = [];
+  const seen = new Set<number>();
   for (const node of nodes) {
     const props = node.info?.props ?? {};
     if (props["media.class"] !== "Stream/Input/Video") continue;
 
     const target = props["node.target"] ?? props["node.driver-id"];
-    if (target != null && portalIds.has(target)) {
-      const name = props["node.name"];
-      if (name) names.add(name);
-    }
+    if (target == null || !portalIds.has(target)) continue;
+
+    const name = props["application.name"] || props["node.name"];
+    if (!name) continue;
+    const pid = parseInt(props["application.process.id"] ?? "", 10) || 0;
+    if (pid && seen.has(pid)) continue;
+    if (pid) seen.add(pid);
+    out.push({ name, pid, params: pid ? procParams(pid) : "" });
   }
 
-  return [...names].sort();
+  out.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : a.pid - b.pid));
+  return out;
 }
 
 // ---------------------------------------------------------------------------
-// Module export
+// Module export — EVENT-DRIVEN
 // ---------------------------------------------------------------------------
+//
+// Mic and screen-share state lives only in PipeWire/PulseAudio (no kernel
+// signal), so instead of polling their CLIs on a timer we watch their event
+// events, by what each source supports:
+//   • mic    → `pactl subscribe` — instant, quiet when idle.
+//   • screen → `pw-mon -a -o` filtered to Node add/remove — instant. `-a -o`
+//              drop the param/prop bodies (the 38k-line "firehose" was the
+//              one-time graph dump re-read in a feedback loop, not pw-mon
+//              itself; idle is ~2 lines/s). We react ONLY to Node lifecycle, so
+//              our own pw-dump's Client churn can't re-trigger the loop.
+//   • camera → pw-mon Node events catch portal/browser camera instantly; a slow
+//              POLL_MS safety scan covers direct /dev/video* (which has no event).
+// The slow poll also keepalives the stream. State is pushed over `stream`.
 
 export function create(): DaemonModule {
+  const encoder = new TextEncoder();
+  const clients = new Set<ReadableStreamDefaultController<Uint8Array>>();
+  let cur: { mic: ProcEntry[]; cam: ProcEntry[]; screen: ProcEntry[] } = { mic: [], cam: [], screen: [] };
+
+  const POLL_MS = 5000; // direct-/dev/video* safety scan + stream keepalive
+  let aborting = false;
+  let micMon: ReturnType<typeof Bun.spawn> | null = null;
+  let pwMon: ReturnType<typeof Bun.spawn> | null = null;
+  let micDebounce: ReturnType<typeof setTimeout> | null = null;
+  let pwDebounce: ReturnType<typeof setTimeout> | null = null;
+  let pollTimer: ReturnType<typeof setInterval> | null = null;
+
+  const same = (a: ProcEntry[], b: ProcEntry[]) =>
+    a.length === b.length && a.every((e, i) => e.pid === b[i].pid && e.name === b[i].name);
+
+  function broadcast() {
+    const line = encoder.encode(JSON.stringify(cur) + "\n");
+    for (const c of clients) { try { c.enqueue(line); } catch { clients.delete(c); } }
+  }
+
+  async function recheckMic() {
+    const mic = await checkMic();
+    if (!same(mic, cur.mic)) { cur = { ...cur, mic }; broadcast(); }
+  }
+  async function recheckScreen() {
+    const screen = await checkScreen();
+    if (!same(screen, cur.screen)) { cur = { ...cur, screen }; broadcast(); }
+  }
+  async function recheckCam() {
+    const cam = await scanCam();
+    if (!same(cam, cur.cam)) { cur = { ...cur, cam }; broadcast(); }
+  }
+
+  function startMicMonitor() {
+    if (aborting) return;
+    try {
+      micMon = Bun.spawn(["pactl", "subscribe"], { stdout: "pipe", stderr: "ignore" });
+      const dec = new TextDecoder();
+      (async () => {
+        try {
+          for await (const chunk of micMon!.stdout as any) {
+            if (dec.decode(chunk).includes("source-output")) { // a mic stream changed
+              if (micDebounce) clearTimeout(micDebounce);
+              micDebounce = setTimeout(recheckMic, 250);
+            }
+          }
+        } catch {}
+        if (!aborting) setTimeout(startMicMonitor, 2000); // respawn if pulse restarts
+      })();
+    } catch {}
+  }
+
+  // Watch the PipeWire graph for Node add/remove (a screencast or camera stream
+  // is a Node). `-a -o` strip the param/prop firehose; we line-parse and react
+  // only when an "added:"/"removed:" event's "type:" is a Node — so our own
+  // pw-dump re-check (which connects as a Client) can't feed back.
+  function startPwMonitor() {
+    if (aborting) return;
+    try {
+      pwMon = Bun.spawn(["pw-mon", "-a", "-o"], { stdout: "pipe", stderr: "ignore" });
+      const dec = new TextDecoder();
+      let buf = "";
+      let lifecycle = false; // saw added:/removed:, awaiting its type:
+      (async () => {
+        try {
+          for await (const chunk of pwMon!.stdout as any) {
+            buf += dec.decode(chunk, { stream: true });
+            let nl: number;
+            while ((nl = buf.indexOf("\n")) >= 0) {
+              const t = buf.slice(0, nl).trim();
+              buf = buf.slice(nl + 1);
+              if (t === "added:" || t === "removed:") lifecycle = true;
+              else if (lifecycle && t.startsWith("type:")) {
+                if (t.includes("Interface:Node")) {
+                  if (pwDebounce) clearTimeout(pwDebounce);
+                  pwDebounce = setTimeout(() => { recheckScreen(); recheckCam(); }, 300);
+                }
+                lifecycle = false;
+              }
+            }
+          }
+        } catch {}
+        if (!aborting) setTimeout(startPwMonitor, 2000); // respawn if pipewire restarts
+      })();
+    } catch {}
+  }
+
+  function cleanup() {
+    aborting = true;
+    for (const t of [micDebounce, pwDebounce]) if (t) clearTimeout(t);
+    if (pollTimer) clearInterval(pollTimer);
+    micDebounce = pwDebounce = pollTimer = null;
+    try { micMon?.kill(); } catch {}
+    try { pwMon?.kill(); } catch {}
+    micMon = pwMon = null;
+    for (const c of clients) { try { c.close(); } catch {} }
+    clients.clear();
+  }
+
   return {
     name: "privacy",
 
-    init() {},
+    init(ctx: DaemonContext) {
+      recheckMic(); recheckScreen(); recheckCam(); // seed
+      startMicMonitor(); // mic → pactl subscribe (instant)
+      startPwMonitor();  // screen + portal-camera → pw-mon Node events (instant)
+      // Only direct /dev/video* access lacks an event → slow safety scan. The
+      // tick also keepalives ("\n", ignored by the client) so the push-on-change
+      // stream never trips the server's idle timeout.
+      pollTimer = setInterval(() => {
+        if (clients.size === 0) return;
+        const ka = encoder.encode("\n");
+        for (const c of clients) { try { c.enqueue(ka); } catch { clients.delete(c); } }
+        recheckCam();
+      }, POLL_MS);
+      ctx.signal.addEventListener("abort", () => cleanup());
+    },
 
     routes: {
-      check: async (_req: Request): Promise<Response> => {
-        const [mic, cam, screen] = await Promise.all([
-          checkMic(),
-          checkCam(),
-          checkScreen(),
-        ]);
-        return Response.json({ mic, cam, screen });
+      // Cached snapshot — no probing (kept for compatibility / one-off reads).
+      check: async (): Promise<Response> => Response.json(cur),
+
+      // Push stream: current state on connect + on every change.
+      stream: (req: Request) => {
+        const stream = new ReadableStream<Uint8Array>({
+          start(controller) {
+            clients.add(controller);
+            try { controller.enqueue(encoder.encode(JSON.stringify(cur) + "\n")); } catch {}
+            req.signal.addEventListener("abort", () => {
+              clients.delete(controller);
+              try { controller.close(); } catch {}
+            });
+          },
+          cancel() {},
+        });
+        return new Response(stream, {
+          headers: {
+            "Content-Type": "application/x-ndjson",
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+          },
+        });
       },
     },
+
+    shutdown() { cleanup(); },
   };
 }
