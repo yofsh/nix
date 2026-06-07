@@ -19,9 +19,12 @@ Item {
         var sn = screenName();
         if (registeredScreen === sn) return;
         if (registeredScreen) {
+            Core.ModuleRegistry.unregisterWidgetInstance("cpu", registeredScreen);
             Core.ModuleRegistry.unregisterWidgetInstance("system", registeredScreen);
             Core.ModuleRegistry.unregisterWidgetInstance("temperature", registeredScreen);
         }
+        if (cpuLoader.item)
+            Core.ModuleRegistry.registerWidgetInstance("cpu", sn, cpuLoader.item);
         if (systemLoader.item)
             Core.ModuleRegistry.registerWidgetInstance("system", sn, systemLoader.item);
         if (tempLoader.item)
@@ -44,8 +47,10 @@ Item {
         spacing: AppConfig.Config.theme.spacingSmall || 4
 
         Loader {
+            id: cpuLoader
             height: parent.height
             source: "../cpu/Widget.qml"
+            onLoaded: root.registerChildren()
         }
 
         Loader {
@@ -70,6 +75,7 @@ Item {
 
     Component.onDestruction: {
         if (registeredScreen) {
+            Core.ModuleRegistry.unregisterWidgetInstance("cpu", registeredScreen);
             Core.ModuleRegistry.unregisterWidgetInstance("system", registeredScreen);
             Core.ModuleRegistry.unregisterWidgetInstance("temperature", registeredScreen);
         }

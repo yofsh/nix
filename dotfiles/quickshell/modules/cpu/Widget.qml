@@ -18,6 +18,10 @@ Item {
     property int userPercent: 0
     property int systemPercent: 0
 
+    // Left-click opens the per-process popup; PackagePopup mirrors this to show it
+    // (the widget instance is registered by system-group so the popup can find it).
+    property bool popupOpen: false
+
     // History for graph.
     // Each entry: {user: %, sys: %}
     property int maxHistory: 60
@@ -116,18 +120,23 @@ Item {
         }
     }
 
-    // Click chart to cycle power profile
+    // Left-click → top-processes popup; right-click → cycle power profile.
     MouseArea {
         anchors.fill: graphCanvas
+        acceptedButtons: Qt.LeftButton | Qt.RightButton
         cursorShape: Qt.PointingHandCursor
 
-        onClicked: {
-            var idx = root.profiles.indexOf(root.profileOutput);
-            var next = root.profiles[(idx + 1) % root.profiles.length];
-            setProc.command = ["busctl", "--system", "set-property",
-                "net.hadess.PowerProfiles", "/net/hadess/PowerProfiles",
-                "net.hadess.PowerProfiles", "ActiveProfile", "s", next];
-            setProc.running = true;
+        onClicked: function(mouse) {
+            if (mouse.button === Qt.RightButton) {
+                var idx = root.profiles.indexOf(root.profileOutput);
+                var next = root.profiles[(idx + 1) % root.profiles.length];
+                setProc.command = ["busctl", "--system", "set-property",
+                    "net.hadess.PowerProfiles", "/net/hadess/PowerProfiles",
+                    "net.hadess.PowerProfiles", "ActiveProfile", "s", next];
+                setProc.running = true;
+            } else {
+                root.popupOpen = !root.popupOpen;
+            }
         }
     }
 

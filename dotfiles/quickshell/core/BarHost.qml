@@ -35,7 +35,8 @@ import "../modules/volume" as M_volume
 import "../modules/systray" as M_systray
 import "../modules/language" as M_language
 import "../modules/notification-icon" as M_notification_icon
-// popup-only modules (no bar widget): system/temperature are shown via system-group, wallpaper via keybind
+// popup-only modules (no bar widget): cpu/system/temperature are shown via system-group, wallpaper via keybind
+import "../modules/cpu" as M_cpu
 import "../modules/system" as M_system
 import "../modules/temperature" as M_temperature
 import "../modules/wallpaper" as M_wallpaper
@@ -221,6 +222,7 @@ PanelWindow {
     Core.PackagePopup { moduleId: "app-usage";    screen: hostScreenInfo; barWindow: barWindow; M_app_usage.Popup {} }
     Core.PackagePopup { moduleId: "battery";      screen: hostScreenInfo; barWindow: barWindow; M_battery.Popup {} }
     Core.PackagePopup { moduleId: "claude-usage"; screen: hostScreenInfo; barWindow: barWindow; M_claude_usage.Popup {} }
+    Core.PackagePopup { moduleId: "cpu";          screen: hostScreenInfo; barWindow: barWindow; M_cpu.Popup {} }
     Core.PackagePopup { moduleId: "focus";        screen: hostScreenInfo; barWindow: barWindow; keyboardFocus: true; M_focus.Popup {} }
     Core.PackagePopup { moduleId: "khal";         screen: hostScreenInfo; barWindow: barWindow; M_khal.Popup {} }
     Core.PackagePopup { moduleId: "network";      screen: hostScreenInfo; barWindow: barWindow; ipc: false; M_network.Popup {} }
