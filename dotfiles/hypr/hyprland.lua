@@ -105,7 +105,7 @@ hl.config({
   debug      = {
     overlay      = false,
     disable_logs = 1,
-    vfr          = false,
+    vfr          = true,
   },
 
   render     = {
@@ -607,7 +607,8 @@ hl.bind("SUPER + SHIFT + R", hl.dsp.exec_cmd("hyprctl reload"), { description = 
 
 -- Caps Lock = Menu keysym (via kb_options caps:menu)
 hl.bind("Menu", hl.dsp.exec_cmd("lang-toggle"), { description = "Layout: toggle EN / RU (Caps Lock)" })
-hl.bind("CTRL + Menu", hl.dsp.exec_cmd("hyprctl switchxkblayout all 2"), { description = "Layout → Ukrainian (Ctrl+Caps)" })
+hl.bind("CTRL + Menu", hl.dsp.exec_cmd("hyprctl switchxkblayout all 2"),
+  { description = "Layout → Ukrainian (Ctrl+Caps)" })
 
 ------------------------------------------------------------------------
 -- Helper: exec then reset submap
@@ -650,6 +651,7 @@ hl.define_submap("Monitor", function()
     { key = "B",         qs = "battery",      desc = "Battery" },
     { key = "W",         qs = "weather",      desc = "Weather" },
     { key = "M",         qs = "system",       desc = "System stats" },
+    { key = "P",         qs = "cpu",          desc = "Processes" },
     { key = "K",         qs = "khal",         desc = "Khal agenda" },
     { key = "F",         qs = "focus",        desc = "Focus timer" },
     { key = "U",         qs = "app-usage",    desc = "Wellbeing / usage" },
@@ -659,7 +661,7 @@ hl.define_submap("Monitor", function()
   end
   hl.bind("N", hl.dsp.exec_cmd("qs ipc call network togglePopup"), { description = "Network" })
   hl.bind("escape", function()
-    for _, w in ipairs({ "temperature", "battery", "weather", "system", "khal", "network", "focus", "app-usage", "claude-usage" }) do
+    for _, w in ipairs({ "temperature", "battery", "weather", "system", "cpu", "khal", "network", "focus", "app-usage", "claude-usage" }) do
       hl.dispatch(hl.dsp.exec_cmd("qs ipc call " .. w .. " close"))
     end
     hl.dispatch(hl.dsp.submap("reset"))
@@ -872,17 +874,17 @@ end)
 hl.bind("SUPER + R", hl.dsp.submap("Launcher"), { description = "Launcher submap" })
 hl.define_submap("Launcher", function()
   for _, s in ipairs({
-    { key = "A", target = "AI",            desc = "🤖 AI" },
-    { key = "B", target = "Bookmarks",     desc = "🔖 Bookmarks" },
-    { key = "D", target = "Bedroom",       desc = "🛏️ Bedroom" },
-    { key = "E", target = "Monitor",       desc = "📊 System stats" },
+    { key = "A", target = "AI", desc = "🤖 AI" },
+    { key = "B", target = "Bookmarks", desc = "🔖 Bookmarks" },
+    { key = "D", target = "Bedroom", desc = "🛏️ Bedroom" },
+    { key = "E", target = "Monitor", desc = "📊 System stats" },
     { key = "G", target = "Master Layout", desc = "🪟 Master layout" },
-    { key = "Q", target = "Power",         desc = "⏻ Power" },
-    { key = "R", target = "resize",        desc = "↔ Resize" },
-    { key = "S", target = "Services",      desc = "🔧 Services" },
-    { key = "T", target = "Translate",     desc = "🌐 Translate" },
-    { key = "V", target = "YTS",           desc = "🎬 YTS" },
-    { key = "W", target = "Wallpaper",     desc = "🖼 Wallpaper" },
+    { key = "Q", target = "Power", desc = "⏻ Power" },
+    { key = "R", target = "resize", desc = "↔ Resize" },
+    { key = "S", target = "Services", desc = "🔧 Services" },
+    { key = "T", target = "Translate", desc = "🌐 Translate" },
+    { key = "V", target = "YTS", desc = "🎬 YTS" },
+    { key = "W", target = "Wallpaper", desc = "🖼 Wallpaper" },
   }) do
     hl.bind(s.key, hl.dsp.submap(s.target), { description = s.desc })
   end
