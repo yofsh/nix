@@ -1,9 +1,17 @@
-import { readdirSync, readFileSync, statSync } from "fs";
+import { readdirSync, readFileSync, statSync, watch, existsSync } from "fs";
 import { join } from "path";
 import { homedir } from "os";
-import type { DaemonModule } from "../types.ts";
+import type { DaemonModule, DaemonContext } from "../types.ts";
 
 const CAL_ROOT = join(homedir(), ".calendars");
+
+// khal (a Python spawn) + ICS parsing is expensive, but ~/.calendars only
+// changes when vdirsyncer syncs — so we rebuild on a filesystem event, not on
+// every widget poll. A slow safety re-poll still rebuilds periodically because
+// the agenda span is relative to "today" and its window edge rolls with the
+// clock even when no file changes.
+const SAFETY_MS = 10 * 60_000; // slow safety rebuild (time-relative window edge)
+const DEBOUNCE_MS = 800;       // coalesce vdirsyncer's per-sync write burst
 
 const KHAL_FIELDS = [
   "title", "start", "end", "calendar", "description",
@@ -330,23 +338,65 @@ function dedupeByUid(events: Record<string, unknown>[]): Record<string, unknown>
 // ── Module ───────────────────────────────────────────────────────────────────
 
 export function create(): DaemonModule {
+  // Per-span cache, invalidated by a generation counter. The fs watcher
+  // (debounced) and the slow safety timer bump `gen`; a cached span is served
+  // until its stored generation goes stale, so idle widget polls never re-spawn
+  // khal.
+  const cache = new Map<string, { gen: number; events: EnrichedEvent[] }>();
+  let gen = 0;
+  let watcher: ReturnType<typeof watch> | null = null;
+  let debounce: ReturnType<typeof setTimeout> | null = null;
+  let safety: ReturnType<typeof setInterval> | null = null;
+
+  function buildAgenda(span: string): EnrichedEvent[] {
+    icsCache = new Map(); // clear per-build ICS cache
+    const raw = runKhal(span);
+    const deduped = dedupeByUid(raw);
+    return deduped.map(enrich);
+  }
+
+  function cleanup() {
+    if (debounce) { clearTimeout(debounce); debounce = null; }
+    if (safety) { clearInterval(safety); safety = null; }
+    try { watcher?.close(); } catch {}
+    watcher = null;
+  }
+
   return {
     name: "calendar",
 
-    init() {},
+    init(ctx: DaemonContext) {
+      // Recursive watch over accounts/<cal>/*.ics. vdirsyncer atomically renames
+      // each .ics into its (stable, already-watched) calendar dir, so file
+      // creates/updates are caught without re-arming; a burst per sync is
+      // coalesced by the debounce.
+      if (existsSync(CAL_ROOT)) {
+        try {
+          watcher = watch(CAL_ROOT, { recursive: true }, () => {
+            if (debounce) clearTimeout(debounce);
+            debounce = setTimeout(() => { gen++; }, DEBOUNCE_MS);
+          });
+          watcher.on("error", () => { try { watcher?.close(); } catch {} watcher = null; });
+        } catch {}
+      }
+      safety = setInterval(() => { gen++; }, SAFETY_MS);
+      ctx.signal.addEventListener("abort", () => cleanup());
+    },
 
     routes: {
       agenda: async (req: Request): Promise<Response> => {
         const url = new URL(req.url);
         const span = url.searchParams.get("span") || "14d";
 
-        // Clear per-request ICS cache
-        icsCache = new Map();
+        const hit = cache.get(span);
+        if (hit && hit.gen === gen) return Response.json(hit.events);
 
+        // Snapshot gen before building: if a change lands mid-build, the stored
+        // gen is already stale so the next poll rebuilds.
+        const buildGen = gen;
         try {
-          const raw = runKhal(span);
-          const deduped = dedupeByUid(raw);
-          const events = deduped.map(enrich);
+          const events = buildAgenda(span);
+          cache.set(span, { gen: buildGen, events });
           return Response.json(events);
         } catch (e: any) {
           return Response.json(
@@ -356,5 +406,7 @@ export function create(): DaemonModule {
         }
       },
     },
+
+    shutdown() { cleanup(); },
   };
 }
