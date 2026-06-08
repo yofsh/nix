@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Convert images to JPEG, scale to max 2K, strip EXIF
 # Supports archives (zip, tar.gz, rar, 7z) — extracts images first
-# Usage: img-convert <name> <file|archive>...
+# Usage: yazi-convert <name> <file|archive>...
 
 set -euo pipefail
 
@@ -117,4 +117,4 @@ if [[ "$answer" =~ ^[Yy]$ ]]; then
 	fi
 fi
 
-notify-send "img-convert" "Converted $count image(s) to $outdir"
+notify-send "yazi-convert" "Converted $count image(s) to $outdir"

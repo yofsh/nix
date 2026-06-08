@@ -164,7 +164,7 @@ append_keymap = [
 	{ on = "!", run = "shell '$SHELL' --confirm --block", desc = "Run shell here" },
 	{ on = "C", run = "shell 'cd \"$(dirname %h)\"; items=\"\"; for f in %s; do items=\"$items $(basename \"$f\")\"; done; eval zip -r -9 archive.zip $items' --block", desc = "Compress selected files to zip (max compression)" },
 	{ on = "E", run = "shell 'ya pub extract --list %s' --block", desc = "Extract archive here" },
-	{ on = "I", run = "shell 'read -p \"Name (Enter for folder name): \" name; img-convert \"$name\" %s' --block", desc = "Convert images to JPEG (4K, stripped)" },
+	{ on = "I", run = "shell 'read -p \"Name (Enter for folder name): \" name; yazi-convert \"$name\" %s' --block", desc = "Convert images to JPEG (4K, stripped)" },
 	{ on = "<C-p>", run = "shell 'yazi-print %s' --block", desc = "Print: images (4x6 glossy), PDFs (page range), archives (extract+print)" },
 ]
 
