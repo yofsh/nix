@@ -22,9 +22,9 @@ Tested multiple driver versions (v1.24.0 through git main) against OpenVINO 2025
 
 ## What Still Works
 
-- `whisper-cpp` in `modules/desktop.nix` (CPU mode, no overlay needed)
-- `faster-whisper` Python package in `home/default.nix`
-- Voice scripts (`voice.d/`) — just use CPU now
+- The `voice` script (`dotfiles/bin/voice`) for Whisper STT — CPU only now.
+  (The `faster-whisper` Python env in `home/default.nix` is currently commented
+  out; uncomment it if `voice` needs the local backend.)
 - NPU hardware itself is fine (`/dev/accel0`, `intel_vpu` kernel module loads)
 
 ## To Revisit
