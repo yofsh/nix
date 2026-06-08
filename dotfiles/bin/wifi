@@ -1,0 +1,809 @@
+#!/usr/bin/env python3
+"""Unified Wi-Fi tool.
+
+Subcommands:
+  wifi                 connect to a network (fzf picker) — default
+  wifi connect         same as above
+  wifi scan            scan and show all APs with generation/signal/load
+  wifi info            detailed info about the current connection
+  wifi qr              connect by scanning a Wi-Fi QR code with the webcam
+  wifi pw              show the saved password of the active network
+"""
+
+import argparse
+import os
+import re
+import subprocess
+import sys
+import unicodedata
+
+
+# ── ANSI colors ──────────────────────────────────────────────────────────────
+class C:
+    RST = "\033[0m"
+    BOLD = "\033[1m"
+    DIM = "\033[2m"
+    RED = "\033[91m"
+    GREEN = "\033[92m"
+    YELLOW = "\033[93m"
+    BLUE = "\033[94m"
+    MAGENTA = "\033[95m"
+    CYAN = "\033[96m"
+    WHITE = "\033[97m"
+    GRAY = "\033[90m"
+    BG_GRAY = "\033[48;5;236m"
+
+
+_ANSI_RE = re.compile(r"\033\[[^m]*m")
+
+
+# ── shared helpers ───────────────────────────────────────────────────────────
+def run(cmd, timeout=5):
+    try:
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+        return r.stdout.strip()
+    except (subprocess.CalledProcessError, FileNotFoundError, subprocess.TimeoutExpired):
+        return ""
+
+
+def get_wireless_interfaces() -> list[str]:
+    """Wireless interface names from 'iw dev'."""
+    out = run(["iw", "dev"])
+    return re.findall(r"Interface\s+(\S+)", out)
+
+
+def get_iface() -> str | None:
+    ifs = get_wireless_interfaces()
+    return ifs[0] if ifs else None
+
+
+def dw(s: str) -> int:
+    """Display width: strip ANSI, count wide chars as 2."""
+    stripped = _ANSI_RE.sub("", s)
+    w = 0
+    for ch in stripped:
+        w += 2 if unicodedata.east_asian_width(ch) in ("W", "F") else 1
+    return w
+
+
+def pad(s: str, width: int) -> str:
+    return s + " " * max(0, width - dw(s))
+
+
+def load_oui_db() -> dict[str, str]:
+    """Load OUI database from data/oui.db next to this script."""
+    oui: dict[str, str] = {}
+    db_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "oui.db")
+    if not os.path.exists(db_path):
+        return oui
+    with open(db_path) as f:
+        for line in f:
+            parts = line.strip().split("\t", 1)
+            if len(parts) == 2:
+                oui[parts[0]] = parts[1]
+    return oui
+
+
+def oui_lookup(bssid: str, oui_db: dict[str, str]) -> str:
+    """Vendor from BSSID. Empty for randomized MACs unless the base OUI matches."""
+    prefix = bssid.replace(":", "")[:6].lower()
+    if prefix in oui_db:
+        return oui_db[prefix]
+    first_byte = int(prefix[:2], 16)
+    if first_byte & 0x02:  # locally administered
+        global_byte = first_byte & ~0x02
+        global_prefix = f"{global_byte:02x}{prefix[2:]}"
+        if global_prefix in oui_db:
+            return oui_db[global_prefix]
+    return ""
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# scan
+# ════════════════════════════════════════════════════════════════════════════
+GEN_INFO = {
+    "Gen 7":  ("802.11be", C.MAGENTA, "🚀"),
+    "Gen 6E": ("802.11ax", C.CYAN,    "⚡"),
+    "Gen 6":  ("802.11ax", C.GREEN,   "⚡"),
+    "Gen 5":  ("802.11ac", C.YELLOW,  "✨"),
+    "Gen 4":  ("802.11n",  C.RED,     "📡"),
+    "Legacy": ("802.11a/b/g", C.GRAY, "🐌"),
+}
+
+
+def get_wifi_gen(caps: set[str], freq: float) -> str:
+    if "EHT" in caps:
+        return "Gen 7"
+    if "HE" in caps:
+        return "Gen 6E" if freq >= 5925 else "Gen 6"
+    if "VHT" in caps:
+        return "Gen 5"
+    if "HT" in caps:
+        return "Gen 4"
+    return "Legacy"
+
+
+def scan_signal_bar(dbm: float) -> str:
+    if dbm >= -50:
+        bars, color, emoji = "████", C.GREEN, "🟢"
+    elif dbm >= -60:
+        bars, color, emoji = "███░", C.GREEN, "🟢"
+    elif dbm >= -70:
+        bars, color, emoji = "██░░", C.YELLOW, "🟡"
+    elif dbm >= -80:
+        bars, color, emoji = "█░░░", C.RED, "🟠"
+    else:
+        bars, color, emoji = "░░░░", C.RED, "🔴"
+    return f"{emoji} {color}{bars}{C.RST} {C.DIM}{dbm:.0f}dBm{C.RST}"
+
+
+def util_bar(util_str: str) -> str:
+    try:
+        num, den = util_str.split("/")
+        pct = int(num) / int(den) * 100
+    except (ValueError, ZeroDivisionError):
+        return f"{C.DIM}─{C.RST}"
+    if pct < 30:
+        color = C.GREEN
+    elif pct < 60:
+        color = C.YELLOW
+    else:
+        color = C.RED
+    return f"{color}{pct:.0f}%{C.RST}"
+
+
+def get_channel_width(text: str) -> str:
+    m = re.search(r"channel width: \d+ \(([^)]+)\)", text)
+    if m:
+        return m.group(1)
+    if "HT20/HT40" in text:
+        return "40 MHz"
+    if "HT20" in text:
+        return "20 MHz"
+    return ""
+
+
+def get_max_streams(text: str) -> int:
+    max_ss = 0
+    for m in re.finditer(r"(\d+) streams: MCS", text):
+        max_ss = max(max_ss, int(m.group(1)))
+    return max_ss
+
+
+def scan_band_label(freq: float) -> str:
+    if freq >= 5925:
+        return "6 GHz"
+    if freq >= 5000:
+        return "5 GHz"
+    return "2.4 GHz"
+
+
+def band_emoji(band: str) -> str:
+    if "6" in band and "2.4" not in band:
+        return "🟣"
+    if "5" in band:
+        return "🔵"
+    return "🟤"
+
+
+def parse_scan(text: str) -> list[dict]:
+    networks = []
+    blocks = re.split(r"(?=BSS [0-9a-f:]{17})", text)
+
+    for block in blocks:
+        if not block.strip():
+            continue
+
+        net = {
+            "bssid": "", "ssid": "", "freq": 0.0, "signal": 0.0,
+            "security": "Open", "caps": set(), "channel_width": "", "streams": 0,
+            "associated": False, "channel": "", "wps": False, "clients": "",
+            "util": "", "mu_mimo": False, "twt": False, "auth": "", "vendor": "",
+        }
+
+        m = re.search(r"BSS ([0-9a-f:]{17})", block)
+        if m:
+            net["bssid"] = m.group(1)
+
+        net["associated"] = "-- associated" in block
+
+        m = re.search(r"SSID: ([^\t\n]+)", block)
+        if m:
+            net["ssid"] = m.group(1).strip()
+
+        m = re.search(r"freq: ([\d.]+)", block)
+        if m:
+            net["freq"] = float(m.group(1))
+
+        m = re.search(r"signal: (-?[\d.]+)", block)
+        if m:
+            net["signal"] = float(m.group(1))
+
+        if "RSN:" in block:
+            net["security"] = "WPA2"
+        elif "WPA:" in block:
+            net["security"] = "WPA"
+        if "802.1X" in block:
+            net["security"] = "Enterprise"
+
+        m = re.search(r"Authentication suites: ([^\t\n*]+)", block)
+        if m:
+            net["auth"] = m.group(1).strip()
+
+        if "SAE" in net["auth"]:
+            net["security"] = "WPA3"
+        if "PSK SAE" in net["auth"]:
+            net["security"] = "WPA2/3"
+
+        if "HT capabilities:" in block or "HT operation:" in block:
+            net["caps"].add("HT")
+        if "VHT capabilities:" in block or "VHT operation:" in block:
+            net["caps"].add("VHT")
+        if "HE capabilities:" in block or "HE Operation:" in block:
+            net["caps"].add("HE")
+        if "EHT capabilities:" in block or "EHT Operation:" in block:
+            net["caps"].add("EHT")
+
+        m = re.search(r"primary channel: (\d+)", block)
+        if m:
+            net["channel"] = m.group(1)
+
+        net["channel_width"] = get_channel_width(block)
+        net["streams"] = get_max_streams(block)
+        net["wps"] = "WPS:" in block or "Wi-Fi Protected Setup" in block
+
+        m = re.search(r"station count: (\d+)", block)
+        if m:
+            net["clients"] = m.group(1)
+
+        m = re.search(r"channel utilisation: (\d+/\d+)", block)
+        if m:
+            net["util"] = m.group(1)
+
+        net["mu_mimo"] = "MU Beamformer" in block
+        net["twt"] = "TWT Responder" in block
+
+        m = re.search(r"Manufacturer: ([^\t\n*]+)", block)
+        if m:
+            net["vendor"] = m.group(1).strip()
+        if not net["vendor"]:
+            m = re.search(r"Device name: ([^\t\n*]+)", block)
+            if m:
+                net["vendor"] = m.group(1).strip()
+
+        net["gen"] = get_wifi_gen(net["caps"], net["freq"])
+        net["band"] = scan_band_label(net["freq"])
+
+        if net["ssid"]:
+            networks.append(net)
+
+    return networks
+
+
+def cmd_scan(args):
+    if not sys.stdin.isatty():
+        text = sys.stdin.read()
+    else:
+        if args.iface:
+            ifaces = [args.iface]
+        else:
+            ifaces = get_wireless_interfaces()
+            if not ifaces:
+                print("No wireless interfaces found.", file=sys.stderr)
+                sys.exit(1)
+
+        subprocess.run(["nmcli", "device", "wifi", "rescan"], capture_output=True, timeout=10)
+
+        text = ""
+        for iface in ifaces:
+            try:
+                result = subprocess.run(
+                    ["iw", "dev", iface, "scan", "dump"],
+                    capture_output=True, text=True, check=True,
+                )
+                text += result.stdout
+            except subprocess.CalledProcessError as e:
+                print(f"Error scanning {iface}: {e.stderr.strip()}", file=sys.stderr)
+
+        if not text:
+            print("No scan results from any interface.", file=sys.stderr)
+            sys.exit(1)
+
+    networks = parse_scan(text)
+    if not networks:
+        print("No networks found.")
+        sys.exit(0)
+
+    oui_db = load_oui_db()
+    if oui_db:
+        for n in networks:
+            if not n["vendor"]:
+                n["vendor"] = oui_lookup(n["bssid"], oui_db)
+
+    networks.sort(key=lambda n: (not n["associated"], n["ssid"].lower(), n["signal"]))
+
+    ssid_counts: dict[str, int] = {}
+    for n in networks:
+        ssid_counts[n["ssid"]] = ssid_counts.get(n["ssid"], 0) + 1
+    unique_ssids = len(ssid_counts)
+
+    COL_ICON, COL_SSID, COL_BAND, COL_CH, COL_SIGNAL = 4, 26, 10, 4, 18
+    COL_SEC, COL_GEN, COL_WIDTH, COL_SS = 9, 8, 14, 3
+    COL_LOAD, COL_UTIL, COL_FLAGS, COL_VENDOR, COL_APS = 5, 5, 12, 16, 3
+
+    total_w = (COL_ICON + COL_SSID + COL_BAND + COL_CH + COL_SIGNAL + COL_SEC
+               + COL_GEN + COL_WIDTH + COL_SS + COL_LOAD + COL_UTIL
+               + COL_FLAGS + COL_VENDOR + COL_APS + 8)
+
+    print()
+    print(f"  {C.BOLD}{C.CYAN}📶 Wi-Fi Scanner{C.RST}  {C.DIM}─  {len(networks)} APs found, {unique_ssids} unique networks{C.RST}")
+    print()
+
+    hdr = (
+        f"{pad('', COL_ICON)}{pad('SSID', COL_SSID)}{pad('Band', COL_BAND)}"
+        f"{pad('Ch', COL_CH)}{pad('Signal', COL_SIGNAL)}{pad('Security', COL_SEC)}"
+        f"{pad('Gen', COL_GEN)}{pad('Width', COL_WIDTH)}{pad('SS', COL_SS)}"
+        f"{pad('👥', COL_LOAD)}{pad('Load', COL_UTIL)}{pad('Features', COL_FLAGS)}"
+        f"{pad('Vendor', COL_VENDOR)}{'APs':>{COL_APS}}"
+    )
+    print(f"  {C.BOLD}{C.WHITE}{hdr}{C.RST}")
+    print(f"  {C.DIM}{'─' * total_w}{C.RST}")
+
+    prev_ssid = None
+    row_idx = 0
+
+    for n in networks:
+        std, gen_color, gen_emoji = GEN_INFO[n["gen"]]
+
+        is_new_group = n["ssid"] != prev_ssid
+        if prev_ssid is not None and is_new_group:
+            print(f"  {C.DIM}{'·' * total_w}{C.RST}")
+            row_idx = 0
+
+        col_icon = pad(f" {gen_emoji} ", COL_ICON)
+
+        ssid_str = n["ssid"][:24]
+        if is_new_group:
+            if n["associated"]:
+                col_ssid = pad(f"{C.GREEN}{C.BOLD}{ssid_str}{C.RST} 🔗", COL_SSID)
+            else:
+                col_ssid = pad(f"{C.WHITE}{ssid_str}{C.RST}", COL_SSID)
+        else:
+            col_ssid = pad(f"{C.DIM}└{C.RST}", COL_SSID)
+
+        band = n["band"]
+        col_band = pad(f"{band_emoji(band)}{band}", COL_BAND)
+        col_ch = pad(n["channel"] or "─", COL_CH)
+        col_signal = pad(scan_signal_bar(n["signal"]), COL_SIGNAL)
+
+        sec = n["security"]
+        if sec == "Open":
+            col_sec = pad(f"{C.RED}Open{C.RST}", COL_SEC)
+        elif sec == "WPA3":
+            col_sec = pad(f"{C.GREEN}WPA3{C.RST}", COL_SEC)
+        elif sec == "WPA2/3":
+            col_sec = pad(f"{C.GREEN}WPA2/3{C.RST}", COL_SEC)
+        elif sec == "Enterprise":
+            col_sec = pad(f"{C.CYAN}802.1X{C.RST}", COL_SEC)
+        else:
+            col_sec = pad(sec, COL_SEC)
+
+        col_gen = pad(f"{gen_color}{C.BOLD}{n['gen']}{C.RST}", COL_GEN)
+        col_width = pad(n["channel_width"] or "─", COL_WIDTH)
+        col_ss = pad(str(n["streams"]) if n["streams"] else "─", COL_SS)
+
+        if n["clients"]:
+            clients_n = int(n["clients"])
+            if clients_n == 0:
+                col_load = pad(f"{C.DIM}0{C.RST}", COL_LOAD)
+            elif clients_n <= 5:
+                col_load = pad(f"{C.GREEN}{clients_n}{C.RST}", COL_LOAD)
+            elif clients_n <= 15:
+                col_load = pad(f"{C.YELLOW}{clients_n}{C.RST}", COL_LOAD)
+            else:
+                col_load = pad(f"{C.RED}{clients_n}{C.RST}", COL_LOAD)
+        else:
+            col_load = pad(f"{C.DIM}─{C.RST}", COL_LOAD)
+
+        col_util = pad(util_bar(n["util"]), COL_UTIL)
+
+        flags = []
+        if n["wps"]:
+            flags.append(f"{C.YELLOW}WPS{C.RST}")
+        if n["mu_mimo"]:
+            flags.append(f"{C.CYAN}MU{C.RST}")
+        if n["twt"]:
+            flags.append(f"{C.GREEN}TWT{C.RST}")
+        col_flags = pad(" ".join(flags) if flags else f"{C.DIM}─{C.RST}", COL_FLAGS)
+
+        vendor = n["vendor"][:14] if n["vendor"] else ""
+        col_vendor = pad(f"{C.DIM}{vendor}{C.RST}" if vendor else f"{C.DIM}─{C.RST}", COL_VENDOR)
+
+        count = str(ssid_counts[n["ssid"]]) if is_new_group else ""
+
+        bg = C.BG_GRAY if row_idx % 2 == 0 else ""
+        rst = C.RST if bg else ""
+
+        print(
+            f"  {bg}{col_icon}{col_ssid}{col_band}{col_ch}{col_signal}{col_sec}"
+            f"{col_gen}{col_width}{col_ss}{col_load}{col_util}{col_flags}"
+            f"{col_vendor}{count:>{COL_APS}}{rst}"
+        )
+
+        prev_ssid = n["ssid"]
+        row_idx += 1
+
+    print()
+    print(f"  {C.DIM}{'─' * total_w}{C.RST}")
+    print(f"  {C.DIM}🔗 Connected  │  SS = Spatial Streams  │  👥 = Connected clients  │  Load = Channel utilisation{C.RST}")
+    print(f"  {C.DIM}WPS = Wi-Fi Protected Setup  │  MU = MU-MIMO beamforming  │  TWT = Target Wake Time (power save){C.RST}")
+    print(f"  {C.DIM}🟤 2.4GHz  🔵 5GHz  🟣 6GHz  │  🚀 Gen7  ⚡ Gen6/6E  ✨ Gen5  📡 Gen4  🐌 Legacy{C.RST}")
+    print()
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# info
+# ════════════════════════════════════════════════════════════════════════════
+def info_signal_bar(dbm):
+    if dbm >= -50:
+        blocks, color = "█████", C.GREEN
+    elif dbm >= -55:
+        blocks, color = "████░", C.GREEN
+    elif dbm >= -60:
+        blocks, color = "███░░", C.GREEN
+    elif dbm >= -67:
+        blocks, color = "██░░░", C.YELLOW
+    elif dbm >= -75:
+        blocks, color = "█░░░░", C.RED
+    else:
+        blocks, color = "░░░░░", C.RED
+    return f"{color}{blocks}{C.RST}"
+
+
+def quality_label(dbm):
+    if dbm >= -50:
+        return f"{C.GREEN}Excellent{C.RST}"
+    if dbm >= -60:
+        return f"{C.GREEN}Good{C.RST}"
+    if dbm >= -67:
+        return f"{C.YELLOW}Fair{C.RST}"
+    if dbm >= -75:
+        return f"{C.RED}Weak{C.RST}"
+    return f"{C.RED}Poor{C.RST}"
+
+
+def info_band_label(freq):
+    if freq >= 5925:
+        return f"{C.MAGENTA}6 GHz{C.RST}"
+    if freq >= 5000:
+        return f"{C.CYAN}5 GHz{C.RST}"
+    return f"{C.YELLOW}2.4 GHz{C.RST}"
+
+
+def wifi_gen(bitrate_str, freq):
+    if "EHT" in bitrate_str:
+        return f"{C.MAGENTA}Wi-Fi 7{C.RST} {C.DIM}(802.11be){C.RST}"
+    if "HE" in bitrate_str:
+        tag = "Wi-Fi 6E" if freq >= 5925 else "Wi-Fi 6"
+        return f"{C.CYAN}{tag}{C.RST} {C.DIM}(802.11ax){C.RST}"
+    if "VHT" in bitrate_str:
+        return f"{C.GREEN}Wi-Fi 5{C.RST} {C.DIM}(802.11ac){C.RST}"
+    if "MCS" in bitrate_str:
+        return f"{C.YELLOW}Wi-Fi 4{C.RST} {C.DIM}(802.11n){C.RST}"
+    return f"{C.DIM}Legacy{C.RST}"
+
+
+def format_bitrate(mbps):
+    if mbps >= 1000:
+        return f"{C.GREEN}{C.BOLD}{mbps / 1000:.1f} Gbps{C.RST}"
+    return f"{C.WHITE}{C.BOLD}{mbps:.0f} Mbps{C.RST}"
+
+
+def format_retries(retries, total):
+    if total == 0:
+        return f"{C.DIM}─{C.RST}"
+    if retries > total * 10 or retries > 4_000_000_000:
+        return f"{C.DIM}─  (counter overflow){C.RST}"
+    pct = retries / total * 100
+    if pct < 5:
+        color = C.GREEN
+    elif pct < 15:
+        color = C.YELLOW
+    else:
+        color = C.RED
+    return f"{color}{pct:.1f}%{C.RST} {C.DIM}({retries}/{total}){C.RST}"
+
+
+def format_time(secs):
+    if secs >= 86400:
+        return f"{secs // 86400}d {(secs % 86400) // 3600}h"
+    if secs >= 3600:
+        return f"{secs // 3600}h {(secs % 3600) // 60}m"
+    if secs >= 60:
+        return f"{secs // 60}m {secs % 60}s"
+    return f"{secs}s"
+
+
+def cmd_info(args):
+    iface = args.iface or get_iface()
+    if not iface:
+        print(f"{C.RED}No wireless interface found.{C.RST}", file=sys.stderr)
+        sys.exit(1)
+
+    link = run(["iw", "dev", iface, "link"])
+    if "Not connected" in link or not link:
+        print(f"{C.RED}Not connected to any network.{C.RST}", file=sys.stderr)
+        sys.exit(1)
+
+    station = run(["iw", "dev", iface, "station", "dump"])
+    info = run(["iw", "dev", iface, "info"])
+    reg = run(["iw", "reg", "get"])
+
+    bssid = ""
+    m = re.search(r"Connected to ([0-9a-f:]{17})", link)
+    if m:
+        bssid = m.group(1)
+
+    ssid = ""
+    m = re.search(r"SSID: (.+)", link)
+    if m:
+        ssid = m.group(1).strip()
+
+    freq = 0.0
+    m = re.search(r"freq: ([\d.]+)", link)
+    if m:
+        freq = float(m.group(1))
+
+    signal_dbm = None
+    m = re.search(r"signal: (-?\d+)", link)
+    if m:
+        signal_dbm = int(m.group(1))
+
+    rx_bytes = tx_bytes = 0
+    m = re.search(r"RX: (\d+) bytes", link)
+    if m:
+        rx_bytes = int(m.group(1))
+    m = re.search(r"TX: (\d+) bytes", link)
+    if m:
+        tx_bytes = int(m.group(1))
+
+    tx_bitrate_str = rx_bitrate_str = ""
+    tx_mbps = rx_mbps = 0.0
+    m = re.search(r"tx bitrate: ([\d.]+ \S+)(.+)", link)
+    if m:
+        tx_mbps = float(m.group(1).split()[0])
+        tx_bitrate_str = m.group(1) + m.group(2)
+    m = re.search(r"rx bitrate: ([\d.]+ \S+)(.+)", link)
+    if m:
+        rx_mbps = float(m.group(1).split()[0])
+        rx_bitrate_str = m.group(1) + m.group(2)
+
+    signal_avg = None
+    m = re.search(r"signal avg:\s*(-?\d+)", station)
+    if m:
+        signal_avg = int(m.group(1))
+
+    signal_chains = ""
+    m = re.search(r"signal:\s*-?\d+ \[([^\]]+)\]", station)
+    if m:
+        signal_chains = m.group(1)
+
+    tx_retries = tx_packets = tx_failed = 0
+    m = re.search(r"tx retries:\s*(\d+)", station)
+    if m:
+        tx_retries = int(m.group(1))
+    m = re.search(r"tx packets:\s*(\d+)", station)
+    if m:
+        tx_packets = int(m.group(1))
+    m = re.search(r"tx failed:\s*(\d+)", station)
+    if m:
+        tx_failed = int(m.group(1))
+
+    beacon_loss = 0
+    m = re.search(r"beacon loss:\s*(\d+)", station)
+    if m:
+        beacon_loss = int(m.group(1))
+
+    connected_time = 0
+    m = re.search(r"connected time:\s*(\d+)", station)
+    if m:
+        connected_time = int(m.group(1))
+
+    channel = width = ""
+    m = re.search(r"channel (\d+) \([\d.]+ MHz\), width: (\d+ MHz)", info)
+    if m:
+        channel = m.group(1)
+        width = m.group(2)
+
+    txpower = ""
+    m = re.search(r"txpower ([\d.]+) dBm", info)
+    if m:
+        txpower = m.group(1)
+
+    regdom = ""
+    m = re.search(r"country (\w+):", reg)
+    if m:
+        regdom = m.group(1)
+
+    def parse_modulation(br):
+        parts = {}
+        m = re.search(r"(\d+) MHz", br)
+        if m:
+            parts["width"] = m.group(1) + " MHz"
+        m = re.search(r"(EHT|HE|VHT|HT)-MCS (\d+)", br)
+        if m:
+            parts["type"] = m.group(1)
+            parts["mcs"] = m.group(2)
+        m = re.search(r"(?:EHT|HE|VHT)-NSS (\d+)", br)
+        if m:
+            parts["nss"] = m.group(1)
+        m = re.search(r"(?:EHT|HE|VHT)-GI (\d+)", br)
+        if m:
+            parts["gi"] = m.group(1)
+        return parts
+
+    tx_mod = parse_modulation(tx_bitrate_str)
+    rx_mod = parse_modulation(rx_bitrate_str)
+
+    def fmt_bytes(b):
+        if b >= 1_073_741_824:
+            return f"{b / 1_073_741_824:.1f} GB"
+        if b >= 1_048_576:
+            return f"{b / 1_048_576:.1f} MB"
+        if b >= 1024:
+            return f"{b / 1024:.1f} KB"
+        return f"{b} B"
+
+    gen = wifi_gen(tx_bitrate_str, freq)
+
+    print()
+    print(f"  {C.BOLD}{C.CYAN}📶 Wi-Fi Connection{C.RST}  {C.DIM}─  {iface}{C.RST}")
+    print(f"  {C.DIM}{'─' * 56}{C.RST}")
+
+    print(f"  {C.DIM}SSID{C.RST}        {C.WHITE}{C.BOLD}{ssid}{C.RST}")
+    print(f"  {C.DIM}BSSID{C.RST}       {C.WHITE}{bssid}{C.RST}")
+    print(f"  {C.DIM}Band{C.RST}        {info_band_label(freq)}  {C.DIM}ch{channel}{C.RST}  {C.DIM}({freq} MHz){C.RST}")
+    print(f"  {C.DIM}Width{C.RST}       {C.WHITE}{width}{C.RST}")
+    print(f"  {C.DIM}Generation{C.RST}  {gen}")
+    print(f"  {C.DIM}Regdom{C.RST}      {C.WHITE}{regdom}{C.RST}")
+
+    print(f"  {C.DIM}{'─' * 56}{C.RST}")
+
+    if signal_dbm is not None:
+        print(f"  {C.DIM}Signal{C.RST}      {info_signal_bar(signal_dbm)}  {C.BOLD}{signal_dbm} dBm{C.RST}  {quality_label(signal_dbm)}")
+    if signal_avg is not None:
+        print(f"  {C.DIM}Average{C.RST}     {info_signal_bar(signal_avg)}  {C.BOLD}{signal_avg} dBm{C.RST}")
+    if signal_chains:
+        print(f"  {C.DIM}Chains{C.RST}      {C.WHITE}{signal_chains} dBm{C.RST}")
+
+    print(f"  {C.DIM}{'─' * 56}{C.RST}")
+
+    print(f"  {C.DIM}TX rate{C.RST}     {format_bitrate(tx_mbps)}", end="")
+    if tx_mod.get("type"):
+        print(f"  {C.DIM}{tx_mod.get('type', '')}-MCS {tx_mod.get('mcs', '')}  NSS {tx_mod.get('nss', '')}  GI {tx_mod.get('gi', '')}{C.RST}", end="")
+    print()
+
+    print(f"  {C.DIM}RX rate{C.RST}     {format_bitrate(rx_mbps)}", end="")
+    if rx_mod.get("type"):
+        print(f"  {C.DIM}{rx_mod.get('type', '')}-MCS {rx_mod.get('mcs', '')}  NSS {rx_mod.get('nss', '')}  GI {rx_mod.get('gi', '')}{C.RST}", end="")
+    print()
+
+    print(f"  {C.DIM}{'─' * 56}{C.RST}")
+
+    print(f"  {C.DIM}TX retries{C.RST}  {format_retries(tx_retries, tx_packets)}")
+    if tx_failed:
+        print(f"  {C.DIM}TX failed{C.RST}   {C.RED}{tx_failed}{C.RST}")
+    if beacon_loss:
+        print(f"  {C.DIM}Beacons{C.RST}     {C.RED}{beacon_loss} lost{C.RST}")
+    else:
+        print(f"  {C.DIM}Beacons{C.RST}     {C.GREEN}0 lost{C.RST}")
+
+    print(f"  {C.DIM}{'─' * 56}{C.RST}")
+
+    print(f"  {C.DIM}TX total{C.RST}    {C.WHITE}{fmt_bytes(tx_bytes)}{C.RST}")
+    print(f"  {C.DIM}RX total{C.RST}    {C.WHITE}{fmt_bytes(rx_bytes)}{C.RST}")
+    print(f"  {C.DIM}Uptime{C.RST}      {C.WHITE}{format_time(connected_time)}{C.RST}")
+
+    if txpower:
+        print(f"  {C.DIM}{'─' * 56}{C.RST}")
+        print(f"  {C.DIM}TX power{C.RST}    {C.WHITE}{txpower} dBm{C.RST}  {C.DIM}(reported, may be inaccurate){C.RST}")
+
+    print()
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# connect / qr / pw
+# ════════════════════════════════════════════════════════════════════════════
+def cmd_connect(args):
+    listing = run(["nmcli", "-t", "-f", "SSID,SIGNAL,SECURITY", "device", "wifi", "list"], timeout=15)
+    rows = [r for r in listing.splitlines() if r and not r.startswith(":")]
+    if not rows:
+        print("No networks found.", file=sys.stderr)
+        sys.exit(1)
+
+    def sig(r):
+        cols = r.split(":")
+        try:
+            return int(cols[1])
+        except (IndexError, ValueError):
+            return -1
+
+    rows.sort(key=sig, reverse=True)
+
+    try:
+        fzf = subprocess.run(
+            ["fzf", "--delimiter=:", "--with-nth=1,3", "--prompt=WiFi: "],
+            input="\n".join(rows), capture_output=True, text=True,
+        )
+    except FileNotFoundError:
+        print("fzf not found.", file=sys.stderr)
+        sys.exit(1)
+
+    sel = fzf.stdout.strip()
+    if not sel:
+        sys.exit(1)
+    ssid = sel.split(":")[0]
+    subprocess.run(["nmcli", "device", "wifi", "connect", ssid])
+
+
+def cmd_qr(args):
+    qr = run(["zbarcam", "--raw", "-1"], timeout=120)
+    print("QR code content:")
+    print(qr)
+    if not qr.startswith("WIFI:"):
+        print("QR code is not wifi", file=sys.stderr)
+        sys.exit(1)
+
+    fields = {}
+    for part in qr[len("WIFI:"):].split(";"):
+        if ":" in part:
+            k, v = part.split(":", 1)
+            fields[k] = v
+
+    ssid = fields.get("S", "")
+    password = fields.get("P", "")
+    enc = fields.get("T", "")
+    hidden = fields.get("H", "")
+    print(f"Trying to connect to SSID '{ssid}', type {enc}, hidden: {hidden or 'no'}")
+
+    subprocess.run(["nmcli", "d", "w", "l", "--rescan", "yes"])
+    cmd = ["nmcli", "device", "wifi", "connect", ssid]
+    if password:
+        cmd += ["password", password]
+    if hidden in ("true", "1"):
+        cmd += ["hidden", "yes"]
+    subprocess.run(cmd)
+
+
+def cmd_pw(args):
+    out = run(["nmcli", "dev", "wifi", "show-password"])
+    print(out)
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Unified Wi-Fi tool")
+    sub = parser.add_subparsers(dest="cmd")
+
+    p_scan = sub.add_parser("scan", help="scan and list all APs")
+    p_scan.add_argument("iface", nargs="?", help="interface (default: auto-detect)")
+    p_scan.set_defaults(func=cmd_scan)
+
+    p_info = sub.add_parser("info", help="detail the current connection")
+    p_info.add_argument("iface", nargs="?", help="interface (default: auto-detect)")
+    p_info.set_defaults(func=cmd_info)
+
+    p_conn = sub.add_parser("connect", help="connect via fzf picker")
+    p_conn.set_defaults(func=cmd_connect)
+
+    sub.add_parser("qr", help="connect by scanning a Wi-Fi QR code").set_defaults(func=cmd_qr)
+    sub.add_parser("pw", help="show the active network's password").set_defaults(func=cmd_pw)
+
+    args = parser.parse_args()
+    if not args.cmd:
+        # No subcommand → connect (preserves the old `wifi` shell function).
+        args.func = cmd_connect
+    args.func(args)
+
+
+if __name__ == "__main__":
+    main()
