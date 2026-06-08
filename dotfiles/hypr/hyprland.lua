@@ -554,8 +554,8 @@ hl.bind("SUPER + SHIFT + backslash", hl.dsp.exec_cmd("wallpaper random"), { desc
 -- Display scaling
 ------------------------------------------------------------------------
 
-hl.bind("SUPER + SHIFT + F5", hl.dsp.exec_cmd("scale-screen -"), { description = "Scale screen smaller" })
-hl.bind("SUPER + SHIFT + F6", hl.dsp.exec_cmd("scale-screen +"), { description = "Scale screen larger" })
+hl.bind("SUPER + SHIFT + F5", hl.dsp.exec_cmd("hypr-scale -"), { description = "Scale screen smaller" })
+hl.bind("SUPER + SHIFT + F6", hl.dsp.exec_cmd("hypr-scale +"), { description = "Scale screen larger" })
 
 ------------------------------------------------------------------------
 -- Window management
@@ -575,7 +575,7 @@ hl.bind("SUPER + F", hl.dsp.window.fullscreen_state({ internal = 2, client = 0, 
 hl.bind("SUPER + CTRL + SHIFT + W", hl.dsp.exec_cmd("pkill quickshell; quickshell &"),
   { description = "Restart quickshell" })
 hl.bind("SUPER + ALT + N", hl.dsp.exec_cmd("qs ipc call network toggle"), { description = "Network popup" })
-hl.bind("SUPER + ALT + P", hl.dsp.exec_cmd("pip-toggle"), { description = "Toggle picture-in-picture" })
+hl.bind("SUPER + ALT + P", hl.dsp.exec_cmd("hypr-pip-toggle"), { description = "Toggle picture-in-picture" })
 
 ------------------------------------------------------------------------
 -- Master layout
@@ -606,7 +606,7 @@ hl.bind("SUPER + SHIFT + R", hl.dsp.exec_cmd("hyprctl reload"), { description = 
 ------------------------------------------------------------------------
 
 -- Caps Lock = Menu keysym (via kb_options caps:menu)
-hl.bind("Menu", hl.dsp.exec_cmd("lang-toggle"), { description = "Layout: toggle EN / RU (Caps Lock)" })
+hl.bind("Menu", hl.dsp.exec_cmd("hypr-lang-toggle"), { description = "Layout: toggle EN / RU (Caps Lock)" })
 hl.bind("CTRL + Menu", hl.dsp.exec_cmd("hyprctl switchxkblayout all 2"),
   { description = "Layout → Ukrainian (Ctrl+Caps)" })
 

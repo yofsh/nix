@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# lang-toggle — toggle keyboard layout between English (group 0) and Russian (group 1).
+# hypr-lang-toggle — toggle keyboard layout between English (group 0) and Russian (group 1).
 # From any other layout (e.g. Ukrainian, group 2) it returns to English.
 # Ukrainian is reached separately via `hyprctl switchxkblayout all 2` (CTRL+ALT+space).
 

@@ -22,7 +22,7 @@ def hyprctl_monitors():
 
 def notify(msg, urgency="low", timeout=1500):
     subprocess.run([
-        "notify-send", "-h", "string:x-tag:scale-screen",
+        "notify-send", "-h", "string:x-tag:hypr-scale",
         "-t", str(timeout), "-u", urgency, "Scale", msg,
     ])
 
@@ -72,33 +72,43 @@ def find_nearest_index(valid, current):
     return best
 
 
-def build_monitor_string(monitor, new_scale):
-    """Build hyprctl monitor string preserving existing settings."""
+def build_monitor_lua(monitor, new_scale):
+    """Build an `hl.monitor{...}` Lua call preserving existing settings.
+
+    The config uses Hyprland's native Lua parser, under which `hyprctl keyword`
+    is rejected ("keyword can't work with non-legacy parsers. Use eval."), so we
+    apply the change via `hyprctl eval`. `hl.monitor` merges with the monitor's
+    existing config rule, so omitted fields (e.g. bitdepth) are preserved.
+    """
     name = monitor["name"]
     w, h = monitor["width"], monitor["height"]
     rate = monitor["refreshRate"]
     x, y = monitor["x"], monitor["y"]
     scale = fmt_scale(new_scale)
 
-    parts = [name, f"{w}x{h}@{rate:.2f}", f"{x}x{y}", scale]
-
+    fields = [
+        f'output = "{name}"',
+        f'mode = "{w}x{h}@{rate:.2f}"',
+        f'position = "{x}x{y}"',
+        f"scale = {scale}",
+    ]
     if monitor.get("vrr"):
-        parts.append("vrr,1")
+        fields.append("vrr = 1")
     if monitor.get("transform", 0) != 0:
-        parts.append(f"transform,{monitor['transform']}")
+        fields.append(f"transform = {monitor['transform']}")
 
-    return ",".join(parts)
+    return "hl.monitor({ " + ", ".join(fields) + " })"
 
 
 def main():
     parser = argparse.ArgumentParser(
         description="Adjust Hyprland monitor scale using valid discrete scales.",
         epilog="Examples:\n"
-               "  scale-screen              Scale up focused monitor\n"
-               "  scale-screen eDP-1 -      Scale down eDP-1\n"
-               "  scale-screen eDP-1 1.5    Set eDP-1 scale to exactly 1.5\n"
-               "  scale-screen -v           Show valid scales for focused monitor\n"
-               "  scale-screen -v eDP-1     Show valid scales for eDP-1",
+               "  hypr-scale              Scale up focused monitor\n"
+               "  hypr-scale eDP-1 -      Scale down eDP-1\n"
+               "  hypr-scale eDP-1 1.5    Set eDP-1 scale to exactly 1.5\n"
+               "  hypr-scale -v           Show valid scales for focused monitor\n"
+               "  hypr-scale -v eDP-1     Show valid scales for eDP-1",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument("-l", "--list", action="store_true", help="List monitors and their current scales")
@@ -155,8 +165,12 @@ def main():
     else:
         parser.error(f"Invalid direction: {direction}")
 
-    mon_str = build_monitor_string(monitor, new)
-    subprocess.run(["hyprctl", "keyword", "monitor", mon_str])
+    lua = build_monitor_lua(monitor, new)
+    result = subprocess.run(["hyprctl", "eval", lua], capture_output=True, text=True)
+    out = (result.stdout or "").strip()
+    if result.returncode != 0 or (out and out != "ok"):
+        notify(f"Failed: {out or 'hyprctl error'}", urgency="critical")
+        sys.exit(1)
     notify(f"{monitor['name']} → {fmt_scale(new)}")
 
 
