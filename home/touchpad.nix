@@ -11,7 +11,7 @@ in {
     };
     Service = {
       Type = "simple";
-      ExecStart = "${dotfiles}/bin/edge-sliderd";
+      ExecStart = "${dotfiles}/bin/utils/edge-sliderd";
       Restart = "on-failure";
       RestartSec = 3;
     };
@@ -29,7 +29,7 @@ in {
     };
     Service = {
       Type = "simple";
-      ExecStart = "${dotfiles}/bin/edge-slider-actions";
+      ExecStart = "${dotfiles}/bin/utils/edge-slider-actions";
       LogRateLimitIntervalSec = 0;
       Restart = "on-failure";
       RestartSec = 3;

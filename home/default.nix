@@ -49,8 +49,6 @@ in
     # ]))
 
     inputs.hyprland-preview-share-picker.packages.${pkgs.system}.default
-
-    # (pkgs.callPackage ../pkgs/glide-browser.nix { })
   ];
 
   programs.home-manager.enable = true;
@@ -121,6 +119,7 @@ in
 
   home.sessionPath = [
     "${dotfiles}/bin"
+    "${dotfiles}/bin/utils"
   ];
 
   home.sessionVariables = {
