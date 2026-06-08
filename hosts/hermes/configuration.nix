@@ -7,13 +7,7 @@
 
   networking.hostName = "hermes";
 
-  boot.loader.systemd-boot.enable = true;
-  boot.loader.efi.canTouchEfiVariables = true;
-
-  networking.firewall = {
-    enable = true;
-    allowedTCPPorts = [ 22 80 443 8123 6052 5010 5000 ];
-  };
+  networking.firewall.allowedTCPPorts = [ 22 80 443 8123 6052 5010 5000 ];
 
   services.adguardhome = {
     enable = true;
@@ -55,10 +49,4 @@
   };
 
   time.timeZone = "Europe/Madrid";
-  i18n.defaultLocale = "en_US.UTF-8";
-
-  system.stateVersion = "26.05";
-
-  hardware.bluetooth.enable = true;
-  hardware.bluetooth.powerOnBoot = true;
 }

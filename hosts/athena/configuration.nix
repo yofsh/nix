@@ -29,7 +29,8 @@
     # causing the proxy to see no sensors and exit. Retrigger udev first.
     serviceConfig.ExecStartPre = "${pkgs.systemd}/bin/udevadm trigger --subsystem-match=iio";
   };
-  environment.systemPackages = [ pkgs.iio-hyprland pkgs.moonlight-qt ];
+  # iio-hyprland itself is installed + serviced in home/laptop.nix.
+  environment.systemPackages = [ pkgs.moonlight-qt ];
 
   virtualisation.docker.enable = true;
 

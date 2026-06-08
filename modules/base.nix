@@ -10,6 +10,11 @@
 
   boot.tmp.useTmpfs = true;
 
+  # Shared across all hosts (normal priority overrides the installer-CD default
+  # on iso); a host may override with mkForce if it ever differs.
+  i18n.defaultLocale = "en_US.UTF-8";
+  system.stateVersion = "26.05";
+
   environment.systemPackages = with pkgs; [
     gnumake
     gcc

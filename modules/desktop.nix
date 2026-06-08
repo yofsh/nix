@@ -103,7 +103,6 @@ in
     slurp
     satty
     wf-recorder
-    aichat
 
     # Other
     home-manager
@@ -124,9 +123,6 @@ in
   ];
 
   time.timeZone = "Europe/Madrid";
-  i18n.defaultLocale = "en_US.UTF-8";
-
-  system.stateVersion = "26.05";
 
   # DDC/CI for external monitor brightness control via I2C
   boot.kernelModules = [ "i2c-dev" ];
