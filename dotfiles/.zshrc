@@ -1,6 +1,6 @@
 export EDITOR='nvim'
 export VISUAL='nvim'
-export PATH="$HOME/nix/dotfiles/bin:$HOME/nix/dotfiles/bin/laptop:$PATH"
+export PATH="$HOME/nix/dotfiles/bin:$HOME/nix/dotfiles/bin/utils:$HOME/nix/dotfiles/bin/laptop:$PATH"
 
 nvimman() {
   nvim -c "set ft=man ts=8 nomod nolist nonu noma" -c "Man $*" -c "silent! only"
@@ -225,11 +225,6 @@ ccs() { cd ~/servant/ && cc "$@" }
 ccn() { cd ~/nix/ && cc "$@" }
 alias ccc="nix run github:numtide/llm-agents.nix#claude-code -- --dangerously-skip-permissions"
 
-alias ai="aichat"
-alias aic="aichat --role %code%"
-
-
-
 
 alias zka="zellij kill-all-sessions"
 alias zda="zellij delete-all-sessions"
@@ -307,16 +302,6 @@ sr() {
 }
 
 
-wifi() {
-  res=$(nmcli -t -f SSID,SIGNAL,SECURITY device wifi list | grep -v '^:' | sort -t: -k2 -nr | fzf --delimiter=: --with-nth=1,3 --prompt="WiFi: ")
-  if [ -z "$res" ]; then
-    echo "No network selected."
-    return 1
-  fi
-  ssid=$(echo "$res" | cut -d: -f1)
-  nmcli device wifi connect "$ssid"
-}
-
 um() {
   if [[ -z "$1" ]]; then
     COUNTRY="$(curl -s ip-api.com/json | jq -r ".country")"
@@ -372,7 +357,7 @@ alias lt='exa -lah   --group-directories-first -s time --icons=always'
 alias lsize='exa -lah   --group-directories-first --icons=always --total-size'
 
 alias wifipw='nmcli dev wifi show-password'
-alias ws='wifi-scan'
+alias ws='wifi scan'
 alias ssh="TERM=xterm-256color ssh"
 
 # --server 27
@@ -534,18 +519,6 @@ eval "$(starship init zsh)"
 eval "$(zoxide init zsh)"
 
 
-_aichat_zsh() {
-    if [[ -n "$BUFFER" ]]; then
-        local _old=$BUFFER
-        BUFFER+="⌛"
-        zle -I && zle redisplay
-	BUFFER=$(aichat --role "%shell%" "$_old")
-        zle end-of-line
-    fi
-}
-zle -N _aichat_zsh
-bindkey '\ee' _aichat_zsh
-
 _fzf_bin() {
   local cmd
   cmd=$(find "$HOME/nix/dotfiles/bin" -maxdepth 1 -type f -executable -printf '%f\n' | sort | fzf --prompt='bin> ')
@@ -556,6 +529,25 @@ _fzf_bin() {
 }
 zle -N _fzf_bin
 bindkey '^[b' _fzf_bin
+
+# Alt+E: rewrite the current line from natural language into a shell command via
+# llm (stateless one-shot, fast model). Replaces the old aichat %shell% widget.
+_llm_shell_zsh() {
+  [[ -n "$BUFFER" ]] || return
+  local _old=$BUFFER
+  BUFFER+=" ⌛"
+  zle -I && zle redisplay
+  local _cmd
+  _cmd=$(llm --no-history -m google/gemini-3.5-flash \
+    -s 'Translate the user request into a single shell command for zsh on NixOS/Linux. Output ONLY the raw command — no explanation, no markdown, no code fences, no backticks.' \
+    "$_old" 2>/dev/null | sed '/^```/d')
+  _cmd="${_cmd#"${_cmd%%[![:space:]]*}"}"
+  _cmd="${_cmd%"${_cmd##*[![:space:]]}"}"
+  BUFFER="${_cmd:-$_old}"
+  zle end-of-line
+}
+zle -N _llm_shell_zsh
+bindkey '\ee' _llm_shell_zsh
 
 export FZF_DEFAULT_COMMAND='fd --type f --hidden --color=always --exclude node_modules --exclude .git'
 export FZF_DEFAULT_OPTS='--preview-window=border-none --border=none --no-height --ansi'
