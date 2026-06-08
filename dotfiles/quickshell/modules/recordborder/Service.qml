@@ -5,7 +5,7 @@ import Quickshell.Io
 
 // Draws a thin red frame around a screen region while recording.
 //
-// Handoff: bin/screen-record writes a slurp geometry string ("X,Y WxH") to
+// Handoff: bin/screencast writes a slurp geometry string ("X,Y WxH") to
 // /tmp/recordborder.geom and calls `qs ipc call recordborder start` (zero-arg);
 // `hide` clears it. We read the file via a one-shot Process and flip `active`.
 //

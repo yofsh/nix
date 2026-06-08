@@ -486,8 +486,8 @@ hl.bind("SUPER + CTRL + J", hl.dsp.exec_cmd(term .. [[ -e sh -c 'journalctl -f -
 hl.bind("SUPER + F7", hl.dsp.exec_cmd("meeting-check cam"), { description = "Meeting: camera check" })
 hl.bind("SUPER + F8", hl.dsp.exec_cmd("meeting-check mic"), { description = "Meeting: microphone check" })
 
-hl.bind("SUPER + F12", hl.dsp.exec_cmd("screen-record region"), { description = "Screen record (region)" })
-hl.bind("SUPER + SHIFT + F12", hl.dsp.exec_cmd("screen-record full"), { description = "Screen record (full)" })
+hl.bind("SUPER + F12", hl.dsp.exec_cmd("screencast region"), { description = "Screencast (region)" })
+hl.bind("SUPER + SHIFT + F12", hl.dsp.exec_cmd("screencast full"), { description = "Screencast (full)" })
 
 ------------------------------------------------------------------------
 -- Screenshots

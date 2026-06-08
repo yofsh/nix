@@ -46,7 +46,7 @@ Item {
 
     Process {
         id: screenrecProc
-        command: ["screen-record"]
+        command: ["screencast"]
         running: false
     }
 }
