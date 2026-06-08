@@ -2,6 +2,7 @@
 USER="fobos"
 SERVER_URL="yof.sh"
 DESTINATION="www"
+PAPERLESS_URL="https://pl.yof.sh"
 NOTIFICATION_ENABLED=true
 rand=$(LC_ALL=C tr -dc 'a-z0-9' < /dev/urandom | fold -w 6 | head -n 1)
 
@@ -37,6 +38,30 @@ copy_url() {
         wl-copy "$url"
     fi
 }
+
+# Subcommand: `upload paperless <file>` posts to paperless-ngx (pl.yof.sh) and
+# backs the file up locally, instead of scp-ing to the web host.
+if [ "$1" = "paperless" ]; then
+    shift
+    FILE_PATH="$1"
+    BACKUP_DIR=~/docs_backup
+    if [ -z "$FILE_PATH" ]; then
+        echo "Usage: upload paperless <file>" >&2
+        exit 1
+    fi
+    mkdir -p "$BACKUP_DIR"
+    notify_send 'Uploading to Paperless...' "$(basename "$FILE_PATH")"
+    if curl -fsS -X POST "$PAPERLESS_URL/api/documents/post_document/" \
+        -H "Authorization: Token $(cat /run/secrets/paperless-token)" \
+        -F "document=@$FILE_PATH"; then
+        mv "$FILE_PATH" "$BACKUP_DIR"
+        notify_send_success 'Uploaded to Paperless' "$(basename "$FILE_PATH") — moved to $BACKUP_DIR"
+    else
+        notify_send 'Paperless upload failed' "$(basename "$FILE_PATH")"
+        exit 1
+    fi
+    exit 0
+fi
 
 if [ $# -eq 1 ]; then
     if [ -d "$1" ]; then
