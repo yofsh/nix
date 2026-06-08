@@ -117,41 +117,37 @@ let
     except Exception:
         sys.exit(1)
   '';
+
+  # The shared "prefer USB reader" auth rule, applied to every PAM service below.
+  # order = 11400 is the slot pam_fprintd normally occupies, so our pam_exec script
+  # runs exactly where built-in fingerprint auth would — ahead of the pam_unix
+  # password prompt. control = "sufficient": a match short-circuits to success,
+  # a non-match falls through to the password prompt.
+  preferUsbRule = {
+    enable = true;
+    order = 11400;
+    control = "sufficient";
+    modulePath = "${pkgs.pam}/lib/security/pam_exec.so";
+    args = [ "stdout" "quiet" "${fprint-verify}" ];
+  };
 in
 {
   services.fprintd.enable = true;
 
-  # Disable default pam_fprintd (always uses built-in reader) and use
-  # custom script that prefers USB reader (Digital Persona), falling back to built-in (Synaptics)
+  # Disable default pam_fprintd (always uses the built-in reader) and use a custom
+  # script that prefers the USB reader (Digital Persona), falling back to the
+  # built-in (Synaptics). See fprint-verify above.
   security.pam.services.sudo = {
     fprintAuth = false;
-    rules.auth.fprint-prefer-usb = {
-      enable = true;
-      order = 11400;
-      control = "sufficient";
-      modulePath = "${pkgs.pam}/lib/security/pam_exec.so";
-      args = [ "stdout" "quiet" "${fprint-verify}" ];
-    };
+    rules.auth.fprint-prefer-usb = preferUsbRule;
   };
   security.pam.services.greetd = {
     fprintAuth = false;
-    rules.auth.fprint-prefer-usb = {
-      enable = true;
-      order = 11400;
-      control = "sufficient";
-      modulePath = "${pkgs.pam}/lib/security/pam_exec.so";
-      args = [ "stdout" "quiet" "${fprint-verify}" ];
-    };
+    rules.auth.fprint-prefer-usb = preferUsbRule;
   };
   security.pam.services.polkit-1 = {
     fprintAuth = false;
-    rules.auth.fprint-prefer-usb = {
-      enable = true;
-      order = 11400;
-      control = "sufficient";
-      modulePath = "${pkgs.pam}/lib/security/pam_exec.so";
-      args = [ "stdout" "quiet" "${fprint-verify}" ];
-    };
+    rules.auth.fprint-prefer-usb = preferUsbRule;
   };
   # hyprlock uses its own D-Bus fingerprint integration (enable_fingerprint = true in hyprlock.conf)
 }

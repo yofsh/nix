@@ -5,7 +5,10 @@ let
 
   repoSrc = inputs.mt7927-dkms;
 
-  # Parse PKGBUILD for firmware and kernel version metadata
+  # Parse PKGBUILD for firmware and kernel version metadata.
+  # The `else` fallbacks below are last-known-good values used only if the regex
+  # parse fails; regenerate them from the upstream PKGBUILD whenever it bumps
+  # (driver filename, its sha256, and the mt76 kernel version).
   pkgbuild = builtins.readFile "${repoSrc}/PKGBUILD";
 
   driverFilename =

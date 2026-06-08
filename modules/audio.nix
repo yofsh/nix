@@ -16,6 +16,7 @@
     settings = {
       General = {
         Experimental = true;
+        # BlueZ feature UUID enabling the LE ISO socket interface (LE Audio).
         KernelExperimental = "6fbaf188-05e0-496a-9885-d6ddfdb4e03e";
       };
     };

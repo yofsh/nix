@@ -40,6 +40,8 @@ in {
   config = lib.mkIf cfg.enable {
     boot.extraModulePackages = [ zenpower5 ];
     boot.kernelModules = [ "zenpower" ];
+    # zenpower and k10temp both claim the same AMD SMN registers; blacklist the
+    # in-tree k10temp so zenpower can bind.
     boot.blacklistedKernelModules = [ "k10temp" ];
   };
 }
