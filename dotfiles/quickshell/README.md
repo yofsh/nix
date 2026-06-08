@@ -23,7 +23,7 @@ Well-known filenames:
 A module can have any combination of these. Examples:
 
 ```
-modules/clock/Widget.qml                # widget only
+modules/cpu/Widget.qml                  # widget only
 modules/battery/Widget.qml + Popup.qml  # widget + popup
 modules/wallpaper/Popup.qml             # popup only
 modules/network/Widget.qml + Service.qml  # widget + custom IPC

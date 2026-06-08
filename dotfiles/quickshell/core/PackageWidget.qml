@@ -9,8 +9,8 @@ import "../helpers" as Helpers
 // module reloads it in place instead of rebuilding it from scratch.
 //
 // Usage:
-//   import "../modules/clock" as M_clock
-//   Core.PackageWidget { moduleId: "clock"; screen: hostScreenInfo; M_clock.Widget {} }
+//   import "../modules/battery" as M_battery
+//   Core.PackageWidget { moduleId: "battery"; screen: hostScreenInfo; M_battery.Widget {} }
 Item {
     id: root
 
