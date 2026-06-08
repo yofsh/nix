@@ -81,7 +81,7 @@
           {
             nixpkgs.overlays = [
               inputs.quickshell.overlays.default
-              (_: prev: { monique = prev.callPackage ./packages/monique.nix { }; })
+              (_: prev: { monique = prev.callPackage ./pkgs/monique.nix { }; })
               (_: prev: { openldap = prev.openldap.overrideAttrs (_: { doCheck = false; }); })
             ];
           }
