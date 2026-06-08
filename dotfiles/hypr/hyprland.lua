@@ -428,7 +428,7 @@ hl.define_submap("AI", "reset", function()
   -- Select region
   hl.bind("I", hl.dsp.exec_cmd("llm -n -w -i"), { description = "Region → LLM" })
   hl.bind("D", hl.dsp.exec_cmd("llm -n -w -i --dmenu"), { description = "Region → ask (dmenu)" })
-  hl.bind("G", hl.dsp.exec_cmd("lens"), { description = "Region → Google Lens" })
+  hl.bind("G", hl.dsp.exec_cmd("llm -i --lens"), { description = "Region → Google Lens" })
   hl.bind("O", hl.dsp.exec_cmd("ocr"), { description = "OCR" })
   -- Text (no image)
   hl.bind("grave", hl.dsp.exec_cmd("llm -n -w"), { description = "LLM (text)" })
@@ -441,7 +441,7 @@ end)
 ------------------------------------------------------------------------
 
 hl.bind("SUPER + I", hl.dsp.exec_cmd("ocr"), { description = "OCR" })
-hl.bind("SUPER + SHIFT + I", hl.dsp.exec_cmd("lens"), { description = "Reverse image search" })
+hl.bind("SUPER + SHIFT + I", hl.dsp.exec_cmd("llm -i --lens"), { description = "Reverse image search" })
 hl.bind("SUPER + O", hl.dsp.exec_cmd("scan-barcode"), { description = "Scan barcode" })
 hl.bind("SUPER + U", hl.dsp.exec_cmd("bt-audio-status toggle"), { description = "Bluetooth audio status" })
 

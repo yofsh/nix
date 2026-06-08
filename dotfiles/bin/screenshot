@@ -221,19 +221,38 @@ if [[ "$UPLOAD" == true ]]; then
 fi
 
 if [[ "$OFFER_EDITOR" == true && "$NOTIFY" == true ]]; then
-	# Notify with an "Open in editor" action. notify-send blocks until the
-	# action is clicked or the notification expires, so run it detached: the
-	# handler keeps the buffer alive, opens it in satty on click (via the
-	# --edit-buffer re-entry above), and owns temp-file cleanup either way.
+	# Notify with actions: open in satty, or run the captured image through llm
+	# (describe / Google Lens). notify-send blocks until an action is clicked or
+	# the notification expires, so run it detached: the handler keeps the buffer
+	# alive, dispatches the chosen action, and owns temp-file cleanup either way.
+	# describe/lens re-copy the PNG to the clipboard first so `llm -I` picks up
+	# this screenshot even if the clipboard has since changed.
 	SELF=$(realpath "$0")
 	setsid -f bash -c '
 		body=$1 title=$2 self=$3 tmpfile=$4 pngfile=$5 outfile=$6
-		action=$(notify-send -u low -i background -A "edit=Open in editor" "$title" "$body")
-		if [[ "$action" == "edit" ]]; then
-			"$self" --edit-buffer "$tmpfile" "$pngfile" "$outfile"
-		else
-			rm -f "$tmpfile" "$pngfile"
-		fi
+		action=$(notify-send -u low -i background \
+			-A "edit=Open in editor" \
+			-A "describe=Describe" \
+			-A "lens=Lens" \
+			"$title" "$body")
+		case "$action" in
+			edit)
+				"$self" --edit-buffer "$tmpfile" "$pngfile" "$outfile"
+				;;
+			describe)
+				wl-copy < "$pngfile"
+				llm -I -n "Describe this image."
+				rm -f "$tmpfile" "$pngfile"
+				;;
+			lens)
+				wl-copy < "$pngfile"
+				llm -I --lens
+				rm -f "$tmpfile" "$pngfile"
+				;;
+			*)
+				rm -f "$tmpfile" "$pngfile"
+				;;
+		esac
 	' _ "$NOTIFY_BODY" "Screenshot $TYPE $ACTION" "$SELF" "$TMPFILE" "$PNGFILE" "$FILE"
 else
 	[[ -n "$NOTIFY_BODY" ]] && notify "$NOTIFY_BODY"
