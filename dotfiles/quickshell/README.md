@@ -322,3 +322,4 @@ Avoid these names for custom properties on Item-based types:
 - `state` / `states` — state machine
 - `transitions` — state transitions
 - `parent` — visual parent
+- `focus` — built-in `bool` (active keyboard focus). Also bites **methods**: a `function focus(...)` on an Item collides with the property, so `root.focus(x)` reads the bool instead of calling it and silently fails. Name the method something else (e.g. `focusSession`).

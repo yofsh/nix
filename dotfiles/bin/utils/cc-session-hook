@@ -1,0 +1,76 @@
+#!/usr/bin/env bash
+# cc-session-hook EVENT
+#
+# Claude Code hook. Records per-session liveness/state to a runtime file the
+# qs-daemon `claude-sessions` module reads for the bar widget. Program-called
+# only (wired from ~/.claude/settings.json hooks) — not a user command.
+#
+# One file per session at $XDG_RUNTIME_DIR/claude-sessions/<session_id>.json.
+# EVENT maps to a state: UserPromptSubmit→working, Stop→idle, Notification→
+# attention, SessionStart→idle, SessionEnd→remove the file.
+#
+# MUST stay silent on stdout: Claude injects SessionStart/UserPromptSubmit hook
+# stdout into the prompt context. Everything goes to the file; errors to stderr.
+# Always exits 0 so a hook hiccup never blocks Claude.
+export PATH="/run/current-system/sw/bin:$PATH"
+
+event="${1:-}"
+dir="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/claude-sessions"
+mkdir -p "$dir" 2>/dev/null || exit 0
+
+payload="$(cat)"
+sid="$(jq -r '.session_id // empty' <<<"$payload" 2>/dev/null)"
+[[ -n $sid ]] || exit 0
+file="$dir/$sid.json"
+
+if [[ $event == SessionEnd ]]; then
+  rm -f "$file" 2>/dev/null
+  exit 0
+fi
+
+# Prior state, read once — drives both startTs preservation and the Notification
+# timing rule below.
+prevState=""
+prevStart=""
+if [[ -f $file ]]; then
+  prevState="$(jq -r '.state // empty' "$file" 2>/dev/null)"
+  prevStart="$(jq -r '.startTs // empty' "$file" 2>/dev/null)"
+fi
+
+case $event in
+  UserPromptSubmit) state=working ;;
+  Stop)             state=idle ;;
+  Notification)
+    # Claude fires a Notification both for a real mid-turn block (e.g. a
+    # permission request, while it was working) and as a plain 60s idle nudge
+    # ("waiting for your input", after it already Stopped). Use timing, not the
+    # message text: only treat it as needs-input if Claude was working.
+    if [[ $prevState == working ]]; then state=attention
+    elif [[ -n $prevState ]]; then state=$prevState   # idle stays stopped
+    else state=idle; fi
+    ;;
+  *) state=idle ;;            # SessionStart and anything else
+esac
+
+cwd="$(jq -r '.cwd // empty' <<<"$payload" 2>/dev/null)"
+transcript="$(jq -r '.transcript_path // empty' <<<"$payload" 2>/dev/null)"
+message="$(jq -r '.message // empty' <<<"$payload" 2>/dev/null)"
+now="$(date +%s)"
+
+# Preserve the session's start time across updates.
+start="${prevStart:-$now}"
+
+jq -n \
+  --arg sid "$sid" \
+  --arg cwd "$cwd" \
+  --arg transcript "$transcript" \
+  --arg zellij "${ZELLIJ_SESSION_NAME:-}" \
+  --arg pane "${ZELLIJ_PANE_ID:-}" \
+  --arg state "$state" \
+  --arg message "$message" \
+  --argjson ts "$now" \
+  --argjson startTs "$start" \
+  '{sessionId:$sid, cwd:$cwd, transcript:$transcript, zellij:$zellij, pane:$pane, state:$state, message:$message, ts:$ts, startTs:$startTs}' \
+  >"$file.tmp" 2>/dev/null && mv -f "$file.tmp" "$file" 2>/dev/null
+
+exit 0

@@ -8,6 +8,7 @@ import { create as createDnsTest } from "./modules/dns-test.ts";
 import { create as createPrivacy } from "./modules/privacy.ts";
 import { create as createUsage } from "./modules/usage.ts";
 import { create as createClaudeUsage } from "./modules/claude-usage.ts";
+import { create as createClaudeSessions } from "./modules/claude-sessions.ts";
 import { create as createFocus } from "./modules/focus.ts";
 import { create as createCalendar } from "./modules/calendar.ts";
 import { create as createAudio } from "./modules/audio.ts";
@@ -34,6 +35,7 @@ export async function startDaemon() {
     createPrivacy(),
     createUsage(),
     createClaudeUsage(),
+    createClaudeSessions(),
     createFocus(),
     createCalendar(),
     createAudio(),

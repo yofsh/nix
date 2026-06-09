@@ -102,6 +102,13 @@ hl.config({
     focus_on_activate        = true,
   },
 
+  -- Don't warp the pointer to a window when focus jumps to it (keybind focus,
+  -- workspace switch, claude-sessions widget click). Keeps mouse + focus
+  -- decoupled, consistent with input.follow_mouse = 0.
+  cursor     = {
+    no_warps = true,
+  },
+
   debug      = {
     overlay      = false,
     disable_logs = 1,
@@ -268,14 +275,14 @@ local term_rule = "[float; size (monitor_w*0.7) (monitor_h*0.7); move (monitor_w
     .. term .. [[ sh -c "printf '\n%.0s' {1..100}; exec $SHELL"]]
 
 local specials = {
-  { key = "B",     name = "bt",       desc = "Bluetooth", cmd = "[float; size 900 (monitor_h*0.7); center] foot -e 'bt-tui'" },
-  { key = "B",     name = "wifi",     desc = "WiFi",      cmd = "[float; size 900 (monitor_h*0.7); center] foot -e 'wifi-tui'", mod = "SUPER + SHIFT" },
-  { key = "G",     name = "audio",    desc = "Wiremix",   cmd = "[float; size 1100 (monitor_h*0.6); center] foot -e 'wiremix'" },
-  { key = "N",     name = "obsidian", desc = "Obsidian",  cmd = "[float; size 1500 (monitor_h*0.9); center] obsidian" },
-  { key = "grave", name = "term",     desc = "Terminal",  cmd = term_rule },
+  { key = "B",     name = "bt",    desc = "Bluetooth", cmd = "[float; size 900 (monitor_h*0.7); center] foot -e 'bt-tui'" },
+  { key = "B",     name = "wifi",  desc = "WiFi",      cmd = "[float; size 900 (monitor_h*0.7); center] foot -e 'wifi-tui'", mod = "SUPER + SHIFT" },
+  { key = "G",     name = "audio", desc = "Wiremix",   cmd = "[float; size 1100 (monitor_h*0.6); center] foot -e 'wiremix'" },
+  -- { key = "N",     name = "obsidian", desc = "Obsidian",  cmd = "[float; size 1500 (monitor_h*0.9); center] obsidian" }, -- disabled: SUPER+N now cycles Claude sessions
+  { key = "grave", name = "term",  desc = "Terminal",  cmd = term_rule },
   -- { key = "R",     name = "gpt",      desc = "GPT",       cmd = "firefox --new-window 'https://gpt.yof.sh'" }, -- disabled: SUPER+R opens the submap launcher
-  { key = "M",     name = "music",    desc = "Music",     cmd = "firefox --new-window 'https://music.youtube.com'" },
-  { key = "W",     name = "tg",       desc = "Telegram",  cmd = "Telegram" },
+  { key = "M",     name = "music", desc = "Music",     cmd = "firefox --new-window 'https://music.youtube.com'" },
+  { key = "W",     name = "tg",    desc = "Telegram",  cmd = "Telegram" },
 }
 for _, s in ipairs(specials) do
   hl.workspace_rule({ workspace = "special:" .. s.name, monitor = screen, on_created_empty = s.cmd })
@@ -579,6 +586,10 @@ hl.bind("SUPER + CTRL + SHIFT + W", hl.dsp.exec_cmd("pkill quickshell; quickshel
 hl.bind("SUPER + ALT + N", hl.dsp.exec_cmd("qs ipc call network toggle"), { description = "Network popup" })
 hl.bind("SUPER + ALT + P", hl.dsp.exec_cmd("hypr-pip-toggle"), { description = "Toggle picture-in-picture" })
 
+-- Cycle focus through running Claude Code sessions (bar order)
+hl.bind("SUPER + N", hl.dsp.exec_cmd("cc-session-focus next"), { description = "Next Claude session" })
+hl.bind("SUPER + SHIFT + N", hl.dsp.exec_cmd("cc-session-focus prev"), { description = "Previous Claude session" })
+
 ------------------------------------------------------------------------
 -- Master layout
 ------------------------------------------------------------------------
@@ -647,23 +658,24 @@ end)
 hl.bind("SUPER + CTRL + E", hl.dsp.submap("Monitor"), { description = "System stats submap" })
 hl.define_submap("Monitor", function()
   for _, m in ipairs({
-    { key = "E",         qs = "ping",         desc = "Pings" },
-    { key = "SHIFT + E", qs = "ping fast",    desc = "Pings 0.5s" },
-    { key = "S",         qs = "temperature",  desc = "Sensors" },
-    { key = "B",         qs = "battery",      desc = "Battery" },
-    { key = "W",         qs = "weather",      desc = "Weather" },
-    { key = "M",         qs = "system",       desc = "System stats" },
-    { key = "P",         qs = "cpu",          desc = "Processes" },
-    { key = "K",         qs = "khal",         desc = "Khal agenda" },
-    { key = "F",         qs = "focus",        desc = "Focus timer" },
-    { key = "U",         qs = "app-usage",    desc = "Wellbeing / usage" },
-    { key = "C",         qs = "claude-usage", desc = "Claude usage" },
+    { key = "E",         qs = "ping",            desc = "Pings" },
+    { key = "SHIFT + E", qs = "ping fast",       desc = "Pings 0.5s" },
+    { key = "S",         qs = "temperature",     desc = "Sensors" },
+    { key = "B",         qs = "battery",         desc = "Battery" },
+    { key = "W",         qs = "weather",         desc = "Weather" },
+    { key = "M",         qs = "system",          desc = "System stats" },
+    { key = "P",         qs = "cpu",             desc = "Processes" },
+    { key = "K",         qs = "khal",            desc = "Khal agenda" },
+    { key = "F",         qs = "focus",           desc = "Focus timer" },
+    { key = "U",         qs = "app-usage",       desc = "Wellbeing / usage" },
+    { key = "C",         qs = "claude-usage",    desc = "Claude usage" },
+    { key = "A",         qs = "claude-sessions", desc = "Claude sessions" },
   }) do
     hl.bind(m.key, hl.dsp.exec_cmd("qs ipc call " .. m.qs .. " toggle"), { description = m.desc })
   end
   hl.bind("N", hl.dsp.exec_cmd("qs ipc call network togglePopup"), { description = "Network" })
   hl.bind("escape", function()
-    for _, w in ipairs({ "temperature", "battery", "weather", "system", "cpu", "khal", "network", "focus", "app-usage", "claude-usage" }) do
+    for _, w in ipairs({ "temperature", "battery", "weather", "system", "cpu", "khal", "network", "focus", "app-usage", "claude-usage", "claude-sessions" }) do
       hl.dispatch(hl.dsp.exec_cmd("qs ipc call " .. w .. " close"))
     end
     hl.dispatch(hl.dsp.submap("reset"))

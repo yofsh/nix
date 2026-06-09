@@ -22,6 +22,7 @@ import "../modules/backlight" as M_backlight
 import "../modules/app-usage" as M_app_usage
 import "../modules/focus" as M_focus
 import "../modules/claude-usage" as M_claude_usage
+import "../modules/claude-sessions" as M_claude_sessions
 import "../modules/network" as M_network
 import "../modules/ping-gw" as M_ping_gw
 import "../modules/ping" as M_ping
@@ -183,6 +184,7 @@ PanelWindow {
                 Core.PackageWidget { moduleId: "app-usage"; screen: hostScreenInfo; M_app_usage.Widget {} }
                 Core.PackageWidget { moduleId: "focus"; screen: hostScreenInfo; M_focus.Widget {} }
                 Core.PackageWidget { moduleId: "claude-usage"; screen: hostScreenInfo; M_claude_usage.Widget {} }
+                Core.PackageWidget { moduleId: "claude-sessions"; screen: hostScreenInfo; M_claude_sessions.Widget {} }
                 Core.PackageWidget { moduleId: "network"; screen: hostScreenInfo; M_network.Widget {} }
                 Core.PackageWidget { moduleId: "ping-gw"; screen: hostScreenInfo; M_ping_gw.Widget {} }
                 Core.PackageWidget { moduleId: "ping"; screen: hostScreenInfo; M_ping.Widget {} }
@@ -222,6 +224,7 @@ PanelWindow {
     Core.PackagePopup { moduleId: "app-usage";    screen: hostScreenInfo; barWindow: barWindow; M_app_usage.Popup {} }
     Core.PackagePopup { moduleId: "battery";      screen: hostScreenInfo; barWindow: barWindow; M_battery.Popup {} }
     Core.PackagePopup { moduleId: "claude-usage"; screen: hostScreenInfo; barWindow: barWindow; M_claude_usage.Popup {} }
+    Core.PackagePopup { moduleId: "claude-sessions"; screen: hostScreenInfo; barWindow: barWindow; M_claude_sessions.Popup {} }
     Core.PackagePopup { moduleId: "cpu";          screen: hostScreenInfo; barWindow: barWindow; M_cpu.Popup {} }
     Core.PackagePopup { moduleId: "focus";        screen: hostScreenInfo; barWindow: barWindow; keyboardFocus: true; M_focus.Popup {} }
     Core.PackagePopup { moduleId: "khal";         screen: hostScreenInfo; barWindow: barWindow; M_khal.Popup {} }

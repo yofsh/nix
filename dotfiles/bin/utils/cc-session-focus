@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+# cc-session-focus next|prev
+#
+# Cycle window focus through the running Claude Code sessions, in bar order
+# (stable start-order). Bound to SUPER+N (next) / SUPER+SHIFT+N (prev). Thin
+# client for the qs-daemon `claude-sessions/cycle` route, which picks the next/
+# prev session relative to whichever session window is focused now and focuses it.
+dir="${1:-next}"
+sock="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/qs-daemon.sock"
+curl -s --unix-socket "$sock" "http://d/claude-sessions/cycle?dir=$dir" >/dev/null 2>&1
