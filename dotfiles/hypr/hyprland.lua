@@ -495,9 +495,6 @@ hl.bind("SUPER + CTRL + J", hl.dsp.exec_cmd(term .. [[ -e sh -c 'journalctl -f -
 hl.bind("SUPER + F7", hl.dsp.exec_cmd("meeting-check cam"), { description = "Meeting: camera check" })
 hl.bind("SUPER + F8", hl.dsp.exec_cmd("meeting-check mic"), { description = "Meeting: microphone check" })
 
-hl.bind("SUPER + F12", hl.dsp.exec_cmd("screencast region"), { description = "Screencast (region)" })
-hl.bind("SUPER + SHIFT + F12", hl.dsp.exec_cmd("screencast full"), { description = "Screencast (full)" })
-
 ------------------------------------------------------------------------
 -- Screenshots
 ------------------------------------------------------------------------
@@ -736,6 +733,44 @@ hl.define_submap("YTS", "reset", function()
 end)
 
 ------------------------------------------------------------------------
+-- Screenshot submap (auto-reset)
+------------------------------------------------------------------------
+
+-- Reached via the Submap launcher (SUPER + R → C), no direct keybind.
+hl.define_submap("Screenshot", "reset", function()
+  for _, s in ipairs({
+    { key = "R", flag = "-r", desc = "Region" },
+    { key = "W", flag = "-w", desc = "Window" },
+    { key = "F", flag = "-f", desc = "Fullscreen" },
+  }) do
+    hl.bind(s.key, hl.dsp.exec_cmd("screenshot " .. s.flag .. " -c -n"),
+      { description = s.desc .. " → clipboard" })
+    hl.bind("SHIFT + " .. s.key, hl.dsp.exec_cmd("screenshot " .. s.flag .. " -e -n"),
+      { description = s.desc .. " → edit" })
+    hl.bind("ALT + " .. s.key, hl.dsp.exec_cmd("screenshot " .. s.flag .. " -u -n"),
+      { description = s.desc .. " → upload" })
+  end
+  hl.bind("escape", hl.dsp.submap("reset"))
+end)
+
+------------------------------------------------------------------------
+-- Record submap (auto-reset)
+------------------------------------------------------------------------
+
+-- Reached via the Submap launcher (SUPER + R → F), no direct keybind.
+hl.define_submap("Record", "reset", function()
+  for _, r in ipairs({
+    { key = "R", type = "region", desc = "Region" },
+    { key = "W", type = "window", desc = "Window" },
+    { key = "F", type = "full",   desc = "Fullscreen" },
+  }) do
+    hl.bind(r.key, hl.dsp.exec_cmd("screencast " .. r.type),
+      { description = r.desc .. " (toggle)" })
+  end
+  hl.bind("escape", hl.dsp.submap("reset"))
+end)
+
+------------------------------------------------------------------------
 -- Wallpaper submap (manual exit; Gallery exits)
 ------------------------------------------------------------------------
 
@@ -890,8 +925,10 @@ hl.define_submap("Launcher", function()
   for _, s in ipairs({
     { key = "A", target = "AI", desc = "🤖 AI" },
     { key = "B", target = "Bookmarks", desc = "🔖 Bookmarks" },
+    { key = "C", target = "Screenshot", desc = "📸 Screenshot" },
     { key = "D", target = "Bedroom", desc = "🛏️ Bedroom" },
     { key = "E", target = "Monitor", desc = "📊 System stats" },
+    { key = "F", target = "Record", desc = "🎥 Record" },
     { key = "G", target = "Master Layout", desc = "🪟 Master layout" },
     { key = "Q", target = "Power", desc = "⏻ Power" },
     { key = "R", target = "resize", desc = "↔ Resize" },
