@@ -1,35 +1,94 @@
-#!/bin/sh
-PID=$(pgrep wf-recorder)
+#!/usr/bin/env bash
+# screencast — toggle a Hyprland screen recording (wf-recorder).
+#
+# First call starts recording; the next call stops it and shows a notification
+# offering actions: Open the file locally, or Upload it via `upload put` — the
+# same shared uploader `screenshot` uses (share.yof.sh).
+#
+#   screencast [region|full|window]   (default: region)
+set -u
 
+STATE=/tmp/screencast.path        # remembers the file path between start/stop
+ICON=camera-video
 TYPE=${1:-region}
-if [ -z "$PID" ]; then
-	FILENAME=$(xdg-user-dir VIDEOS)/$(date +'recording-%Y.%m.%d-%H:%M:%S.mp4')
 
-	case "$TYPE" in
-	"region") GEOMETRY=$(slurp) ;;
-	"full") GEOMETRY=$(slurp -o) ;;
-	"window") GEOMETRY=$(hyprctl clients -j | jq -r '.[] | select(.mapped and (.hidden | not)) | "\(.at[0]),\(.at[1]) \(.size[0])x\(.size[1])"' | slurp) ;;
-	*) GEOMETRY=$(slurp) ;;
-	esac
-
-	if [ -z "$GEOMETRY" ]; then
-		exit 1
-	fi
-
-  echo "Starting recording"
-	echo "$FILENAME $GEOMETRY"
-	# Show a thin red border just outside the recorded region (not for full-output).
-	if [ "$TYPE" != "full" ]; then
-		printf '%s' "$GEOMETRY" > /tmp/recordborder.geom
-		qs ipc call recordborder start >/dev/null 2>&1 || true
-	fi
-	wf-recorder -f "$FILENAME" -g "$GEOMETRY" -a > /dev/null 2>&1 &
-  echo "Recording started"
-else
+# Stop the recording, then fire a notification with Open / Upload actions.
+stop_and_offer() {
 	pkill --signal SIGINT wf-recorder
 	qs ipc call recordborder hide >/dev/null 2>&1 || true
 	rm -f /tmp/recordborder.geom
-	notify-send -u low -i camera "Recording complete"
-	echo "Recording complete"
+
+	# wf-recorder finalises (muxes) the mp4 on SIGINT — wait for it to exit
+	# before we hand the file to open/upload, else it may be truncated.
+	for _ in $(seq 1 50); do pgrep -x wf-recorder >/dev/null || break; sleep 0.1; done
+
+	file=$(cat "$STATE" 2>/dev/null || true)
+	rm -f "$STATE"
+
+	if [ -z "$file" ] || [ ! -s "$file" ]; then
+		notify-send -u low -i "$ICON" "Recording complete" "${file:-saved}"
+		return
+	fi
+
+	# `notify-send -A` blocks until an action is clicked/expires, so run it
+	# detached: this invocation exits now while the handler waits for the click.
+	setsid -f bash -c '
+		file=$1 icon=$2
+		action=$(notify-send -u low -i "$icon" \
+			-A "open=Open" \
+			-A "copy=Copy" \
+			-A "upload=Upload" \
+			"Recording complete" "$file")
+		case "$action" in
+			open)
+				xdg-open "$file" >/dev/null 2>&1
+				;;
+			copy)
+				# Put the file on the clipboard as a file reference (text/uri-list),
+				# the same thing a file-manager copy does — pasting attaches the .mp4
+				# in chat apps. wl-copy daemonizes to keep serving the selection.
+				wl-copy --type text/uri-list "file://$file"
+				notify-send -u low -i edit-copy "Screencast copied" "$(basename "$file")"
+				;;
+			upload)
+				notify-send -h "string:x-tag:upload" -u low -i cloud-upload "Uploading…" "$(basename "$file")"
+				if url=$(upload put "$file"); then
+					upload uploaded "Screencast uploaded" "$url"
+				else
+					notify-send -u low -i dialog-error "Upload failed" "share.yof.sh"
+				fi
+				;;
+		esac
+	' _ "$file" "$ICON"
+}
+
+# Pick the region and start recording.
+start() {
+	file=$(xdg-user-dir VIDEOS)/$(date +'recording-%Y.%m.%d-%H:%M:%S.mp4')
+
+	case "$TYPE" in
+		region) geometry=$(slurp) ;;
+		full)   geometry=$(slurp -o) ;;
+		window) geometry=$(hyprctl clients -j | jq -r '.[] | select(.mapped and (.hidden | not)) | "\(.at[0]),\(.at[1]) \(.size[0])x\(.size[1])"' | slurp) ;;
+		*)      geometry=$(slurp) ;;
+	esac
+	[ -z "$geometry" ] && exit 1
+
+	printf '%s' "$file" > "$STATE"
+
+	# Thin red border just outside the recorded region (not for full-output).
+	if [ "$TYPE" != "full" ]; then
+		printf '%s' "$geometry" > /tmp/recordborder.geom
+		qs ipc call recordborder start >/dev/null 2>&1 || true
+	fi
+
+	wf-recorder -f "$file" -g "$geometry" -a >/dev/null 2>&1 &
+	notify-send -u low -i media-record "Recording started" "$TYPE"
+}
+
+if pgrep -x wf-recorder >/dev/null; then
+	stop_and_offer
+else
+	start
 fi
 sleep 0.2

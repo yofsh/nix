@@ -23,7 +23,7 @@ EOF
 
 notify() {
 	if [[ "$NOTIFY" == true ]]; then
-		notify-send -u low -i background "Screenshot $TYPE $ACTION" "$1"
+		notify-send -u low -i applets-screenshooter "Screenshot $TYPE $ACTION" "$1"
 	fi
 }
 
@@ -49,7 +49,7 @@ if [[ "$1" == "--edit-buffer" ]]; then
 	if [[ -e "$PNGFILE" ]]; then
 		convert "$PNGFILE" "$TMPFILE"
 		cp "$TMPFILE" "$FILE"
-		notify-send -u low -i background "Screenshot edited" "Annotated copy saved and copied to clipboard"
+		notify-send -u low -i applets-screenshooter "Screenshot edited" "Annotated copy saved and copied to clipboard"
 	fi
 	rm -f "$TMPFILE" "$PNGFILE"
 	exit 0
@@ -213,11 +213,14 @@ case "$ACTION" in
 esac
 
 if [[ "$UPLOAD" == true ]]; then
-	notify "Uploading file to remote server..."
-	scp "$TMPFILE" "yof.sh:httpdocs/src/$FN.$EXT"
-	notify "File uploaded! URL copied"
-	echo "https://yof.sh/src/$FN.$EXT"
-	wl-copy "https://yof.sh/src/$FN.$EXT"
+	notify "Uploading to share.yof.sh..."
+	if URL=$(upload put "$TMPFILE" "screenshot-$FN.$EXT"); then
+		echo "$URL"
+		wl-copy "$URL"
+		notify "Uploaded — URL copied: $URL"
+	else
+		notify "Upload failed"
+	fi
 fi
 
 if [[ "$OFFER_EDITOR" == true && "$NOTIFY" == true ]]; then
@@ -230,14 +233,23 @@ if [[ "$OFFER_EDITOR" == true && "$NOTIFY" == true ]]; then
 	SELF=$(realpath "$0")
 	setsid -f bash -c '
 		body=$1 title=$2 self=$3 tmpfile=$4 pngfile=$5 outfile=$6
-		action=$(notify-send -u low -i background \
+		action=$(notify-send -u low -i applets-screenshooter \
 			-A "edit=Open in editor" \
+			-A "upload=Upload" \
 			-A "describe=Describe" \
 			-A "lens=Lens" \
 			"$title" "$body")
 		case "$action" in
 			edit)
 				"$self" --edit-buffer "$tmpfile" "$pngfile" "$outfile"
+				;;
+			upload)
+				if url=$(upload put "$tmpfile" "$(basename "$outfile")"); then
+					upload uploaded "Screenshot uploaded" "$url"
+				else
+					notify-send -u low -i dialog-error "Upload failed" "share.yof.sh"
+				fi
+				rm -f "$tmpfile" "$pngfile"
 				;;
 			describe)
 				wl-copy < "$pngfile"

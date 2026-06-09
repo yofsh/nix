@@ -1,21 +1,60 @@
 #!/usr/bin/env bash
-USER="fobos"
-SERVER_URL="yof.sh"
-DESTINATION="www"
+# upload — share files via the self-hosted share.yof.sh service (analytics + expiry).
+#
+#   upload <file|dir> [more files...]                    upload (zips dirs/multiple), notify + copy URL
+#   upload put [-s slug] [-d n] [-t days] <file> [name]  raw: print just the URL (for scripts)
+#   upload paperless <file>                              post to paperless-ngx (pl.yof.sh) instead
+#
+# `put` is the low-level uploader (formerly the standalone `share-put`); other
+# scripts (screenshot, screencast) call `upload put` to get just the URL back.
 PAPERLESS_URL="https://pl.yof.sh"
 NOTIFICATION_ENABLED=true
-rand=$(LC_ALL=C tr -dc 'a-z0-9' < /dev/urandom | fold -w 6 | head -n 1)
 
-# Only define SUCCESS_ICON for Linux systems
-if [[ "$OSTYPE" != "darwin"* ]]; then
-    SUCCESS_ICON=/usr/share/icons/Papirus/48x48/emblems/checkmark.svg
+# --- core uploader: PUT one file to share.yof.sh and print its URL. ----------
+# Token from sops (/run/secrets/share-token) or $SHARE_TOKEN. Default expiry is
+# 0 = never, matching the old permanent host. (Was the standalone `share-put`.)
+SHARE_BASE="${SHARE_URL:-https://share.yof.sh}"
+SHARE_TOKEN_FILE="${SHARE_TOKEN_FILE:-/run/secrets/share-token}"
+
+# Percent-encode a single path segment so filenames with spaces, parens, #, ?,
+# etc. (common in PDFs) produce a valid URL — otherwise curl rejects it (error 3)
+# and the upload silently yields no URL.
+urlencode() { jq -rR @uri <<<"$1"; }
+
+share_put() {
+    local slug="" maxdl="" days="${SHARE_DAYS:-0}" OPTIND=1 o
+    while getopts "s:d:t:" o; do
+        case "$o" in
+            s) slug="$OPTARG" ;;
+            d) maxdl="$OPTARG" ;;
+            t) days="$OPTARG" ;;
+            *) echo "usage: upload put [-s slug] [-d n] [-t days] FILE [NAME]" >&2; return 2 ;;
+        esac
+    done
+    shift $((OPTIND - 1))
+    local file="${1:?upload: FILE required}" name="${2:-$(basename "$1")}"
+    local token="${SHARE_TOKEN:-$(cat "$SHARE_TOKEN_FILE" 2>/dev/null || true)}"
+    [ -n "$token" ] || { echo "upload: no token (set \$SHARE_TOKEN or $SHARE_TOKEN_FILE)" >&2; return 1; }
+    local hdr=(-H "Authorization: Bearer $token" -H "Max-Days: $days")
+    [ -n "$maxdl" ] && hdr+=(-H "Max-Downloads: $maxdl")
+    local url="$SHARE_BASE/$(urlencode "$name")"
+    [ -n "$slug" ] && url="$SHARE_BASE/$slug/$(urlencode "$name")"
+    curl -fsS -T "$file" "${hdr[@]}" "$url"
+}
+
+# Raw subcommand for scripts: `upload put [opts] FILE [NAME]` → prints URL only.
+if [ "$1" = "put" ]; then
+    shift
+    share_put "$@"
+    exit $?
 fi
+
 notify_send() {
     if $NOTIFICATION_ENABLED; then
         if [[ "$OSTYPE" == "darwin"* ]]; then
             osascript -e "display notification \"$2\" with title \"$1\"" || true
         else
-            notify-send -h "string:x-tag:upload" -u low -i mintupload "$1" "$2"
+            notify-send -h "string:x-tag:upload" -u low -i cloud-upload "$1" "$2"
         fi
     fi
 }
@@ -25,13 +64,13 @@ notify_send_success() {
         if [[ "$OSTYPE" == "darwin"* ]]; then
             osascript -e "display notification \"$2\" with title \"$1\""
         else
-            notify-send -h "string:x-tag:upload" -u low -i "$SUCCESS_ICON" "$1" "$2"
+            notify-send -h "string:x-tag:upload" -u low -i emblem-default "$1" "$2"
         fi
     fi
 }
 
 copy_url() {
-    local url="https://$SERVER_URL/${rand}_$1"
+    local url="$1"
     if [[ "$OSTYPE" == "darwin"* ]]; then
         printf '%s' "$url" | pbcopy
     else
@@ -39,8 +78,46 @@ copy_url() {
     fi
 }
 
+# Failure toast — same x-tag as the progress/success ones so it replaces the
+# "Uploading…" notification in place rather than leaving a stale spinner.
+notify_failed() {
+    $NOTIFICATION_ENABLED || return 0
+    if [[ "$OSTYPE" == "darwin"* ]]; then
+        osascript -e "display notification \"$1\" with title \"Upload failed\"" || true
+    else
+        notify-send -h "string:x-tag:upload" -u normal -i dialog-error "Upload failed" "$1"
+    fi
+}
+
+# The single place the post-upload UX lives: copy the URL to the clipboard and
+# fire a success toast with an "Open in browser" action (click → xdg-open).
+# Detached (setsid -f) so interactive callers (e.g. yazi run with --block) return
+# immediately while the toast waits for a click. screenshot/screencast route
+# their upload action through `upload uploaded` so the experience is unified.
+notify_uploaded() {
+    local title="$1" url="$2"
+    copy_url "$url"
+    $NOTIFICATION_ENABLED || return 0
+    if [[ "$OSTYPE" == "darwin"* ]]; then
+        notify_send_success "$title" "$url"
+        return 0
+    fi
+    setsid -f bash -c '
+        url=$1 title=$2
+        # Same x-tag as the "Uploading…" toast so quickshell replaces it in place
+        # instead of stacking a second notification.
+        [ -n "$(notify-send -h "string:x-tag:upload" -u low -i emblem-default -A "open=Open in browser" "$title" "$url")" ] && xdg-open "$url" >/dev/null 2>&1
+    ' _ "$url" "$title"
+}
+
+# Subcommand for other scripts: `upload uploaded <title> <url>` — copy + toast.
+if [ "$1" = "uploaded" ]; then
+    notify_uploaded "${2:?upload uploaded: TITLE required}" "${3:?upload uploaded: URL required}"
+    exit 0
+fi
+
 # Subcommand: `upload paperless <file>` posts to paperless-ngx (pl.yof.sh) and
-# backs the file up locally, instead of scp-ing to the web host.
+# backs the file up locally.
 if [ "$1" = "paperless" ]; then
     shift
     FILE_PATH="$1"
@@ -63,35 +140,52 @@ if [ "$1" = "paperless" ]; then
     exit 0
 fi
 
-if [ $# -eq 1 ]; then
-    if [ -d "$1" ]; then
-        ARCHIVE_NAME="${1##*/}.zip"
-        if ! command -v zip &> /dev/null; then
-            echo "Error: zip command not found. Please install it using 'brew install zip'"
-            exit 1
-        fi
-        zip -r "$ARCHIVE_NAME" "$(basename "$1")"
-        notify_send 'Uploading archived folder...' "$ARCHIVE_NAME"
-        scp "$ARCHIVE_NAME" "$USER@$SERVER_URL:$DESTINATION/${rand}_$ARCHIVE_NAME"
+# Upload a single file, a folder (zipped), or several files (zipped) to share.yof.sh.
+if [ $# -eq 0 ]; then
+    echo "Usage: upload <file|dir> [more files...]   (or: upload put <file>, upload paperless <file>)" >&2
+    exit 1
+fi
+
+if [ $# -eq 1 ] && [ -d "$1" ]; then
+    ARCHIVE_NAME="${1##*/}.zip"
+    if ! command -v zip &> /dev/null; then
+        echo "Error: zip command not found." >&2
+        exit 1
+    fi
+    zip -r "$ARCHIVE_NAME" "$(basename "$1")"
+    notify_send 'Uploading archived folder...' "$ARCHIVE_NAME"
+    if URL=$(share_put "$ARCHIVE_NAME"); then
         rm "$ARCHIVE_NAME"
-        notify_send_success 'Folder archive uploaded!' "$ARCHIVE_NAME"
-        copy_url "$ARCHIVE_NAME"
+        notify_uploaded 'Folder archive uploaded!' "$URL"
+        echo "$URL"
     else
-        FILENAME=$(basename "$1")
-        notify_send 'Uploading file...' "$FILENAME"
-        scp "$1" "$USER@$SERVER_URL:$DESTINATION/${rand}_$FILENAME"
-        notify_send_success 'File uploaded!' "$1"
-        copy_url "$FILENAME"
+        rm "$ARCHIVE_NAME"
+        notify_failed "$ARCHIVE_NAME"
+        exit 1
+    fi
+elif [ $# -eq 1 ]; then
+    FILENAME=$(basename "$1")
+    notify_send 'Uploading file...' "$FILENAME"
+    if URL=$(share_put "$1"); then
+        notify_uploaded 'File uploaded!' "$URL"
+        echo "$URL"
+    else
+        notify_failed "$FILENAME"
+        exit 1
     fi
 else
     ARCHIVE_NAME="pack.zip"
     FILES_NUM=$#
     zip "$ARCHIVE_NAME" "$@"
     UPLOAD_SIZE=$(du -sh "$ARCHIVE_NAME" | cut -f1)
-
     notify_send "Uploading $FILES_NUM archived files..." "Uploaded size: ${UPLOAD_SIZE}. Files packed: ${FILES_NUM}"
-    scp "$ARCHIVE_NAME" "$USER@$SERVER_URL:$DESTINATION/${rand}_$ARCHIVE_NAME"
-    rm "$ARCHIVE_NAME"
-    notify_send_success 'Files uploaded!' "Uploaded size: ${UPLOAD_SIZE}. Files packed: ${FILES_NUM}"
-    copy_url "$ARCHIVE_NAME"
+    if URL=$(share_put "$ARCHIVE_NAME"); then
+        rm "$ARCHIVE_NAME"
+        notify_uploaded 'Files uploaded!' "$URL"
+        echo "$URL"
+    else
+        rm "$ARCHIVE_NAME"
+        notify_failed "$ARCHIVE_NAME"
+        exit 1
+    fi
 fi

@@ -14,6 +14,9 @@
   sops.secrets."paperless-token" = {
     owner = config.users.users.fobos.name;
   };
+  sops.secrets."share-token" = {
+    owner = config.users.users.fobos.name;
+  };
   sops.secrets."unsplash-key" = {
     owner = config.users.users.fobos.name;
   };
