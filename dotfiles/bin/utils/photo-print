@@ -1,0 +1,276 @@
+#!/usr/bin/env bash
+# photo-print — interactive photo/document printing (bound to `u p` in yazi).
+#
+# Pick a printer, then a live preview screen: Tab through layout modes
+#   photo  polaroid  polaroid-2  two-up  regular(A4)
+# tune them with the keyboard, and press `p` to print. Also prints PDFs (with a
+# page-range prompt) and extracts + prints image archives.
+#
+#   photo-print <file>...        # printer -> live preview -> print
+#   photo-print --tune <image>   # just the preview/tuner (no printer; prints values)
+#   photo-print --calib          # print a ruler/grid target through both 4x6 profiles
+#                                # to measure exactly how much each crops/borders
+#
+# Rendering/geometry: print-layouts.  Interactive screen: print-ui.
+
+set -euo pipefail
+
+dir="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"
+# shellcheck source=print-layouts
+source "$dir/print-layouts"
+# shellcheck source=print-ui
+source "$dir/print-ui"
+
+# ---------- file-type helpers ----------
+is_image() {
+	case "${1,,}" in
+		*.jpg|*.jpeg|*.png|*.webp|*.heic|*.heif|*.tiff|*.tif|*.bmp|*.avif|*.gif) return 0 ;;
+		*) return 1 ;;
+	esac
+}
+is_archive() {
+	case "${1,,}" in
+		*.zip|*.tar.gz|*.tgz|*.tar.bz2|*.tbz2|*.tar.xz|*.txz|*.tar|*.rar|*.7z) return 0 ;;
+		*) return 1 ;;
+	esac
+}
+is_pdf() { case "${1,,}" in *.pdf) return 0 ;; *) return 1 ;; esac; }
+need() { command -v "$1" &>/dev/null && return 0; echo "Missing tool: $1" >&2; return 1; }
+
+# Pick a printer via fzf (auto if only one, numbered fallback otherwise).
+pick_printer() {
+	local printers
+	mapfile -t printers < <(lpstat -p 2>/dev/null | awk '/^printer / {print $2}')
+	if [ "${#printers[@]}" -eq 0 ]; then echo "No CUPS printers found" >&2; return 1; fi
+	if [ "${#printers[@]}" -eq 1 ]; then echo "${printers[0]}"; return; fi
+	if command -v fzf &>/dev/null; then
+		printf '%s\n' "${printers[@]}" | fzf --prompt="Printer> " --height=40% --reverse
+	else
+		local i=1 p choice
+		for p in "${printers[@]}"; do echo "  $i) $p" >&2; i=$((i+1)); done
+		printf "Pick [1-%d]: " "${#printers[@]}" >&2; read -r choice
+		echo "${printers[$((choice-1))]}"
+	fi
+}
+
+extract_archive() {
+	local arg="$1" extract_dir="$2"
+	mkdir -p "$extract_dir"
+	case "${arg,,}" in
+		*.tar.gz|*.tgz|*.tar.bz2|*.tbz2|*.tar.xz|*.txz|*.tar) tar xf "$arg" -C "$extract_dir" ;;
+		*) nix-shell -p p7zip --run "7z x -o'$extract_dir' -bso0 '$arg'" >&2 ;;
+	esac
+}
+
+# Send one print-ready image to the printer. Profiles:
+#   photo   — 4x6 borderless glossy, fill (full-bleed; edges intentionally crop)
+#   frame   — 4x6 glossy, FIT inside the printable area (bordered, nothing cropped) —
+#             for the polaroid layouts whose photos sit near the edge; the printer's
+#             small white margin just merges into the polaroid's white frame
+#   regular — A4 plain, fit
+print_image() {
+	local file="$1" printer="$2" profile="$3"
+	echo "→ $(basename "$file") [$profile]" >&2
+	case "$profile" in
+		regular)
+			lp -d "$printer" -o media=A4 -o print-color-mode=color -o fit-to-page "$file" >&2 ;;
+		frame)
+			lp -d "$printer" -o media=4x6 -o MediaType=Com.canon.mtglossy \
+				-o print-quality=5 -o print-color-mode=color -o print-scaling=fit "$file" >&2 ;;
+		*)
+			lp -d "$printer" -o media=4x6.Borderless -o MediaType=Com.canon.mtglossy \
+				-o print-quality=5 -o print-color-mode=color -o print-scaling=fill "$file" >&2 ;;
+	esac
+}
+
+print_pdf() {
+	local file="$1" printer="$2" pages range
+	echo "PDF: $(basename "$file")" >&2
+	if command -v pdfinfo &>/dev/null; then
+		pages="$(pdfinfo "$file" 2>/dev/null | awk -F': *' '/^Pages:/ {print $2}')"
+		[ -n "$pages" ] && echo "  Total pages: $pages" >&2
+	fi
+	printf "Page range (e.g. 1-3,5 — empty=all): " >&2; read -r range
+	local lp_args=(-d "$printer" -o media=A4 -o sides=one-sided)
+	[ -n "$range" ] && lp_args+=(-P "$range")
+	lp "${lp_args[@]}" "$file" >&2
+}
+
+# calib_target LABEL OUT — 4x6 @300dpi calibration sheet: nested mm rectangles +
+# a numbered ruler from each edge midpoint + a red image-boundary frame. Printing
+# it shows exactly how many mm each profile crops (borderless) or borders (fit).
+calib_target() {
+	local label="$1" out="$2" W=1200 H=1800 cx=600 cy=900
+	local font m p c d len grid="" rects="" ruler="" nums="" pmm=11811   # px=mm*pmm/1000 @300dpi
+	font="$(fc-match -f '%{file}' sans-serif 2>/dev/null)"
+	for ((m=0; m<=153; m+=5)); do p=$(( m*pmm/1000 )); c=gray88; (( m%10==0 )) && c=gray78
+		grid+="stroke $c stroke-width 1 line 0,$p $W,$p "; done
+	for ((m=0; m<=102; m+=5)); do p=$(( m*pmm/1000 )); c=gray88; (( m%10==0 )) && c=gray78
+		grid+="stroke $c stroke-width 1 line $p,0 $p,$H "; done
+	for m in 5 10 15 20; do d=$(( m*pmm/1000 ))
+		rects+="stroke navy stroke-width 2 fill none rectangle $d,$d $((W-d)),$((H-d)) "; done
+	for ((m=0; m<=25; m++)); do d=$(( m*pmm/1000 )); len=10; (( m%5==0 )) && len=34
+		ruler+="stroke blue stroke-width 2 line $cx,$d $((cx+len)),$d line $cx,$((H-d)) $((cx+len)),$((H-d)) "
+		ruler+="line $d,$cy $d,$((cy+len)) line $((W-d)),$cy $((W-d)),$((cy+len)) "
+		if (( m%5==0 )); then nums+="fill blue stroke none font-size 30 "
+			nums+="text $((cx+len+6)),$((d+10)) '$m' text $((cx+len+6)),$((H-d+10)) '$m' "
+			nums+="text $((d-8)),$((cy+len+34)) '$m' text $((W-d-8)),$((cy+len+34)) '$m' "; fi
+	done
+	magick -font "$font" -size ${W}x${H} xc:white \
+		-draw "$grid" -draw "$rects" -draw "$ruler" -draw "$nums" \
+		-fill none -stroke red -strokewidth 3 -draw "rectangle 1,1 $((W-2)),$((H-2))" \
+		-gravity Center -fill black -pointsize 36 -annotate 0 "$label" \
+		-gravity North -fill blue -pointsize 24 -annotate +0+6 "TOP — mm from edge" \
+		-gravity South -fill blue -pointsize 24 -annotate +0+6 "BOTTOM" \
+		-density 300 -units PixelsPerInch "$out" >&2
+}
+
+# The print action the interactive UI calls on `p`: render every image (in groups,
+# per mode) and send each sheet to $printer. Uses globals `images` and `printer`.
+pui_print() {
+	local mode="$1" orient="$2" profile tmp a b out idx=0 i=0 n="${#images[@]}"
+	case "$mode" in
+		regular)            profile="regular" ;;  # A4 fit
+		polaroid|polaroid2) profile="frame" ;;    # bordered 4x6, never crops the photo
+		*)                  profile="photo" ;;    # borderless full-bleed (photo / two-up)
+	esac
+	tmp="$(mktemp -d)"
+	echo "Printing ${n} image(s) as ${mode}..." >&2
+	case "$mode" in
+		polaroid2|twoup)
+			while [ "$i" -lt "$n" ]; do
+				a="${images[$i]}"; b="${images[$((i+1))]:-}"; out="$tmp/sheet$idx.jpg"
+				if [ -n "$b" ]; then
+					if [ "$mode" = polaroid2 ]; then polaroid_two "$a" "$b" "$out"
+					else render_two_up "$a" "$b" "$out" "$orient"; fi
+				else
+					echo "Odd image out — printing it solo" >&2
+					if [ "$mode" = polaroid2 ]; then polaroid_single "$a" "$out"
+					else render_photo "$a" "$out"; fi
+				fi
+				print_image "$out" "$printer" "$profile"; i=$((i+2)); idx=$((idx+1))
+			done ;;
+		*)
+			for a in "${images[@]}"; do
+				out="$tmp/sheet$idx.jpg"
+				case "$mode" in
+					photo)    render_photo    "$a" "$out" ;;
+					polaroid) polaroid_single "$a" "$out" ;;
+					regular)  render_regular  "$a" "$out" ;;
+				esac
+				print_image "$out" "$printer" "$profile"; idx=$((idx+1))
+			done ;;
+	esac
+	rm -rf "$tmp"
+	echo "Sent $idx sheet(s) to $printer" >&2
+	command -v notify-send &>/dev/null && notify-send "photo-print" "Sent $idx sheet(s) to $printer"
+}
+
+# Fallback when chafa/preview is unavailable: fzf-pick a mode, print without preview.
+fallback_print() {
+	local modes=(photo polaroid polaroid2 twoup regular) mode orient=landscape
+	if command -v fzf &>/dev/null; then
+		mode="$(printf '%s\n' "${modes[@]}" | fzf --prompt="Mode> " --height=30% --reverse)"
+	else
+		mode=polaroid
+	fi
+	[ -n "$mode" ] || { echo "Cancelled" >&2; return 1; }
+	if [ "$mode" = twoup ] && command -v fzf &>/dev/null; then
+		orient="$(printf 'landscape\nportrait\n' | fzf --prompt="Orientation> " --height=20% --reverse)"
+		[ -n "$orient" ] || orient=landscape
+	fi
+	pui_print "$mode" "$orient"
+}
+
+# ---------- main ----------
+need magick || exit 1
+need lp     || exit 1
+
+# parse flags (keep the original argv for a clean re-exec)
+orig=("$@")
+tune=0; calib=0; args=()
+for a in "$@"; do
+	case "$a" in
+		--tune) tune=1 ;;
+		--calib) calib=1 ;;
+		-h|--help) grep '^# ' "$0" | sed 's/^# \?//'; exit 0 ;;
+		*) args+=("$a") ;;
+	esac
+done
+set -- ${args[@]+"${args[@]}"}
+
+# --calib: print a calibration target through BOTH 4x6 profiles to measure crop/border
+if [ "$calib" = 1 ]; then
+	printer="$(pick_printer)" || exit 1
+	[ -n "$printer" ] || { echo "Cancelled" >&2; exit 1; }
+	echo "Printer: $printer" >&2
+	td="$(mktemp -d)"; trap 'rm -rf "$td"' EXIT
+	calib_target $'BORDERLESS (photo)\n\nthe number at each\npaper edge = mm CROPPED' "$td/1-borderless.png"
+	calib_target $'BORDERED (frame)\n\nwhole target should fit;\nmeasure white band at edge' "$td/2-bordered.png"
+	print_image "$td/1-borderless.png" "$printer" photo
+	print_image "$td/2-bordered.png"   "$printer" frame
+	echo >&2
+	echo "Printed 2 calibration sheets (borderless + bordered)." >&2
+	echo "On each: read the ruler number sitting at the paper edge — top/bottom/left/right." >&2
+	exit 0
+fi
+
+[ $# -ge 1 ] || { grep '^# ' "$0" | sed 's/^# \?//'; exit 1; }
+
+# bootstrap chafa (inline preview) once, before any work, if we'll go interactive
+if [ -t 1 ] && ! command -v chafa &>/dev/null && [ -z "${_PP_NIX:-}" ]; then
+	want=$tune
+	for a in "$@"; do
+		if is_image "$a" || is_archive "$a"; then want=1; break; fi
+	done
+	if [ "$want" != 0 ]; then
+		echo "Fetching chafa for inline preview..." >&2
+		export _PP_NIX=1
+		exec nix-shell -p chafa --run "$(printf '%q ' "$0" "${orig[@]}")"
+	fi
+fi
+
+# --- tune-only: live tuner on the given image(s), no printer ---
+if [ "$tune" = 1 ]; then
+	PUI_IMAGES=("$@"); PUI_PRINTER=""
+	print_ui_run || true
+	exit 0
+fi
+
+# classify inputs
+images=(); pdfs=()
+tmpdir="$(mktemp -d)"; trap 'rm -rf "$tmpdir"' EXIT
+for arg in "$@"; do
+	if is_pdf "$arg"; then
+		pdfs+=("$arg")
+	elif is_archive "$arg"; then
+		echo "Extracting $(basename "$arg")..." >&2
+		ed="$tmpdir/$(basename "$arg").d"; extract_archive "$arg" "$ed"
+		while IFS= read -r -d '' f; do images+=("$f"); done < <(find "$ed" -type f \( -iname '*.jpg' -o -iname '*.jpeg' -o -iname '*.png' -o -iname '*.webp' -o -iname '*.heic' -o -iname '*.heif' -o -iname '*.tiff' -o -iname '*.tif' -o -iname '*.bmp' -o -iname '*.avif' \) -print0 | sort -z)
+	elif is_image "$arg"; then
+		images+=("$arg")
+	else
+		echo "Skipping unsupported: $(basename "$arg")" >&2
+	fi
+done
+
+if [ "${#images[@]}" -eq 0 ] && [ "${#pdfs[@]}" -eq 0 ]; then
+	echo "Nothing printable given" >&2; exit 1
+fi
+
+printer="$(pick_printer)" || exit 1
+[ -n "$printer" ] || { echo "Cancelled" >&2; exit 1; }
+echo "Printer: $printer" >&2
+
+# PDFs print directly (no preview)
+for p in ${pdfs[@]+"${pdfs[@]}"}; do print_pdf "$p" "$printer"; done
+
+# images -> interactive preview screen (or fzf fallback)
+if [ "${#images[@]}" -gt 0 ]; then
+	if [ -t 1 ] && command -v chafa &>/dev/null; then
+		PUI_IMAGES=("${images[@]}"); PUI_PRINTER="$printer"
+		print_ui_run || echo "Cancelled — nothing printed" >&2
+	else
+		fallback_print
+	fi
+fi
