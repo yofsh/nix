@@ -82,6 +82,12 @@ PanelWindow {
         function closeAll(): void { root.dismissAll(); }
         function historyPop(): void { root.historyPop(); }
         function context(): void { root.invokeLatest(); }
+        // For a dmenu-style action picker: actions() pins+freezes the latest
+        // notification and lists its action labels; invoke() runs one by label;
+        // unpin() resumes it if the picker was cancelled.
+        function actions(): string { return root.latestActions(); }
+        function invoke(name: string): void { root.invokeActionByName(name); }
+        function unpin(): void { root.unpinPicker(); }
     }
 
     NotificationServer {
@@ -282,6 +288,12 @@ PanelWindow {
                 var wasHidden = existing.hidden;
                 var isDnd = root.dnd;
                 notifRefs[existing.nid] = notif;
+                // Reassign to a fresh object so notifRefsChanged fires — the actions
+                // Repeater reads root.notifRefs[nid].actions and would otherwise keep
+                // the replaced notification's (often empty) action list. The model
+                // roles (body etc.) update via visibleModel.set; actions don't, since
+                // they live on the swapped QObject ref, not in the ListModel.
+                notifRefs = Object.assign({}, notifRefs);
                 visibleModel.set(i, makeEntry(existing.nid, notif.id, notif, tag, existing.arrivedAt, isDnd));
                 connectNotifSignals(notif, existing.nid);
                 if (wasHidden && !isDnd) visibleCount++;
@@ -390,6 +402,70 @@ PanelWindow {
             animateHide(i);
             return;
         }
+    }
+
+    // The notification the open picker is acting on. While set, that entry is
+    // paused so it can't time out (a timed-out notification's sender exits and
+    // its actions die), and invoke() targets THIS one — not whatever is newest,
+    // since another notification may arrive while the dmenu is open.
+    property var pickerNid: null
+
+    // First visible (non-hidden) entry — newest, since new notifs insert at 0.
+    function latestVisibleIndex() {
+        for (var i = 0; i < visibleModel.count; i++)
+            if (!visibleModel.get(i).hidden) return i;
+        return -1;
+    }
+    function indexOfNid(nid) {
+        for (var i = 0; i < visibleModel.count; i++)
+            if (visibleModel.get(i).nid === nid) return i;
+        return -1;
+    }
+
+    // Pin + freeze the latest notification and return its action labels. The pin
+    // holds until invoke() or unpin() — so the notification survives however long
+    // you take in the picker.
+    function latestActions() {
+        unpinPicker(); // drop any stale pin
+        var idx = latestVisibleIndex();
+        if (idx < 0) return "";
+        var e = visibleModel.get(idx);
+        var ref = notifRefs[e.nid];
+        if (!ref || !ref.actions || ref.actions.length === 0) return "";
+        pickerNid = e.nid;
+        visibleModel.setProperty(idx, "paused", true); // freeze timeout
+        var out = [];
+        for (var i = 0; i < ref.actions.length; i++) out.push(ref.actions[i].text);
+        return out.join("\n");
+    }
+
+    // Invoke the PINNED notification's action whose label === name, then hide it.
+    function invokeActionByName(name) {
+        var nid = pickerNid;
+        pickerNid = null;
+        if (nid === null) { // no pin (invoke called without the picker) → newest
+            var li = latestVisibleIndex();
+            if (li < 0) return;
+            nid = visibleModel.get(li).nid;
+        }
+        var ref = notifRefs[nid];
+        if (!ref || !ref.actions) return;
+        for (var i = 0; i < ref.actions.length; i++) {
+            if (ref.actions[i].text === name && typeof ref.actions[i].invoke === "function") {
+                ref.actions[i].invoke();
+                var idx = indexOfNid(nid);
+                if (idx >= 0) animateHide(idx);
+                return;
+            }
+        }
+    }
+
+    // Picker cancelled — un-freeze the pinned notification so it resumes timing out.
+    function unpinPicker() {
+        if (pickerNid === null) return;
+        var idx = indexOfNid(pickerNid);
+        if (idx >= 0) visibleModel.setProperty(idx, "paused", false);
+        pickerNid = null;
     }
 
     Timer {

@@ -397,7 +397,9 @@ hl.bind("SUPER + SHIFT + E", hl.dsp.exec_cmd("qs ipc call notif historyPop"),
 hl.bind("SUPER + CTRL + SHIFT + E", hl.dsp.exec_cmd("qs ipc call notif closeAll"),
   { description = "Close all notifications" })
 hl.bind("SUPER + SHIFT + period", hl.dsp.exec_cmd("qs ipc call notif context"),
-  { description = "Notification context menu" })
+  { description = "Notification default action" })
+hl.bind("SUPER + period", hl.dsp.exec_cmd("hypr-notif-actions"),
+  { description = "Notification action picker" })
 
 ------------------------------------------------------------------------
 -- Audio mute toggles

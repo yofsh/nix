@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+# hypr-notif-actions — dmenu-style picker for the latest notification's actions.
+#
+# Lists the newest on-screen notification's action buttons (e.g. screencast's
+# Open / Copy / Upload) in a vicinae dmenu and invokes the chosen one via the
+# quickshell `notif` IPC. Key-bound; a no-op when nothing actionable is showing.
+set -u
+
+# actions() also PINS + freezes the notification so it can't time out while the
+# dmenu is open (a timed-out notification's sender exits and its actions die).
+actions=$(qs ipc call notif actions 2>/dev/null)
+[ -n "$actions" ] || exit 0
+
+choice=$(printf '%s\n' "$actions" | vicinae dmenu -p "Notification")
+
+if [ -n "$choice" ]; then
+	qs ipc call notif invoke "$choice" >/dev/null 2>&1
+else
+	qs ipc call notif unpin >/dev/null 2>&1   # cancelled → resume its timeout
+fi
