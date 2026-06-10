@@ -190,6 +190,13 @@ in
   programs.hyprland.withUWSM = true;
   programs.hyprland.xwayland.enable = true;
 
+  # ydotoold: real-keycode input injection (uinput) for the `voice --paste`
+  # keychord. wtype maps keysyms onto low keycodes (v -> keycode 9 = Escape),
+  # which Hyprland matches against the real keymap and fires global binds; the
+  # ydotool socket lives at /run/ydotoold/socket and needs the ydotool group.
+  programs.ydotool.enable = true;
+  users.users.fobos.extraGroups = [ "ydotool" ];
+
   environment.sessionVariables.NIXOS_OZONE_WL = "1";
   environment.sessionVariables.BROWSER = "firefox";
   environment.sessionVariables.EDITOR = "nvim";

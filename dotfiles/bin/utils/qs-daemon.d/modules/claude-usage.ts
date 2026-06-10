@@ -119,6 +119,7 @@ function findRepoRoot(dir: string): string | null {
 // version matters, not just the family.
 interface Price { in: number; out: number; cacheRead: number; write5m: number; write1h: number }
 const PRICING: Record<string, Price> = {
+  fable:   { in: 10,  out: 50, cacheRead: 1,    write5m: 12.5,  write1h: 20 },   // Fable 5 / Mythos 5 (2× Opus 4.8)
   opusNew: { in: 5,   out: 25, cacheRead: 0.5,  write5m: 6.25,  write1h: 10 },   // Opus 4.5+
   opusOld: { in: 15,  out: 75, cacheRead: 1.5,  write5m: 18.75, write1h: 30 },   // Opus 4.1 and earlier
   sonnet:  { in: 3,   out: 15, cacheRead: 0.3,  write5m: 3.75,  write1h: 6 },
@@ -129,6 +130,8 @@ const PRICING: Record<string, Price> = {
 function priceFor(model: string): Price | null {
   if (!model) return null;
   const m = model.toLowerCase();
+
+  if (m.includes("fable") || m.includes("mythos")) return PRICING.fable; // Fable 5 / Mythos 5 share $10/$50
 
   if (m.includes("opus")) {
     // e.g. claude-opus-4-8, claude-opus-4-1-20250805, claude-opus-4-20250514.

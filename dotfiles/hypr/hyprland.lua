@@ -420,7 +420,7 @@ hl.bind("SUPER + CTRL + S", hl.dsp.exec_cmd("pactl set-sink-mute @DEFAULT_SINK@ 
 -- Voice / LLM
 ------------------------------------------------------------------------
 
-hl.bind("SUPER + V", hl.dsp.exec_cmd("voice -q -m dictate"), { description = "Voice dictate" })
+hl.bind("SUPER + V", hl.dsp.exec_cmd("voice -q -m dictate --paste"), { description = "Voice dictate" })
 hl.bind("SUPER + ALT + V", hl.dsp.exec_cmd("voice -q -r -m claude"), { description = "Voice → Claude (replay)" })
 hl.bind("SUPER + CTRL + V", hl.dsp.exec_cmd([[MAX_THINKING_TOKENS=0 CLAUDE_EXTRA_ARGS="--model sonnet" voice -m claude]]),
   { description = "Voice → Claude (sonnet)" })

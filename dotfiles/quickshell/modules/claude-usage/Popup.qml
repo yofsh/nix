@@ -129,7 +129,9 @@ Item {
         if (!name) return "unknown";
         var s = name.toLowerCase();
         if (s.indexOf("synthetic") >= 0) return "synthetic";
-        var fam = s.indexOf("opus") >= 0 ? "Opus"
+        var fam = s.indexOf("fable") >= 0 ? "Fable"
+                : s.indexOf("mythos") >= 0 ? "Mythos"
+                : s.indexOf("opus") >= 0 ? "Opus"
                 : s.indexOf("sonnet") >= 0 ? "Sonnet"
                 : s.indexOf("haiku") >= 0 ? "Haiku" : "";
         if (!fam) return name;
@@ -146,6 +148,8 @@ Item {
 
     function modelColor(name) {
         var s = (name || "").toLowerCase();
+        if (s.indexOf("fable") >= 0) return "#fab387";  // peach
+        if (s.indexOf("mythos") >= 0) return "#f5c2e7"; // pink
         if (s.indexOf("opus") >= 0) return "#cba6f7";   // mauve
         if (s.indexOf("sonnet") >= 0) return "#89b4fa"; // blue
         if (s.indexOf("haiku") >= 0) return "#a6e3a1";  // green

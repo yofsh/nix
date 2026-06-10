@@ -5,6 +5,7 @@ Usage:
   voice -m dictate         Toggle dictation (type + clipboard)
   voice -m dictate -r      Toggle dictation via remote API
   voice -m dictate -p      Toggle dictation, output to stdout (pipeable)
+  voice -m dictate --paste Toggle dictation, paste via Ctrl+V (Ctrl+Shift+V in terminals)
   voice -m claude          Toggle voice-to-Claude
   voice -m stream          Toggle continuous VAD streaming
 
@@ -44,6 +45,17 @@ REMOTE_MODEL = os.environ.get("VOICE_REMOTE_MODEL", "whisper-large")
 PID_DIR = "/tmp"
 TRANSCRIBING_FLAG = os.path.join(PID_DIR, "voice_transcribing")
 TYPING_FLAG = os.path.join(PID_DIR, "voice_typing")
+
+# Window classes that paste with Ctrl+Shift+V instead of Ctrl+V (terminals).
+# Matched as case-insensitive substrings against the focused window's class.
+TERMINAL_CLASSES = [
+    c.strip().lower()
+    for c in os.environ.get(
+        "VOICE_TERMINAL_CLASSES",
+        "foot,footclient,alacritty,kitty,xterm,wezterm,ghostty,org.wezfurlong.wezterm,com.mitchellh.ghostty",
+    ).split(",")
+    if c.strip()
+]
 
 
 # --- Helpers ---
@@ -140,6 +152,57 @@ def stop_recording(mode):
 
     time.sleep(0.1)
     return wav_path(mode)
+
+
+def active_is_terminal():
+    """True if the focused Hyprland window is a terminal (pastes w/ Ctrl+Shift+V)."""
+    try:
+        r = subprocess.run(["hyprctl", "activewindow", "-j"],
+                           capture_output=True, text=True, timeout=1)
+        cls = json.loads(r.stdout).get("class", "").lower()
+    except Exception:
+        return False
+    return any(t in cls for t in TERMINAL_CLASSES)
+
+
+# evdev keycodes (linux/input-event-codes.h) for the paste chord
+KEY_LEFTCTRL, KEY_LEFTSHIFT, KEY_V = 29, 42, 47
+YDOTOOL_SOCKET = os.environ.get("YDOTOOL_SOCKET", "/run/ydotoold/socket")
+
+
+def paste_text():
+    """Send the paste shortcut for the focused window (clipboard already set).
+
+    Uses ydotool (real evdev keycodes via uinput) rather than wtype. wtype maps
+    keysyms onto low keycodes (v -> keycode 9), and Hyprland matches GLOBAL binds
+    against the real keymap where keycode 9 is Escape — so a wtype Ctrl+Shift+v is
+    seen as Ctrl+Shift+Escape and fires the htop bind instead of pasting. ydotool
+    emits the actual V keycode, so there is no collision.
+    """
+    term = active_is_terminal()
+    mods = [KEY_LEFTCTRL, KEY_LEFTSHIFT] if term else [KEY_LEFTCTRL]
+    seq = ([f"{k}:1" for k in mods]
+           + [f"{KEY_V}:1", f"{KEY_V}:0"]
+           + [f"{k}:0" for k in reversed(mods)])
+    env = {**os.environ, "YDOTOOL_SOCKET": YDOTOOL_SOCKET}
+    try:
+        if subprocess.run(["ydotool", "key", *seq], env=env,
+                          capture_output=True).returncode == 0:
+            return
+    except FileNotFoundError:
+        pass
+
+    # Fallback when ydotool is unavailable (e.g. daemon not up yet). The wtype
+    # chord works in apps without a colliding global keybind (browsers) but is
+    # unreliable in terminals — see the docstring above.
+    wmods = ["ctrl", "shift"] if term else ["ctrl"]
+    cmd = ["wtype"]
+    for mod in wmods:
+        cmd += ["-M", mod]
+    cmd += ["-s", "120", "-k", "v", "-s", "40"]
+    for mod in reversed(wmods):
+        cmd += ["-m", mod]
+    subprocess.run(cmd, check=False)
 
 
 # --- Transcription backends ---
@@ -259,7 +322,11 @@ def cmd_dictate(args):
             subprocess.run(["wl-copy", text], check=False)
             try:
                 open(TYPING_FLAG, "w").close()
-                subprocess.run(["wtype", text], check=False)
+                if args.paste:
+                    time.sleep(0.05)  # let wl-copy settle before pasting
+                    paste_text()
+                else:
+                    subprocess.run(["wtype", text], check=False)
             finally:
                 try:
                     os.remove(TYPING_FLAG)
@@ -401,6 +468,10 @@ def main():
 
     p.add_argument("-p", "--pipe", action="store_true",
                    help="Output text to stdout only (no wtype/clipboard/notifications)")
+
+    p.add_argument("--paste", action="store_true",
+                   default=os.environ.get("VOICE_PASTE") == "1",
+                   help="Paste via Ctrl+V (Ctrl+Shift+V in terminals) instead of typing")
 
     p.add_argument("--name",
                    help="Override mode name for PID/WAV files (avoids conflicts)")
