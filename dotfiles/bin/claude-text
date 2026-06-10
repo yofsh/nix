@@ -1,19 +1,42 @@
 #!/usr/bin/env bash
+# claude-text — run the selected text through the claude CLI.
+#
+#   claude-text <en|ru|es|fix|formal> [replace]    preset transform
+#   claude-text "<custom prompt>"    [replace]     anything else is a raw prompt
+#
+# Reads the primary selection. With `replace`, types the result over the
+# selection and restores the clipboard afterwards.
 
 request="${1:-}"
 mode="${2:-}"
 
 if [[ -z "$request" ]]; then
-  echo "Usage: claude-text <prompt> [replace]" >&2
+  echo "Usage: claude-text <en|ru|es|fix|formal|prompt> [replace]" >&2
   exit 1
 fi
 
-notify() {
-  local title="$1"
-  local body="${2:-}"
+LIB="$(dirname "$(readlink -f "$0")")/lib"
+. "$LIB/clipboard.sh"
+. "$LIB/notify.sh"
+NTFY_ICON=claude
+NTFY_TIMEOUT=60000
 
-  printf '%s - %s\n' "$title" "$body"
-  notify-send -h "string:x-tag:claude-text" -t 60000 -i claude -u low "$title" "$body"
+common="use lowercase, use comma instead of semicolons, prefer joining sentences with commas over splitting with periods when still readable"
+es_rules="no accents except ñ or when omitting changes meaning, no inverted punctuation marks, lowercase first letter of sentences"
+raw='output only the resulting text — never prefix it with a label like "translation:", no surrounding quotes, no commentary'
+
+case "$request" in
+  en)     prompt="Translate to English. $raw. $common" ;;
+  ru)     prompt="Translate to Russian. $raw. $common" ;;
+  es)     prompt="Translate to Spanish. $raw. $es_rules, $common" ;;
+  fix)    prompt="Fix grammar and show updated text, keep original text structure. $raw. $common" ;;
+  formal) prompt="Make this text more formal. $raw. $common" ;;
+  *)      prompt="$request" ;;
+esac
+
+notify() {
+  printf '%s - %s\n' "$1" "${2:-}"
+  ntfy "$1" "${2:-}"
 }
 
 original=$(wl-paste -p)
@@ -23,10 +46,10 @@ if [[ -z "$original" ]]; then
   exit 1
 fi
 
-notify "Translating" "$original"
+notify "Processing" "$original"
 
 start=$SECONDS
-res=$(printf '%s\n\nText:\n%s' "$request" "$original" | claude -p \
+res=$(printf '%s\n\nText:\n%s' "$prompt" "$original" | claude -p \
   --append-system-prompt 'Output only the resulting text. Never add a label or "Translation:" prefix, surrounding quotes, preamble, or explanation.')
 elapsed=$(( SECONDS - start ))
 
@@ -34,12 +57,7 @@ elapsed=$(( SECONDS - start ))
 res=$(printf '%s' "$res" | sed -E '1s/^[[:space:]]*(translation|traducción|traduccion|перевод)[[:space:]]*:[[:space:]]*//I')
 
 if [[ "$mode" == "replace" ]]; then
-  wl-copy "$res"
-  wtype -M ctrl v
-  sleep 0.5
-  wl-copy "$original"
-  notify "Done (${elapsed}s)" "$res"
-  exit 0
+  replace_selection "$res" "$original"
 fi
 
 notify "Done (${elapsed}s)" "$res"

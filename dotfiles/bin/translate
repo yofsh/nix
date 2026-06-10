@@ -1,4 +1,11 @@
 #!/usr/bin/env bash
+# translate — translate the selected text via the DeepL API.
+#
+#   translate <lang> [replace]
+#
+# Grabs the current selection (simulated copy, clipboard-preserving). With
+# `replace`, types the translation over the selection; Spanish replacements get
+# accents stripped for plain-ASCII typing.
 
 lang="${1:-}"
 mode="${2:-}"
@@ -8,32 +15,30 @@ if [[ -z "$lang" ]]; then
   exit 1
 fi
 
-lang_pango=$(printf '%s' "$lang" | tr '[:lower:]' '[:upper:]')
+LIB="$(dirname "$(readlink -f "$0")")/lib"
+. "$LIB/clipboard.sh"
+. "$LIB/notify.sh"
+. "$LIB/secrets.sh"
+NTFY_ICON=google-translate
+NTFY_TIMEOUT=60000
 
-send_notification() {
-  echo "$1 - $2"
-  notify-send -h "string:x-tag:translate" -t 60000 -i google-translate -u low "$1" "$2"
+lang_upper=$(printf '%s' "$lang" | tr '[:lower:]' '[:upper:]')
+
+notify() {
+  echo "$1 - ${2:-}"
+  ntfy "$1" "${2:-}"
 }
 
 translate_deepl() {
-  local target_lang="$1"
-  local text="$2"
-  local payload
-  local auth_key
-  local response
-  local message
-
-  if [[ -z "$target_lang" || -z "$text" ]]; then
-    echo "Usage: translate_deepl <target_lang> <text>"
-    return 1
-  fi
+  local target_lang="$1" text="$2"
+  local payload auth_key response message
 
   payload=$(jq -n --arg target_lang "$target_lang" --arg text "$text" '{
     target_lang: $target_lang,
     text: [$text]
   }')
 
-  auth_key=$(< /run/secrets/deepl-key)
+  auth_key=$(read_secret deepl-key) || return 1
 
   response=$(curl -s -X POST \
     -H "Authorization: DeepL-Auth-Key $auth_key" \
@@ -55,46 +60,20 @@ translate_deepl() {
   jq -r '.translations[0].text' <<< "$response"
 }
 
-
-remove_umlauts() {
+strip_accents() {
   echo "$1" | sed 's/á/a/g; s/é/e/g; s/í/i/g; s/ó/o/g; s/ú/u/g; s/ü/u/g; s/ñ/n/g; s/Á/A/g; s/É/E/g; s/Í/I/g; s/Ó/O/g; s/Ú/U/g; s/Ü/U/g; s/¿//g;'
-}
-
-get_selection() {
-  local saved text="" cls
-  saved=$(wl-paste 2>/dev/null)        # back up real clipboard
-  wl-copy --clear                       # sentinel to detect when copy lands
-
-  cls=$(hyprctl activewindow -j 2>/dev/null | jq -r '.class // empty')
-  case "$cls" in
-    foot|footclient) wtype -M ctrl -M shift c ;;   # terminal: Ctrl+Shift+C
-    *)               wtype -M ctrl c ;;            # everything else: Ctrl+C
-  esac
-
-  for _ in $(seq 1 20); do              # poll up to ~1s for the app to fill clipboard
-    text=$(wl-paste --no-newline 2>/dev/null)
-    [[ -n "$text" ]] && break
-    sleep 0.05
-  done
-
-  printf '%s' "$saved" | wl-copy        # restore real clipboard
-  printf '%s' "$text"
 }
 
 original=$(get_selection)
 
 if [[ "$mode" == "replace" ]]; then
-  send_notification "Getting $lang_pango replacement for:" "$original"
+  notify "Getting $lang_upper replacement for:" "$original"
   translation=$(translate_deepl "$lang" "$original")
-  translation_without_umlauts=$(remove_umlauts "$translation")
-  wl-copy "$translation_without_umlauts"
-  wtype -M ctrl v
-  sleep 0.5
-  wl-copy "$original"
-  send_notification "Done!"
+  replace_selection "$(strip_accents "$translation")" "$original"
+  notify "Done!"
   exit 0
 fi
 
-send_notification "Getting $lang_pango translation for:" "$original"
+notify "Getting $lang_upper translation for:" "$original"
 translation=$(translate_deepl "$lang" "$original")
-send_notification " " "$translation"
+notify " " "$translation"

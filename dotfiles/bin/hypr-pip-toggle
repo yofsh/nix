@@ -2,11 +2,8 @@
 # Toggle PiP-like mode on active window: pin, float, no_focus, resize to corner
 # Second press restores the window to its previous state
 
-WIN=$(hyprctl activewindow -j)
-ADDR=$(echo "$WIN" | jq -r '.address')
-PINNED=$(echo "$WIN" | jq -r '.pinned')
-FLOATING=$(echo "$WIN" | jq -r '.floating')
-MONITOR=$(echo "$WIN" | jq -r '.monitor')
+read -r ADDR PINNED FLOATING MONITOR < <(hyprctl activewindow -j \
+    | jq -r '"\(.address) \(.pinned) \(.floating) \(.monitor)"')
 
 ld() { hyprctl dispatch "$1" >/dev/null; }
 
@@ -18,9 +15,9 @@ if [ "$PINNED" = "true" ]; then
     [ "$FLOATING" = "true" ] && ld 'hl.dsp.window.float({ action = "toggle" })'
     notify-send -t 1500 "PiP off"
 else
-    # Get monitor dimensions for positioning
-    MON_W=$(hyprctl monitors -j | jq -r ".[] | select(.name==\"$MONITOR\") | .width / .scale | floor")
-    MON_H=$(hyprctl monitors -j | jq -r ".[] | select(.name==\"$MONITOR\") | .height / .scale | floor")
+    # Logical (scaled) dimensions of the window's monitor, for corner positioning
+    read -r MON_W MON_H < <(hyprctl monitors -j \
+        | jq -r --argjson id "$MONITOR" '.[] | select(.id == $id) | "\(.width / .scale | floor) \(.height / .scale | floor)"')
     PIP_W=800
     PIP_H=450
     POS_X=$((MON_W - PIP_W - 20))

@@ -5,86 +5,12 @@ import os
 import re
 import subprocess
 import sys
-import unicodedata
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-
-# ── ANSI colors ──────────────────────────────────────────────────────────────
-class C:
-    RST = "\033[0m"
-    BOLD = "\033[1m"
-    DIM = "\033[2m"
-    RED = "\033[91m"
-    GREEN = "\033[92m"
-    YELLOW = "\033[93m"
-    BLUE = "\033[94m"
-    MAGENTA = "\033[95m"
-    CYAN = "\033[96m"
-    WHITE = "\033[97m"
-    GRAY = "\033[90m"
-    BG_GRAY = "\033[48;5;236m"
-
-
-_ANSI_RE = re.compile(r"\033\[[^m]*m")
-
-
-def dw(s: str) -> int:
-    """Display width: strip ANSI, count wide chars as 2."""
-    stripped = _ANSI_RE.sub("", s)
-    w = 0
-    for ch in stripped:
-        if unicodedata.east_asian_width(ch) in ("W", "F"):
-            w += 2
-        else:
-            w += 1
-    return w
-
-
-def pad(s: str, width: int) -> str:
-    """Pad string with spaces to reach target display width."""
-    return s + " " * max(0, width - dw(s))
-
-
-# ── Signal bar ───────────────────────────────────────────────────────────────
-def signal_bar(dbm: int) -> str:
-    if dbm >= -50:
-        bars, color, emoji = "████", C.GREEN, "🟢"
-    elif dbm >= -60:
-        bars, color, emoji = "███░", C.GREEN, "🟢"
-    elif dbm >= -70:
-        bars, color, emoji = "██░░", C.YELLOW, "🟡"
-    elif dbm >= -80:
-        bars, color, emoji = "█░░░", C.RED, "🟠"
-    else:
-        bars, color, emoji = "░░░░", C.RED, "🔴"
-    return f"{emoji} {color}{bars}{C.RST} {C.DIM}{dbm}dBm{C.RST}"
-
-
-# ── OUI vendor lookup ────────────────────────────────────────────────────────
-def load_oui_db() -> dict[str, str]:
-    oui = {}
-    db_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "oui.db")
-    if not os.path.exists(db_path):
-        return oui
-    with open(db_path) as f:
-        for line in f:
-            parts = line.strip().split("\t", 1)
-            if len(parts) == 2:
-                oui[parts[0]] = parts[1]
-    return oui
-
-
-def oui_lookup(mac: str, oui_db: dict[str, str]) -> str:
-    prefix = mac.replace(":", "")[:6].lower()
-    if prefix in oui_db:
-        return oui_db[prefix]
-    first_byte = int(prefix[:2], 16)
-    if first_byte & 0x02:
-        global_byte = first_byte & ~0x02
-        global_prefix = f"{global_byte:02x}{prefix[2:]}"
-        if global_prefix in oui_db:
-            return oui_db[global_prefix]
-    return ""
+sys.dont_write_bytecode = True
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.realpath(__file__)), "lib", "py"))
+from termui import C, pad, signal_bar  # noqa: E402
+from oui import load_oui_db, oui_lookup  # noqa: E402
 
 
 # ── Connection icons ─────────────────────────────────────────────────────────

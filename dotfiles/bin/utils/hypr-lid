@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/usr/bin/env bash
 
 # Usage: hypr-lid [on|off]
 # on = lid closed, off = lid opened

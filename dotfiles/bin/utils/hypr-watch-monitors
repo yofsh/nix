@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/usr/bin/env bash
 
 # When an external monitor is plugged in, pull workspaces 1-6 back onto it.
 # Monitor name must match the value of $screen in hyprland.lua.

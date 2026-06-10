@@ -11,29 +11,19 @@
 #   photo-print --calib          # print a ruler/grid target through both 4x6 profiles
 #                                # to measure exactly how much each crops/borders
 #
-# Rendering/geometry: print-layouts.  Interactive screen: print-ui.
+# Rendering/geometry: lib/print-layouts.sh.  Interactive screen: lib/print-ui.sh.
 
 set -euo pipefail
 
-dir="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"
-# shellcheck source=print-layouts
-source "$dir/print-layouts"
-# shellcheck source=print-ui
-source "$dir/print-ui"
+lib="$(cd "$(dirname "$(readlink -f "$0")")/../lib" && pwd)"
+# shellcheck source=../lib/print-layouts.sh
+source "$lib/print-layouts.sh"
+# shellcheck source=../lib/print-ui.sh
+source "$lib/print-ui.sh"
+# shellcheck source=../lib/archive.sh
+source "$lib/archive.sh"
 
 # ---------- file-type helpers ----------
-is_image() {
-	case "${1,,}" in
-		*.jpg|*.jpeg|*.png|*.webp|*.heic|*.heif|*.tiff|*.tif|*.bmp|*.avif|*.gif) return 0 ;;
-		*) return 1 ;;
-	esac
-}
-is_archive() {
-	case "${1,,}" in
-		*.zip|*.tar.gz|*.tgz|*.tar.bz2|*.tbz2|*.tar.xz|*.txz|*.tar|*.rar|*.7z) return 0 ;;
-		*) return 1 ;;
-	esac
-}
 is_pdf() { case "${1,,}" in *.pdf) return 0 ;; *) return 1 ;; esac; }
 need() { command -v "$1" &>/dev/null && return 0; echo "Missing tool: $1" >&2; return 1; }
 
@@ -51,15 +41,6 @@ pick_printer() {
 		printf "Pick [1-%d]: " "${#printers[@]}" >&2; read -r choice
 		echo "${printers[$((choice-1))]}"
 	fi
-}
-
-extract_archive() {
-	local arg="$1" extract_dir="$2"
-	mkdir -p "$extract_dir"
-	case "${arg,,}" in
-		*.tar.gz|*.tgz|*.tar.bz2|*.tbz2|*.tar.xz|*.txz|*.tar) tar xf "$arg" -C "$extract_dir" ;;
-		*) nix-shell -p p7zip --run "7z x -o'$extract_dir' -bso0 '$arg'" >&2 ;;
-	esac
 }
 
 # Send one print-ready image to the printer. Profiles:
@@ -246,7 +227,7 @@ for arg in "$@"; do
 	elif is_archive "$arg"; then
 		echo "Extracting $(basename "$arg")..." >&2
 		ed="$tmpdir/$(basename "$arg").d"; extract_archive "$arg" "$ed"
-		while IFS= read -r -d '' f; do images+=("$f"); done < <(find "$ed" -type f \( -iname '*.jpg' -o -iname '*.jpeg' -o -iname '*.png' -o -iname '*.webp' -o -iname '*.heic' -o -iname '*.heif' -o -iname '*.tiff' -o -iname '*.tif' -o -iname '*.bmp' -o -iname '*.avif' \) -print0 | sort -z)
+		while IFS= read -r -d '' f; do images+=("$f"); done < <(find_images "$ed")
 	elif is_image "$arg"; then
 		images+=("$arg")
 	else

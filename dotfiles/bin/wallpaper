@@ -4,6 +4,11 @@ WALLPAPER_DIR="$HOME/pics/wallpapers"
 HISTORY="/tmp/wallpaper_history"
 POS="/tmp/wallpaper_pos"
 
+LIB="$(dirname "$(readlink -f "$0")")/lib"
+. "$LIB/notify.sh"
+. "$LIB/secrets.sh"
+NTFY_TAG=wallpaper
+
 SILENT=0
 if [ "$1" = "-s" ]; then
 	SILENT=1
@@ -22,18 +27,20 @@ pgrep -x awww-daemon >/dev/null || awww-daemon 2>/dev/null &
 
 # Notification helper: notify <urgency> <icon> <title> [body]
 notify() {
-	local urgency="$1"
-	local icon="$2"
-	local title="$3"
-	local body="$4"
+	local urgency="$1" icon="$2" title="$3" body="${4:-}"
 
 	[ "$SILENT" -eq 1 ] && return
-	notify-send -u "$urgency" -i "$icon" -h "string:x-tag:wallpaper" "[Wallpaper] $title" "$body"
+	ntfy -u "$urgency" -i "$icon" "[Wallpaper] $title" "$body"
 	printf '[Wallpaper] [%s] %s\n' "$title" "$body" >&2
 }
 
 get_pos() { cat "$POS" 2>/dev/null || echo 0; }
 get_len() { wc -l < "$HISTORY" 2>/dev/null || echo 0; }
+
+# Random image from the local wallpaper collection (empty when none).
+pick_random() {
+	find "$WALLPAPER_DIR" -type f \( -name "*.jpg" -o -name "*.png" -o -name "*.webp" \) 2>/dev/null | shuf -n 1
+}
 
 # Build info string for a local image file
 local_info() {
@@ -73,7 +80,7 @@ download_one() {
 	local dest="$2"
 
 	local access_key
-	access_key=$(cat /run/secrets/unsplash-key 2>/dev/null)
+	access_key=$(read_secret unsplash-key 2>/dev/null)
 	if [ -z "$access_key" ]; then
 		DL_ERROR="Unsplash API key not found at /run/secrets/unsplash-key"
 		return 1
@@ -178,7 +185,7 @@ case "$1" in
 		_apply "$wal"
 		notify low preferences-desktop-wallpaper "$(basename "$wal")" "$(local_info "$wal")"
 	else
-		wal=$(find "$WALLPAPER_DIR" -type f \( -name "*.jpg" -o -name "*.png" -o -name "*.webp" \) | shuf -n 1)
+		wal=$(pick_random)
 		if [ -n "$wal" ]; then
 			set_wallpaper "$wal"
 			notify low preferences-desktop-wallpaper "$(basename "$wal")" "$(local_info "$wal")"
@@ -198,7 +205,7 @@ case "$1" in
 	fi
 	;;
 "random")
-	wal=$(find "$WALLPAPER_DIR" -type f \( -name "*.jpg" -o -name "*.png" -o -name "*.webp" \) | shuf -n 1)
+	wal=$(pick_random)
 	if [ -n "$wal" ]; then
 		set_wallpaper "$wal"
 		notify low preferences-desktop-wallpaper "$(basename "$wal")" "$(local_info "$wal")"

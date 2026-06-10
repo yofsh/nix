@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+# bt-audio — switch the active Bluetooth audio card between high-quality
+# playback (a2dp-sink) and headset-with-mic (headset-head-unit) profiles.
+#
+#   bt-audio toggle     switch profile, then print the new one
+#   bt-audio [status]   print the current profile: "A2" or "headset"
+set -uo pipefail
+
+card_json() {
+	pactl -f json list cards | jq -c '[.[] | select(.driver == "module-bluez5-device.c")][0] // empty'
+}
+
+card=$(card_json)
+if [ -z "$card" ]; then
+	echo "no bluetooth audio device" >&2
+	exit 1
+fi
+
+if [ "${1:-status}" = "toggle" ]; then
+	name=$(jq -r '.name' <<<"$card")
+	case "$(jq -r '.active_profile' <<<"$card")" in
+		a2dp*) pactl set-card-profile "$name" headset-head-unit ;;
+		*)     pactl set-card-profile "$name" a2dp-sink ;;
+	esac
+	card=$(card_json)
+fi
+
+case "$(jq -r '.active_profile' <<<"$card")" in
+	a2dp*) echo "A2" ;;
+	*)     echo "headset" ;;
+esac

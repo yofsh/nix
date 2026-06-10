@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/usr/bin/env bash
 # Control AirPods via LibrePods D-Bus interface
 
 # Find librepods D-Bus destination

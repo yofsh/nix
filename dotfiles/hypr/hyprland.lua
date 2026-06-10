@@ -451,8 +451,8 @@ end)
 
 hl.bind("SUPER + I", hl.dsp.exec_cmd("ocr"), { description = "OCR" })
 hl.bind("SUPER + SHIFT + I", hl.dsp.exec_cmd("llm -i --lens"), { description = "Reverse image search" })
-hl.bind("SUPER + O", hl.dsp.exec_cmd("scan-barcode"), { description = "Scan barcode" })
-hl.bind("SUPER + U", hl.dsp.exec_cmd("bt-audio-status toggle"), { description = "Bluetooth audio status" })
+hl.bind("SUPER + O", hl.dsp.exec_cmd("barcode"), { description = "Scan barcode" })
+hl.bind("SUPER + U", hl.dsp.exec_cmd("bt-audio toggle"), { description = "Bluetooth audio profile toggle" })
 
 ------------------------------------------------------------------------
 -- F-keys
@@ -699,8 +699,8 @@ hl.define_submap("Translate", "reset", function()
       { description = "Translate " .. x.lang .. " (replace)" })
   end
   for _, x in ipairs(claude_langs) do
-    hl.bind(x.k, hl.dsp.exec_cmd("claude-translate " .. x.lang), { description = "Claude " .. x.label })
-    hl.bind("SHIFT + " .. x.k, hl.dsp.exec_cmd("claude-translate " .. x.lang .. " replace"),
+    hl.bind(x.k, hl.dsp.exec_cmd("claude-text " .. x.lang), { description = "Claude " .. x.label })
+    hl.bind("SHIFT + " .. x.k, hl.dsp.exec_cmd("claude-text " .. x.lang .. " replace"),
       { description = "Claude " .. x.label .. " (replace)" })
   end
   for _, x in ipairs(dict_keys) do
@@ -709,8 +709,8 @@ hl.define_submap("Translate", "reset", function()
       x.lang .. [[&text=$encoded&op=translate"']]
     ), { description = "Dict " .. string.upper(x.lang) })
   end
-  hl.bind("F", hl.dsp.exec_cmd("claude-translate fix replace"), { description = "Fix grammar" })
-  hl.bind("G", hl.dsp.exec_cmd("claude-translate formal replace"), { description = "Formalize" })
+  hl.bind("F", hl.dsp.exec_cmd("claude-text fix replace"), { description = "Fix grammar" })
+  hl.bind("G", hl.dsp.exec_cmd("claude-text formal replace"), { description = "Formalize" })
   hl.bind("escape", hl.dsp.submap("reset"))
 end)
 

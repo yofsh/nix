@@ -49,25 +49,22 @@ if [ "$1" = "put" ]; then
     exit $?
 fi
 
-notify_send() {
-    if $NOTIFICATION_ENABLED; then
-        if [[ "$OSTYPE" == "darwin"* ]]; then
-            osascript -e "display notification \"$2\" with title \"$1\"" || true
-        else
-            notify-send -h "string:x-tag:upload" -u low -i cloud-upload "$1" "$2"
-        fi
+# toast ICON URGENCY TITLE [BODY] — desktop notification, macOS-aware. All
+# toasts share one x-tag so progress/success/failure replace each other in
+# place rather than stacking (no stale "Uploading…" spinner left behind).
+toast() {
+    local icon="$1" urgency="$2" title="$3" body="${4:-}"
+    $NOTIFICATION_ENABLED || return 0
+    if [[ "$OSTYPE" == "darwin"* ]]; then
+        osascript -e "display notification \"$body\" with title \"$title\"" || true
+    else
+        notify-send -h "string:x-tag:upload" -u "$urgency" -i "$icon" "$title" "$body"
     fi
 }
 
-notify_send_success() {
-    if $NOTIFICATION_ENABLED; then
-        if [[ "$OSTYPE" == "darwin"* ]]; then
-            osascript -e "display notification \"$2\" with title \"$1\""
-        else
-            notify-send -h "string:x-tag:upload" -u low -i emblem-default "$1" "$2"
-        fi
-    fi
-}
+notify_send()         { toast cloud-upload   low    "$@"; }
+notify_send_success() { toast emblem-default low    "$@"; }
+notify_failed()       { toast dialog-error   normal "Upload failed" "$1"; }
 
 copy_url() {
     local url="$1"
@@ -75,17 +72,6 @@ copy_url() {
         printf '%s' "$url" | pbcopy
     else
         wl-copy "$url"
-    fi
-}
-
-# Failure toast — same x-tag as the progress/success ones so it replaces the
-# "Uploading…" notification in place rather than leaving a stale spinner.
-notify_failed() {
-    $NOTIFICATION_ENABLED || return 0
-    if [[ "$OSTYPE" == "darwin"* ]]; then
-        osascript -e "display notification \"$1\" with title \"Upload failed\"" || true
-    else
-        notify-send -h "string:x-tag:upload" -u normal -i dialog-error "Upload failed" "$1"
     fi
 }
 

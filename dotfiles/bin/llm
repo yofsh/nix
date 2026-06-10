@@ -488,6 +488,21 @@ def notify(text, tag, title="llm"):
     )
 
 
+def dmenu_prompt(placeholder):
+    """One-line prompt via vicinae dmenu. Returns the text ('' on empty submit),
+    or None when cancelled or vicinae is unavailable."""
+    try:
+        r = subprocess.run(
+            ["vicinae", "dmenu", "-p", placeholder],
+            input="", capture_output=True, text=True,
+        )
+    except FileNotFoundError:
+        return None
+    if r.returncode != 0:
+        return None
+    return r.stdout.strip()
+
+
 def notify_with_followup(text, title, tag, argv_base):
     """Send final notification with Follow up action, fork to background."""
     pid = os.fork()
@@ -507,11 +522,7 @@ def notify_with_followup(text, title, tag, argv_base):
         action = ""
 
     if action == "followup":
-        r = subprocess.run(
-            ["sh", "-c", 'echo "" | vicinae dmenu -p "Follow up?"'],
-            capture_output=True, text=True,
-        )
-        followup = r.stdout.strip() if r.returncode == 0 else ""
+        followup = dmenu_prompt("Follow up?") or ""
         if followup:
             os.execvp("llm", argv_base + [followup])
 
@@ -610,16 +621,10 @@ def main():
 
     if not parts and args.screen:
         if args.dmenu:
-            try:
-                r = subprocess.run(
-                    ["sh", "-c", 'echo "" | vicinae dmenu -p "Ask about screen?"'],
-                    capture_output=True, text=True,
-                )
-                if r.returncode != 0 or not r.stdout.strip():
-                    sys.exit(0)
-                parts.append(r.stdout.strip())
-            except FileNotFoundError:
-                die("vicinae not found for dmenu prompt")
+            question = dmenu_prompt("Ask about screen?")
+            if not question:
+                sys.exit(0)
+            parts.append(question)
         else:
             parts.append("What specific product, place, or thing is this? Name the exact brand and model if you can tell. No descriptions of colors or shapes — just identify it. 1-2 sentences.")
 
@@ -671,18 +676,11 @@ def main():
             except (subprocess.TimeoutExpired, FileNotFoundError):
                 pass
             # Open dmenu for the prompt (Escape = exit)
-            try:
-                r = subprocess.run(
-                    ["sh", "-c", 'echo "" | vicinae dmenu -p "llm?"'],
-                    capture_output=True, text=True,
-                )
-                if r.returncode != 0:
-                    sys.exit(0)
-                dmenu_prompt = r.stdout.strip()
-                if dmenu_prompt:
-                    parts.append(dmenu_prompt)
-            except FileNotFoundError:
-                pass
+            question = dmenu_prompt("llm?")
+            if question is None:
+                sys.exit(0)
+            if question:
+                parts.append(question)
             # Append selection as context after the prompt
             if sel:
                 parts.append(sel)

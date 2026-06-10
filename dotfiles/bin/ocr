@@ -1,22 +1,26 @@
-#!/bin/sh
-EXT="jpeg"
-GEOMETRY="$(slurp)"
+#!/usr/bin/env bash
+# ocr — select a screen region, OCR it (eng+ukr+rus+spa), copy the text.
+set -uo pipefail
 
-if [ -z "$GEOMETRY" ]; then
-  exit 1
-fi
+LIB="$(dirname "$(readlink -f "$0")")/lib"
+. "$LIB/capture.sh"
+. "$LIB/notify.sh"
+NTFY_ICON=clipboard
 
-TEXT=$(grim -t $EXT -g "$GEOMETRY" -q 60 - |  magick - -density 300 -resize 300%  png:- | tesseract - - --oem 1 -l eng+ukr+rus+spa --dpi 300)
-EXITCODE="$?"
+img=$(mktemp --suffix=.jpg)
+trap 'rm -f "$img"' EXIT
 
-if [ $EXITCODE -eq 0 ] && [ -n "$TEXT" ]; then
-  echo "$TEXT"
-  wl-copy "$TEXT"
-  notify-send -i clipboard -u low "Text copied to clipboard" "$TEXT"
+grab_region "$img" 60 || exit 1   # selection cancelled
+
+# Upscale before tesseract — small UI text OCRs far better at 300dpi-ish sizes.
+text=$(magick "$img" -density 300 -resize 300% png:- \
+	| tesseract - - --oem 1 -l eng+ukr+rus+spa --dpi 300)
+
+if [ -n "$text" ]; then
+	echo "$text"
+	wl-copy "$text"
+	ntfy "Text copied to clipboard" "$text"
 else
-  notify-send -i clipboard -u low "Can't find any text, exit code $EXITCODE" "Output: $TEXT"
-  echo "Either command failed or variable is not empty"
-  echo "Result:"
-  echo "$TEXT"
+	ntfy "No text found in selection"
+	exit 1
 fi
-

@@ -15,26 +15,11 @@ import os
 import re
 import subprocess
 import sys
-import unicodedata
 
-
-# ── ANSI colors ──────────────────────────────────────────────────────────────
-class C:
-    RST = "\033[0m"
-    BOLD = "\033[1m"
-    DIM = "\033[2m"
-    RED = "\033[91m"
-    GREEN = "\033[92m"
-    YELLOW = "\033[93m"
-    BLUE = "\033[94m"
-    MAGENTA = "\033[95m"
-    CYAN = "\033[96m"
-    WHITE = "\033[97m"
-    GRAY = "\033[90m"
-    BG_GRAY = "\033[48;5;236m"
-
-
-_ANSI_RE = re.compile(r"\033\[[^m]*m")
+sys.dont_write_bytecode = True
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.realpath(__file__)), "lib", "py"))
+from termui import C, pad, signal_bar  # noqa: E402
+from oui import load_oui_db, oui_lookup  # noqa: E402
 
 
 # ── shared helpers ───────────────────────────────────────────────────────────
@@ -55,47 +40,6 @@ def get_wireless_interfaces() -> list[str]:
 def get_iface() -> str | None:
     ifs = get_wireless_interfaces()
     return ifs[0] if ifs else None
-
-
-def dw(s: str) -> int:
-    """Display width: strip ANSI, count wide chars as 2."""
-    stripped = _ANSI_RE.sub("", s)
-    w = 0
-    for ch in stripped:
-        w += 2 if unicodedata.east_asian_width(ch) in ("W", "F") else 1
-    return w
-
-
-def pad(s: str, width: int) -> str:
-    return s + " " * max(0, width - dw(s))
-
-
-def load_oui_db() -> dict[str, str]:
-    """Load OUI database from data/oui.db next to this script."""
-    oui: dict[str, str] = {}
-    db_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "oui.db")
-    if not os.path.exists(db_path):
-        return oui
-    with open(db_path) as f:
-        for line in f:
-            parts = line.strip().split("\t", 1)
-            if len(parts) == 2:
-                oui[parts[0]] = parts[1]
-    return oui
-
-
-def oui_lookup(bssid: str, oui_db: dict[str, str]) -> str:
-    """Vendor from BSSID. Empty for randomized MACs unless the base OUI matches."""
-    prefix = bssid.replace(":", "")[:6].lower()
-    if prefix in oui_db:
-        return oui_db[prefix]
-    first_byte = int(prefix[:2], 16)
-    if first_byte & 0x02:  # locally administered
-        global_byte = first_byte & ~0x02
-        global_prefix = f"{global_byte:02x}{prefix[2:]}"
-        if global_prefix in oui_db:
-            return oui_db[global_prefix]
-    return ""
 
 
 # ════════════════════════════════════════════════════════════════════════════
@@ -121,20 +65,6 @@ def get_wifi_gen(caps: set[str], freq: float) -> str:
     if "HT" in caps:
         return "Gen 4"
     return "Legacy"
-
-
-def scan_signal_bar(dbm: float) -> str:
-    if dbm >= -50:
-        bars, color, emoji = "████", C.GREEN, "🟢"
-    elif dbm >= -60:
-        bars, color, emoji = "███░", C.GREEN, "🟢"
-    elif dbm >= -70:
-        bars, color, emoji = "██░░", C.YELLOW, "🟡"
-    elif dbm >= -80:
-        bars, color, emoji = "█░░░", C.RED, "🟠"
-    else:
-        bars, color, emoji = "░░░░", C.RED, "🔴"
-    return f"{emoji} {color}{bars}{C.RST} {C.DIM}{dbm:.0f}dBm{C.RST}"
 
 
 def util_bar(util_str: str) -> str:
@@ -374,7 +304,7 @@ def cmd_scan(args):
         band = n["band"]
         col_band = pad(f"{band_emoji(band)}{band}", COL_BAND)
         col_ch = pad(n["channel"] or "─", COL_CH)
-        col_signal = pad(scan_signal_bar(n["signal"]), COL_SIGNAL)
+        col_signal = pad(signal_bar(n["signal"]), COL_SIGNAL)
 
         sec = n["security"]
         if sec == "Open":

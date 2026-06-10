@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+# barcode — select a screen region, decode any barcode/QR code in it, copy the result.
+set -uo pipefail
+
+LIB="$(dirname "$(readlink -f "$0")")/lib"
+. "$LIB/capture.sh"
+. "$LIB/notify.sh"
+
+img=$(mktemp --suffix=.jpg)
+trap 'rm -f "$img"' EXIT
+
+grab_region "$img" || exit 1   # selection cancelled
+
+result=$(zbarimg --raw "$img" 2>/dev/null | tr -d '\n')
+
+if [ -z "$result" ]; then
+	ntfy "zbar" "No scan data found"
+	exit 1
+fi
+
+echo "$result"
+wl-copy "$result"
+ntfy -i "$img" "zbar" "$result
+(copied to clipboard)"

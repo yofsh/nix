@@ -15,11 +15,8 @@ set -euo pipefail
 
 API="https://api.todoist.com/api/v1"
 
-if [[ ! -f /run/secrets/todoist-key ]]; then
-    echo "Error: /run/secrets/todoist-key not found. Run: sudo nixos-rebuild switch --flake .#ares" >&2
-    exit 1
-fi
-TOKEN=$(cat /run/secrets/todoist-key)
+. "$(dirname "$(readlink -f "$0")")/lib/secrets.sh"
+TOKEN=$(read_secret todoist-key) || exit 1
 
 # --- helpers ---
 

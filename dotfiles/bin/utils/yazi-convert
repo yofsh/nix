@@ -5,6 +5,8 @@
 
 set -euo pipefail
 
+. "$(dirname "$(readlink -f "$0")")/../lib/archive.sh"
+
 name="${1:-}"
 shift
 
@@ -18,14 +20,6 @@ files=()
 tmpdir=""
 archive=""
 
-# Check if input is an archive
-is_archive() {
-	case "${1,,}" in
-		*.zip|*.tar.gz|*.tgz|*.tar.bz2|*.tbz2|*.tar.xz|*.txz|*.tar|*.rar|*.7z) return 0 ;;
-		*) return 1 ;;
-	esac
-}
-
 # Strip all extensions from archive name (e.g. photos.tar.gz -> photos)
 archive_stem() {
 	local base
@@ -38,16 +32,12 @@ if [ $# -eq 1 ] && is_archive "$1"; then
 	archive="$1"
 	tmpdir="$(mktemp -d)"
 	echo "Extracting $(basename "$archive")..."
-
-	case "${archive,,}" in
-		*.tar.gz|*.tgz|*.tar.bz2|*.tbz2|*.tar.xz|*.txz|*.tar) tar xf "$archive" -C "$tmpdir" ;;
-		*) nix-shell -p p7zip --run "7z x -o'$tmpdir' -bso0 '$archive'" ;;
-	esac
+	extract_archive "$archive" "$tmpdir"
 
 	# Collect image files from extracted contents
 	while IFS= read -r -d '' f; do
 		files+=("$f")
-	done < <(find "$tmpdir" -type f \( -iname '*.jpg' -o -iname '*.jpeg' -o -iname '*.png' -o -iname '*.webp' -o -iname '*.heic' -o -iname '*.heif' -o -iname '*.tiff' -o -iname '*.tif' -o -iname '*.bmp' -o -iname '*.avif' \) -print0 | sort -z)
+	done < <(find_images "$tmpdir")
 
 	if [ ${#files[@]} -eq 0 ]; then
 		echo "No images found in archive" >&2

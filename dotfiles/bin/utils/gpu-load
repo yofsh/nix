@@ -43,7 +43,7 @@ for d in /sys/class/drm/card*/device; do
     printf '%s %s\n' "${load:-0}" "${vram:-0}"
     sleep "$interval"
   done
-fi
+done
 
 # --- Intel: parse the streaming JSON from intel_gpu_top ----------------------
 # intel_gpu_top emits a never-closing JSON array, so we decode objects

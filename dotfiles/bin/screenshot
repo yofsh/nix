@@ -38,20 +38,26 @@ warm_satty_cache() {
 	cat "$satty_bin" "${deps[@]}" > /dev/null 2>&1 &
 }
 
-# Re-entry used by the "Open in editor" notification action: open the captured
-# buffer in satty (the same editor as --edit), write the annotated result back
-# over the saved file, and copy it to the clipboard. Invoked detached so the
-# original run can exit while the notification waits for a click.
+# edit_in_satty TMPFILE PNGFILE OUTFILE — annotate the captured buffer in satty,
+# write the result back over OUTFILE and copy it to the clipboard. Returns 1
+# when satty was closed without saving.
+edit_in_satty() {
+	local tmpfile="$1" pngfile="$2" outfile="$3"
+	rm -f "$pngfile"
+	GSK_RENDERER=ngl satty --filename "$tmpfile" --output-filename "$pngfile" --init-tool brush --copy-command wl-copy --early-exit
+	[[ -e "$pngfile" ]] || return 1
+	magick "$pngfile" "$tmpfile"
+	cp "$tmpfile" "$outfile"
+}
+
+# Re-entry used by the "Open in editor" notification action: same editor flow as
+# --edit. Invoked detached so the original run can exit while the notification
+# waits for a click; owns the temp files either way.
 if [[ "$1" == "--edit-buffer" ]]; then
-	TMPFILE=$2 PNGFILE=$3 FILE=$4
-	rm -f "$PNGFILE"
-	GSK_RENDERER=ngl satty --filename "$TMPFILE" --output-filename "$PNGFILE" --init-tool brush --copy-command wl-copy --early-exit
-	if [[ -e "$PNGFILE" ]]; then
-		convert "$PNGFILE" "$TMPFILE"
-		cp "$TMPFILE" "$FILE"
+	if edit_in_satty "$2" "$3" "$4"; then
 		notify-send -u low -i applets-screenshooter "Screenshot edited" "Annotated copy saved and copied to clipboard"
 	fi
-	rm -f "$TMPFILE" "$PNGFILE"
+	rm -f "$2" "$3"
 	exit 0
 fi
 
@@ -173,7 +179,7 @@ if [[ -n "$HYPRPICKER_PID" ]]; then
 fi
 
 ensure_png() {
-	convert "$TMPFILE" "$PNGFILE"
+	magick "$TMPFILE" "$PNGFILE"
 }
 
 OFFER_EDITOR=false
@@ -188,23 +194,13 @@ case "$ACTION" in
 		OFFER_EDITOR=true
 		;;
 	edit)
-		rm -f "$PNGFILE"
-		GSK_RENDERER=ngl satty --filename "$TMPFILE" --output-filename "$PNGFILE" --init-tool brush --copy-command wl-copy --early-exit
-		if [[ -e "$PNGFILE" ]]; then
-			convert "$PNGFILE" "$TMPFILE"
-			cp "$TMPFILE" "$FILE"
+		if edit_in_satty "$TMPFILE" "$PNGFILE" "$FILE"; then
 			notify "Image saved!"
 		else
 			echo "File does not exist"
 		fi
 		;;
-	copy)
-		ensure_png
-		wl-copy < "$PNGFILE"
-		NOTIFY_BODY="Copied to clipboard!"
-		OFFER_EDITOR=true
-		;;
-	*)
+	copy|*)
 		ensure_png
 		wl-copy < "$PNGFILE"
 		NOTIFY_BODY="Copied to clipboard!"
