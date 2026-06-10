@@ -202,23 +202,21 @@ PanelWindow {
                 width: parent.width - 48
 
                 // Header icon
-                Text {
+                Components.ThemedText {
                     anchors.horizontalCenter: parent.horizontalCenter
                     text: root.polkitState === "success" ? "\udb81\udd65" : "\uf023"
                     color: root.polkitState === "success" ? Helpers.Colors.fingerprintOk : Helpers.Colors.textDefault
-                    font.family: AppConfig.Config.theme.fontFamily
                     font.pixelSize: AppConfig.Config.theme.fontSizeHero
 
                     Behavior on color { ColorAnimation { duration: 200 } }
                 }
 
                 // Polkit message
-                Text {
+                Components.ThemedText {
                     width: parent.width
                     anchors.horizontalCenter: parent.horizontalCenter
                     text: agent.flow ? agent.flow.message : ""
-                    color: Helpers.Colors.textMuted
-                    font.family: AppConfig.Config.theme.fontFamily
+                    muted: true
                     font.pixelSize: AppConfig.Config.theme.fontSizeBody
                     horizontalAlignment: Text.AlignHCenter
                     wrapMode: Text.WordWrap
@@ -233,7 +231,7 @@ PanelWindow {
                     spacing: AppConfig.Config.theme.spacingSmall
                     visible: root.polkitState === "fingerprint"
 
-                    Text {
+                    Components.ThemedText {
                         id: fingerprintIcon
                         anchors.horizontalCenter: parent.horizontalCenter
                         text: root.fpVisual === "match" ? "\udb81\udd65" : "\ue23f"
@@ -242,13 +240,12 @@ PanelWindow {
                             if (root.fpVisual === "retry" || root.fpVisual === "failed") return Helpers.Colors.fingerprintFail
                             return Helpers.Colors.textDefault
                         }
-                        font.family: AppConfig.Config.theme.fontFamily
                         font.pixelSize: AppConfig.Config.theme.fontSizeDisplay
 
                         Behavior on color { ColorAnimation { duration: 200 } }
                     }
 
-                    Text {
+                    Components.ThemedText {
                         anchors.horizontalCenter: parent.horizontalCenter
                         text: {
                             if (root.fpVisual === "match") return "Authenticated"
@@ -257,7 +254,6 @@ PanelWindow {
                             return "Scan finger"
                         }
                         color: fingerprintIcon.color
-                        font.family: AppConfig.Config.theme.fontFamily
                         font.pixelSize: AppConfig.Config.theme.fontSizeIcon
                         font.bold: true
                     }
@@ -296,11 +292,10 @@ PanelWindow {
                         }
                     }
 
-                    Text {
+                    Components.ThemedText {
                         width: parent.width
                         text: agent.flow && agent.flow.supplementaryMessage ? agent.flow.supplementaryMessage : ""
                         color: Helpers.Colors.fingerprintFail
-                        font.family: AppConfig.Config.theme.fontFamily
                         font.pixelSize: AppConfig.Config.theme.fontSizeBody
                         horizontalAlignment: Text.AlignHCenter
                         visible: text !== ""
@@ -309,11 +304,10 @@ PanelWindow {
                 }
 
                 // --- Success text ---
-                Text {
+                Components.ThemedText {
                     anchors.horizontalCenter: parent.horizontalCenter
                     text: "Authenticated"
                     color: Helpers.Colors.fingerprintOk
-                    font.family: AppConfig.Config.theme.fontFamily
                     font.pixelSize: AppConfig.Config.theme.fontSizeIcon
                     font.bold: true
                     visible: root.polkitState === "success"

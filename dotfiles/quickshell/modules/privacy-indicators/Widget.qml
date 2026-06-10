@@ -1,5 +1,5 @@
 import QtQuick
-import Quickshell.Io
+import "../../components" as Components
 import "../../helpers" as Helpers
 import "../../config" as AppConfig
 
@@ -33,11 +33,10 @@ Item {
         anchors.verticalCenter: parent.verticalCenter
         spacing: 2
 
-        Text {
+        Components.ThemedText {
             anchors.verticalCenter: parent.verticalCenter
             text: entry.icon
             color: Helpers.Colors.mutedRed
-            font.family: AppConfig.Config.theme.fontFamily
             font.pixelSize: AppConfig.Config.theme.fontSizeIcon
         }
 
@@ -50,12 +49,11 @@ Item {
             Behavior on width { NumberAnimation { duration: 200; easing.type: Easing.OutCubic } }
             Behavior on opacity { NumberAnimation { duration: 200 } }
 
-            Text {
+            Components.ThemedText {
                 id: labelText
                 anchors.verticalCenter: parent.verticalCenter
                 text: entry.apps
-                color: Helpers.Colors.textMuted
-                font.family: AppConfig.Config.theme.fontFamily
+                muted: true
                 font.pixelSize: AppConfig.Config.theme.fontSizeSmall
             }
         }
@@ -92,26 +90,20 @@ Item {
         return out.join("    ·    ");
     }
 
-    function applyLine(text) {
-        if (!text) return;
-        try {
-            var d = JSON.parse(text.trim());
-            root.micActive = !!(d.mic && d.mic.length > 0);
-            root.camActive = !!(d.cam && d.cam.length > 0);
-            root.screenActive = !!(d.screen && d.screen.length > 0);
-            root.micApps = fmtApps(d.mic);
-            root.camApps = fmtApps(d.cam);
-            root.screenApps = fmtApps(d.screen);
-        } catch (e) { /* ignore parse errors */ }
+    function applyLine(d) {
+        if (!d) return;
+        root.micActive = !!(d.mic && d.mic.length > 0);
+        root.camActive = !!(d.cam && d.cam.length > 0);
+        root.screenActive = !!(d.screen && d.screen.length > 0);
+        root.micApps = fmtApps(d.mic);
+        root.camApps = fmtApps(d.cam);
+        root.screenApps = fmtApps(d.screen);
     }
 
     // Event-driven: the daemon pushes {mic,cam,screen} on connect + on every
     // change (mic via pactl-subscribe, screen/cam via pw-mon). No polling.
-    Process {
-        id: streamProc
-        command: ["curl", "-sN", "--unix-socket", AppConfig.Config.daemon.socket, "http://d/privacy/stream"]
-        running: true
-        onRunningChanged: if (!running) running = true   // auto-reconnect
-        stdout: SplitParser { onRead: line => root.applyLine(line) }
+    Helpers.DaemonStream {
+        path: "/privacy/stream"
+        onLine: d => root.applyLine(d)
     }
 }

@@ -52,7 +52,7 @@ Item {
 
     onPopupOpenChanged: {
         if (popupOpen) {
-            loadProc.running = true;
+            loadFetch.reload();
             root.now = Date.now();
         }
     }
@@ -239,30 +239,17 @@ Item {
         return groups;
     }
 
-    Process {
-        id: loadProc
-        command: ["curl", "-s", "--unix-socket", AppConfig.Config.daemon.socket, "http://d/calendar/agenda?span=" + root.spanDays + "d"]
-        running: true
-        stdout: StdioCollector {
-            onStreamFinished: {
-                try {
-                    var data = JSON.parse(this.text);
-                    if (Array.isArray(data)) {
-                        root.events = data;
-                        root.dataLoaded = true;
-                    }
-                } catch (e) {
-                    console.warn("KhalPopup: parse error", e);
-                }
+    Helpers.DaemonFetch { // refreshed every minute while open, hourly otherwise
+        id: loadFetch
+        path: "/calendar/agenda?span=" + root.spanDays + "d"
+        intervalMs: root.popupOpen ? root.refreshIntervalMs : 3600000
+        onJson: d => {
+            if (Array.isArray(d)) {
+                root.events = d;
+                root.dataLoaded = true;
             }
         }
-    }
-
-    Timer {
-        interval: root.popupOpen ? root.refreshIntervalMs : 3600000
-        running: true
-        repeat: true
-        onTriggered: loadProc.running = true
+        onFailed: text => console.warn("KhalPopup: parse error", text)
     }
 
     Timer {
@@ -309,32 +296,27 @@ Item {
                     width: parent.width
                     spacing: 8
 
-                    Text {
+                    Components.ThemedText {
                         text: "\uF073"   // fa-calendar
-                        color: Helpers.Colors.textDefault
-                        font.family: AppConfig.Config.theme.fontFamily
                         font.pixelSize: AppConfig.Config.theme.fontSizeIconLarge
                         anchors.verticalCenter: parent.verticalCenter
                     }
-                    Text {
+                    Components.ThemedText {
                         text: "Agenda"
-                        color: Helpers.Colors.textDefault
-                        font.family: AppConfig.Config.theme.fontFamily
                         font.pixelSize: AppConfig.Config.theme.popupFontSizeMedium
                         font.bold: true
                         anchors.verticalCenter: parent.verticalCenter
                     }
                     Item { width: parent.width - 220; height: 1 }
-                    Text {
+                    Components.ThemedText {
                         text: root.events.length + " events · next " + root.spanDays + "d"
-                        color: Helpers.Colors.textMuted
-                        font.family: AppConfig.Config.theme.fontFamily
+                        muted: true
                         font.pixelSize: AppConfig.Config.theme.popupFontSizeSmall
                         anchors.verticalCenter: parent.verticalCenter
                     }
                 }
 
-                Rectangle { width: parent.width; height: 1; color: Qt.rgba(1, 1, 1, 0.08) }
+                Components.Divider {}
 
                 // 3-month calendar (current + 2 upcoming)
                 Item {
@@ -410,7 +392,7 @@ Item {
                                         return d.getFullYear() + Math.floor(m / 12);
                                     }
 
-                                    Text {
+                                    Components.ThemedText {
                                         width: parent.width
                                         horizontalAlignment: Text.AlignHCenter
                                         text: {
@@ -418,7 +400,6 @@ Item {
                                             return months[monthCol.calMonth] + " " + monthCol.calYear;
                                         }
                                         color: monthCol.mOffset === 0 ? Helpers.Colors.textDefault : Helpers.Colors.textMuted
-                                        font.family: AppConfig.Config.theme.fontFamily
                                         font.pixelSize: AppConfig.Config.theme.popupFontSizeSmall
                                         font.bold: monthCol.mOffset === 0
                                     }
@@ -426,11 +407,10 @@ Item {
                                     DayOfWeekRow {
                                         width: parent.width
                                         locale: Qt.locale("en_US")
-                                        delegate: Text {
+                                        delegate: Components.ThemedText {
                                             required property string narrowName
                                             text: narrowName
                                             color: Qt.rgba(1, 1, 1, 0.3)
-                                            font.family: AppConfig.Config.theme.fontFamily
                                             font.pixelSize: AppConfig.Config.theme.popupFontSizeTiny
                                             horizontalAlignment: Text.AlignHCenter
                                         }
@@ -462,14 +442,13 @@ Item {
                                                 color: model.today ? Qt.rgba(Helpers.Colors.accent.r, Helpers.Colors.accent.g, Helpers.Colors.accent.b, 0.2) : "transparent"
                                             }
 
-                                            Text {
+                                            Components.ThemedText {
                                                 id: dayText
                                                 anchors.horizontalCenter: parent.horizontalCenter
                                                 text: model.day
                                                 color: model.month === mGrid.month
                                                     ? (model.today ? Helpers.Colors.accent : Helpers.Colors.textDefault)
                                                     : Qt.rgba(1, 1, 1, 0.15)
-                                                font.family: AppConfig.Config.theme.fontFamily
                                                 font.pixelSize: AppConfig.Config.theme.fontSizeDefault
                                                 font.bold: model.today
                                                 horizontalAlignment: Text.AlignHCenter
@@ -507,15 +486,14 @@ Item {
                     }
                 }
 
-                Rectangle { width: parent.width; height: 1; color: Qt.rgba(1, 1, 1, 0.08) }
+                Components.Divider {}
 
                 // Empty state
-                Text {
+                Components.ThemedText {
                     visible: root.dataLoaded && root.events.length === 0
                     anchors.horizontalCenter: parent.horizontalCenter
                     text: "No upcoming events"
-                    color: Helpers.Colors.textMuted
-                    font.family: AppConfig.Config.theme.fontFamily
+                    muted: true
                     font.pixelSize: AppConfig.Config.theme.fontSizeDefault
                 }
 
@@ -549,19 +527,16 @@ Item {
                                 // Day header
                                 Row {
                                     spacing: 8
-                                    Text {
+                                    Components.ThemedText {
                                         text: modelData.label
                                         color: modelData.date === root.todayStr()
                                             ? Helpers.Colors.textDefault
                                             : Helpers.Colors.textMuted
-                                        font.family: AppConfig.Config.theme.fontFamily
-                                        font.pixelSize: AppConfig.Config.theme.popupFontSizeBody
                                         font.bold: true
                                     }
-                                    Text {
+                                    Components.ThemedText {
                                         text: modelData.items.length + (modelData.items.length === 1 ? " event" : " events")
                                         color: Qt.rgba(1, 1, 1, 0.3)
-                                        font.family: AppConfig.Config.theme.fontFamily
                                         font.pixelSize: AppConfig.Config.theme.popupFontSizeSmall
                                         anchors.verticalCenter: parent.verticalCenter
                                     }
@@ -611,31 +586,27 @@ Item {
                                                 width: parent.width
                                                 spacing: 8
 
-                                                Text {
+                                                Components.ThemedText {
                                                     width: 88
                                                     text: root.formatTimeRange(modelData)
-                                                    color: Helpers.Colors.textMuted
-                                                    font.family: AppConfig.Config.theme.fontFamily
+                                                    muted: true
                                                     font.pixelSize: AppConfig.Config.theme.popupFontSizeSmall
                                                     anchors.verticalCenter: parent.verticalCenter
                                                 }
 
-                                                Text {
+                                                Components.ThemedText {
                                                     text: eventRow.info.icon
                                                     color: eventRow.info.color
-                                                    font.family: AppConfig.Config.theme.fontFamily
                                                     font.pixelSize: AppConfig.Config.theme.fontSizeDefault
                                                     anchors.verticalCenter: parent.verticalCenter
                                                 }
 
-                                                Text {
+                                                Components.ThemedText {
                                                     width: parent.width - 88 - 24 - countdownPill.implicitWidth - attendeeBadge.implicitWidth - linkIcon.implicitWidth - 40
                                                     text: modelData.title || "(untitled)"
                                                     color: eventRow.status === "past"
                                                         ? Helpers.Colors.textMuted
                                                         : Helpers.Colors.textDefault
-                                                    font.family: AppConfig.Config.theme.fontFamily
-                                                    font.pixelSize: AppConfig.Config.theme.popupFontSizeBody
                                                     font.bold: true
                                                     elide: Text.ElideRight
                                                     anchors.verticalCenter: parent.verticalCenter
@@ -650,12 +621,11 @@ Item {
                                                     color: Qt.rgba(eventRow.pillColor.r, eventRow.pillColor.g, eventRow.pillColor.b, 0.15)
                                                     anchors.verticalCenter: parent.verticalCenter
 
-                                                    Text {
+                                                    Components.ThemedText {
                                                         id: countdownText
                                                         anchors.centerIn: parent
                                                         text: root.countdownText(eventRow.modelData)
                                                         color: eventRow.pillColor
-                                                        font.family: AppConfig.Config.theme.fontFamily
                                                         font.pixelSize: AppConfig.Config.theme.popupFontSizeSmall
                                                         font.bold: eventRow.status === "progress"
                                                     }
@@ -673,16 +643,14 @@ Item {
                                                         spacing: 2
                                                         visible: attendeeBadge.att.accepted > 0
                                                         anchors.verticalCenter: parent.verticalCenter
-                                                        Text {
+                                                        Components.ThemedText {
                                                             text: "\uF00C"  // fa-check
                                                             color: root.attendeeAcceptedColor
-                                                            font.family: AppConfig.Config.theme.fontFamily
                                                             font.pixelSize: AppConfig.Config.theme.popupFontSizeSmall
                                                         }
-                                                        Text {
+                                                        Components.ThemedText {
                                                             text: "" + attendeeBadge.att.accepted
                                                             color: root.attendeeAcceptedColor
-                                                            font.family: AppConfig.Config.theme.fontFamily
                                                             font.pixelSize: AppConfig.Config.theme.popupFontSizeSmall
                                                         }
                                                     }
@@ -690,16 +658,14 @@ Item {
                                                         spacing: 2
                                                         visible: attendeeBadge.att.declined > 0
                                                         anchors.verticalCenter: parent.verticalCenter
-                                                        Text {
+                                                        Components.ThemedText {
                                                             text: "\uF00D"  // fa-times
                                                             color: root.attendeeDeclinedColor
-                                                            font.family: AppConfig.Config.theme.fontFamily
                                                             font.pixelSize: AppConfig.Config.theme.popupFontSizeSmall
                                                         }
-                                                        Text {
+                                                        Components.ThemedText {
                                                             text: "" + attendeeBadge.att.declined
                                                             color: root.attendeeDeclinedColor
-                                                            font.family: AppConfig.Config.theme.fontFamily
                                                             font.pixelSize: AppConfig.Config.theme.popupFontSizeSmall
                                                         }
                                                     }
@@ -707,50 +673,45 @@ Item {
                                                         spacing: 2
                                                         visible: attendeeBadge.unanswered > 0
                                                         anchors.verticalCenter: parent.verticalCenter
-                                                        Text {
+                                                        Components.ThemedText {
                                                             text: "\uF128"  // fa-question
                                                             color: root.attendeeUnansweredColor
-                                                            font.family: AppConfig.Config.theme.fontFamily
                                                             font.pixelSize: AppConfig.Config.theme.popupFontSizeSmall
                                                         }
-                                                        Text {
+                                                        Components.ThemedText {
                                                             text: "" + attendeeBadge.unanswered
                                                             color: root.attendeeUnansweredColor
-                                                            font.family: AppConfig.Config.theme.fontFamily
                                                             font.pixelSize: AppConfig.Config.theme.popupFontSizeSmall
                                                         }
                                                     }
                                                 }
 
-                                                Text {
+                                                Components.ThemedText {
                                                     id: linkIcon
                                                     visible: eventRow.hasLink
                                                     text: "\uF08E"  // fa-external-link
                                                     color: eventRow.hovered ? Helpers.Colors.textDefault : Qt.rgba(1, 1, 1, 0.35)
-                                                    font.family: AppConfig.Config.theme.fontFamily
                                                     font.pixelSize: AppConfig.Config.theme.popupFontSizeSmall
                                                     anchors.verticalCenter: parent.verticalCenter
                                                 }
                                             }
 
                                             // Location row
-                                            Text {
+                                            Components.ThemedText {
                                                 visible: modelData.location && modelData.location.length > 0
                                                 width: parent.width
                                                 text: "\uF041  " + modelData.location   // fa-map-marker
                                                 color: Qt.rgba(1, 1, 1, 0.45)
-                                                font.family: AppConfig.Config.theme.fontFamily
                                                 font.pixelSize: AppConfig.Config.theme.popupFontSizeSmall
                                                 elide: Text.ElideRight
                                             }
 
                                             // Short description (gray)
-                                            Text {
+                                            Components.ThemedText {
                                                 visible: modelData.description && modelData.description.length > 0
                                                 width: parent.width
                                                 text: modelData.description
                                                 color: Qt.rgba(1, 1, 1, 0.4)
-                                                font.family: AppConfig.Config.theme.fontFamily
                                                 font.pixelSize: AppConfig.Config.theme.popupFontSizeSmall
                                                 wrapMode: Text.WordWrap
                                                 maximumLineCount: 2

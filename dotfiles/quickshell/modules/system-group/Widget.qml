@@ -1,7 +1,10 @@
 import QtQuick
-import "../../helpers" as Helpers
 import "../../config" as AppConfig
 import "../../core" as Core
+import "../cpu" as M_cpu
+import "../gpu" as M_gpu
+import "../system" as M_system
+import "../temperature" as M_temperature
 
 Item {
     id: root
@@ -23,20 +26,18 @@ Item {
             Core.ModuleRegistry.unregisterWidgetInstance("system", registeredScreen);
             Core.ModuleRegistry.unregisterWidgetInstance("temperature", registeredScreen);
         }
-        if (cpuLoader.item)
-            Core.ModuleRegistry.registerWidgetInstance("cpu", sn, cpuLoader.item);
-        if (systemLoader.item)
-            Core.ModuleRegistry.registerWidgetInstance("system", sn, systemLoader.item);
-        if (tempLoader.item)
-            Core.ModuleRegistry.registerWidgetInstance("temperature", sn, tempLoader.item);
+        Core.ModuleRegistry.registerWidgetInstance("cpu", sn, cpuWidget);
+        Core.ModuleRegistry.registerWidgetInstance("system", sn, systemWidget);
+        Core.ModuleRegistry.registerWidgetInstance("temperature", sn, tempWidget);
         registeredScreen = sn;
     }
 
     onScreenChanged: registerChildren()
+    Component.onCompleted: registerChildren()
 
     Rectangle {
         anchors.fill: parent
-        radius: AppConfig.Config.theme.interactiveHoverRadius || 4
+        radius: AppConfig.Config.theme.interactiveHoverRadius
         color: Qt.rgba(0.9, 0.55, 0.1, 0.12)
     }
 
@@ -44,32 +45,27 @@ Item {
         id: groupRow
         anchors.centerIn: parent
         height: parent.height
-        spacing: AppConfig.Config.theme.spacingSmall || 4
+        spacing: AppConfig.Config.theme.spacingSmall
 
-        Loader {
-            id: cpuLoader
+        // Statically imported (not Loader { source }) so the hot-reload
+        // watcher follows these modules' files.
+        M_cpu.Widget {
+            id: cpuWidget
             height: parent.height
-            source: "../cpu/Widget.qml"
-            onLoaded: root.registerChildren()
         }
 
-        Loader {
+        M_gpu.Widget {
             height: parent.height
-            source: "../gpu/Widget.qml"
         }
 
-        Loader {
-            id: systemLoader
+        M_system.Widget {
+            id: systemWidget
             height: parent.height
-            source: "../system/Widget.qml"
-            onLoaded: root.registerChildren()
         }
 
-        Loader {
-            id: tempLoader
+        M_temperature.Widget {
+            id: tempWidget
             height: parent.height
-            source: "../temperature/Widget.qml"
-            onLoaded: root.registerChildren()
         }
     }
 

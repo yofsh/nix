@@ -1,7 +1,6 @@
 import QtQuick
 import Quickshell
 import Quickshell.Services.SystemTray
-import "../../helpers" as Helpers
 
 Item {
     id: root

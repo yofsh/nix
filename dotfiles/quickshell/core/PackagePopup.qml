@@ -37,7 +37,7 @@ PanelWindow {
         moduleId: root.moduleId
         screen: root.screen
     }
-    readonly property int barHeight: AppConfig.Config.theme.barHeight || 22
+    readonly property int barHeight: AppConfig.Config.theme.barHeight
 
     // Open state: a widget may drive it via its own `popupOpen`, else PopupService.
     property int widgetRevision: Core.ModuleRegistry.widgetRevision

@@ -1,2 +1,10 @@
 PopupSurface 1.0 PopupSurface.qml
 StatDots 1.0 StatDots.qml
+ThemedText 1.0 ThemedText.qml
+SectionLabel 1.0 SectionLabel.qml
+Divider 1.0 Divider.qml
+PopupHeader 1.0 PopupHeader.qml
+ActionButton 1.0 ActionButton.qml
+ToggleChip 1.0 ToggleChip.qml
+PopupFlick 1.0 PopupFlick.qml
+IconLabel 1.0 IconLabel.qml

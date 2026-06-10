@@ -1,5 +1,6 @@
 import QtQuick
 import Quickshell.Io
+import "../../components" as Components
 import "../../helpers" as Helpers
 import "../../config" as AppConfig
 
@@ -119,19 +120,17 @@ Item {
         anchors.centerIn: parent
         spacing: -2
 
-        Text {
+        Components.ThemedText {
             visible: root.path0 !== ""
             text: root.temp0 > 0 ? root.temp0 + "°" : "--"
             color: root.temp0 > 0 ? root.tempColor(root.temp0) : Helpers.Colors.textMuted
-            font.family: AppConfig.Config.theme.fontFamily
             font.pixelSize: AppConfig.Config.theme.fontSizeSmall
         }
 
-        Text {
+        Components.ThemedText {
             visible: root.path1 !== ""
             text: root.temp1 > 0 ? root.temp1 + "°" : "--"
             color: root.temp1 > 0 ? root.tempColor(root.temp1) : Helpers.Colors.textMuted
-            font.family: AppConfig.Config.theme.fontFamily
             font.pixelSize: AppConfig.Config.theme.fontSizeSmall
         }
     }

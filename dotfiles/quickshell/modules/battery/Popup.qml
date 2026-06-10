@@ -129,7 +129,7 @@ Item {
             }
 
             // Header
-            Text {
+            Components.ThemedText {
                 id: headerText
                 anchors.top: parent.top
                 anchors.topMargin: 6
@@ -142,20 +142,17 @@ Item {
                     return Math.round(last.pct) + "%" + stateText + "  \u2014  last 3 days";
                 }
                 color: Helpers.Colors.battery
-                font.family: AppConfig.Config.theme.fontFamily
-                font.pixelSize: AppConfig.Config.theme.popupFontSizeBody
             }
 
             // On-battery time
-            Text {
+            Components.ThemedText {
                 id: onBatteryLabel
                 anchors.top: headerText.bottom
                 anchors.topMargin: 1
                 anchors.horizontalCenter: parent.horizontalCenter
                 text: root.onBatteryText
                 visible: root.onBatteryText !== ""
-                color: Helpers.Colors.textMuted
-                font.family: AppConfig.Config.theme.fontFamily
+                muted: true
                 font.pixelSize: AppConfig.Config.theme.fontSizeXSmall
             }
 
@@ -347,13 +344,12 @@ Item {
             // Y-axis labels
             Repeater {
                 model: [0, 25, 50, 75, 100]
-                Text {
+                Components.ThemedText {
                     required property int modelData
                     x: 6
                     y: graphCanvas.y + graphCanvas.height - (modelData / 100) * graphCanvas.height - 5
                     text: modelData
-                    color: Helpers.Colors.textMuted
-                    font.family: AppConfig.Config.theme.fontFamily
+                    muted: true
                     font.pixelSize: AppConfig.Config.theme.popupFontSizeTiny
                 }
             }
@@ -361,13 +357,12 @@ Item {
             // X-axis time labels
             Repeater {
                 model: root.timeLabels
-                Text {
+                Components.ThemedText {
                     required property var modelData
                     x: graphCanvas.x + modelData.x - implicitWidth / 2
                     y: graphCanvas.y + graphCanvas.height + 3
                     text: modelData.label
-                    color: Helpers.Colors.textMuted
-                    font.family: AppConfig.Config.theme.fontFamily
+                    muted: true
                     font.pixelSize: AppConfig.Config.theme.popupFontSizeTiny
                 }
             }

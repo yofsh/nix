@@ -4,6 +4,7 @@ import Quickshell.Io
 import QtQuick
 import "." as Core
 import "../popups" as Popups
+import "../config" as AppConfig
 
 Scope {
     id: root
@@ -26,7 +27,7 @@ Scope {
 
     Popups.PolkitPopup {
         id: polkitPopup
-        barHeight: Core.ConfigService.section("theme", {}).barHeight || 22
+        barHeight: AppConfig.Config.theme.barHeight
         fingerprintMonitor: fingerprintBus
     }
 

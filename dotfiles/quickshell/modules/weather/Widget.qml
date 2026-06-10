@@ -1,5 +1,6 @@
 import QtQuick
 import Quickshell.Io
+import "../../components" as Components
 import "../../helpers" as Helpers
 import "../../config" as AppConfig
 
@@ -11,7 +12,7 @@ Item {
 
     Rectangle {
         anchors.fill: parent
-        radius: AppConfig.Config.theme.interactiveHoverRadius || 4
+        radius: AppConfig.Config.theme.interactiveHoverRadius
         color: Qt.rgba(0.1, 0.7, 0.7, 0.12)
     }
 
@@ -119,44 +120,24 @@ Item {
         anchors.centerIn: parent
         spacing: -2
 
-        Row {
+        Components.IconLabel {
             spacing: 3
-
-            Text {
-                text: root.dataLoaded ? root.weatherIcon(root.weatherCode, root.isDay) : "󰖐"
-                color: root.dataLoaded ? root.tempColor(root.temperature) : Helpers.Colors.textMuted
-                font.family: AppConfig.Config.theme.fontFamily
-                font.pixelSize: AppConfig.Config.theme.fontSizeSmall
-                anchors.verticalCenter: parent.verticalCenter
-            }
-
-            Text {
-                text: root.dataLoaded ? Math.round(root.temperature) + "°" : "--"
-                color: root.dataLoaded ? root.tempColor(root.temperature) : Helpers.Colors.textMuted
-                font.family: AppConfig.Config.theme.fontFamily
-                font.pixelSize: AppConfig.Config.theme.fontSizeSmall
-                anchors.verticalCenter: parent.verticalCenter
-            }
+            icon: root.dataLoaded ? root.weatherIcon(root.weatherCode, root.isDay) : "󰖐"
+            label: root.dataLoaded ? Math.round(root.temperature) + "°" : "--"
+            iconColor: root.dataLoaded ? root.tempColor(root.temperature) : Helpers.Colors.textMuted
+            labelColor: root.dataLoaded ? root.tempColor(root.temperature) : Helpers.Colors.textMuted
+            iconSize: AppConfig.Config.theme.fontSizeSmall
+            labelSize: AppConfig.Config.theme.fontSizeSmall
         }
 
-        Row {
+        Components.IconLabel {
             spacing: 3
-
-            Text {
-                text: "󰌪"   // leaf — air quality marker
-                color: root.aqLoaded ? root.aqiColor(root.euAqi) : Helpers.Colors.textMuted
-                font.family: AppConfig.Config.theme.fontFamily
-                font.pixelSize: AppConfig.Config.theme.fontSizeSmall
-                anchors.verticalCenter: parent.verticalCenter
-            }
-
-            Text {
-                text: root.aqLoaded ? root.euAqi : "--"
-                color: root.aqLoaded ? root.aqiColor(root.euAqi) : Helpers.Colors.textMuted
-                font.family: AppConfig.Config.theme.fontFamily
-                font.pixelSize: AppConfig.Config.theme.fontSizeSmall
-                anchors.verticalCenter: parent.verticalCenter
-            }
+            icon: "󰌪"   // leaf — air quality marker
+            label: root.aqLoaded ? root.euAqi + "" : "--"
+            iconColor: root.aqLoaded ? root.aqiColor(root.euAqi) : Helpers.Colors.textMuted
+            labelColor: root.aqLoaded ? root.aqiColor(root.euAqi) : Helpers.Colors.textMuted
+            iconSize: AppConfig.Config.theme.fontSizeSmall
+            labelSize: AppConfig.Config.theme.fontSizeSmall
         }
     }
 

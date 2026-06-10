@@ -1,5 +1,6 @@
 import QtQuick
 import Quickshell.Io
+import "../../components" as Components
 import "../../helpers" as Helpers
 import "../../config" as AppConfig
 
@@ -89,45 +90,39 @@ Item {
         anchors.verticalCenter: parent.verticalCenter
         spacing: 4
 
-        Text {
+        Components.ThemedText {
             anchors.verticalCenter: parent.verticalCenter
             text: ""  // nf-fa-download
-            color: AppConfig.Config.theme.colors.accent
-            font.family: AppConfig.Config.theme.fontFamily
+            color: Helpers.Colors.accent
             font.pixelSize: AppConfig.Config.theme.fontSizeIcon
         }
 
-        Text {
+        Components.ThemedText {
             anchors.verticalCenter: parent.verticalCenter
             text: root.formatSpeed(root.totalDownKBs)
-            color: Helpers.Colors.textDefault
-            font.family: AppConfig.Config.theme.fontFamily
             font.pixelSize: AppConfig.Config.theme.fontSizeSmall
         }
 
-        Text {
+        Components.ThemedText {
             anchors.verticalCenter: parent.verticalCenter
             text: root.dominantPercent.toFixed(root.dominantPercent >= 10 ? 0 : 1) + "%"
-            color: Helpers.Colors.textMuted
-            font.family: AppConfig.Config.theme.fontFamily
+            muted: true
             font.pixelSize: AppConfig.Config.theme.fontSizeSmall
         }
 
-        Text {
+        Components.ThemedText {
             anchors.verticalCenter: parent.verticalCenter
             visible: root.dominantEta !== "" && root.dominantEta !== "Done" && root.dominantEta !== "Unknown"
             text: root.dominantEta
-            color: Helpers.Colors.textMuted
-            font.family: AppConfig.Config.theme.fontFamily
+            muted: true
             font.pixelSize: AppConfig.Config.theme.fontSizeSmall
         }
 
-        Text {
+        Components.ThemedText {
             anchors.verticalCenter: parent.verticalCenter
             visible: root.activeCount > 1
             text: "(" + root.activeCount + ")"
-            color: Helpers.Colors.textMuted
-            font.family: AppConfig.Config.theme.fontFamily
+            muted: true
             font.pixelSize: AppConfig.Config.theme.fontSizeSmall
         }
     }

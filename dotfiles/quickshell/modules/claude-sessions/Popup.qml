@@ -88,32 +88,29 @@ Item {
         Item {
             width: parent.width
             height: 22
-            Text {
+            Components.ThemedText {
                 anchors.left: parent.left
                 anchors.verticalCenter: parent.verticalCenter
                 text: "Claude sessions"
                 color: Helpers.Colors.accent
-                font.family: AppConfig.Config.theme.fontFamily
                 font.pixelSize: AppConfig.Config.theme.fontSizeMedium
                 font.bold: true
             }
-            Text {
+            Components.ThemedText {
                 anchors.right: parent.right
                 anchors.verticalCenter: parent.verticalCenter
                 text: root.total + (root.total === 1 ? " session" : " sessions")
-                color: Helpers.Colors.textMuted
-                font.family: AppConfig.Config.theme.fontFamily
+                muted: true
                 font.pixelSize: AppConfig.Config.theme.fontSizeSmall
             }
         }
 
         // Empty state
-        Text {
+        Components.ThemedText {
             visible: root.sessions.length === 0
             width: parent.width
             text: "No Claude Code sessions running."
-            color: Helpers.Colors.textMuted
-            font.family: AppConfig.Config.theme.fontFamily
+            muted: true
             font.pixelSize: AppConfig.Config.theme.fontSizeSmall
         }
 
@@ -173,23 +170,20 @@ Item {
                         width: parent.width - 9 - 10 - rightCol.width - 20
                         spacing: 1
 
-                        Text {
+                        Components.ThemedText {
                             width: parent.width
                             elide: Text.ElideRight
                             text: modelData.project + (modelData.workspace >= 0 && modelData.workspace !== null ? "  ·  ws " + modelData.workspace : "")
-                            color: Helpers.Colors.textDefault
-                            font.family: AppConfig.Config.theme.fontFamily
                             font.pixelSize: AppConfig.Config.theme.fontSizeSmall
                             font.bold: true
                         }
-                        Text {
+                        Components.ThemedText {
                             width: parent.width
                             elide: Text.ElideRight
                             text: modelData.task && modelData.task.length > 0
                                 ? modelData.task
                                 : (modelData.state === "attention" && modelData.message ? modelData.message : modelData.cwd)
-                            color: Helpers.Colors.textMuted
-                            font.family: AppConfig.Config.theme.fontFamily
+                            muted: true
                             font.pixelSize: AppConfig.Config.theme.fontSizeSmall
                         }
                     }
@@ -200,19 +194,17 @@ Item {
                         anchors.verticalCenter: parent.verticalCenter
                         width: 78
 
-                        Text {
+                        Components.ThemedText {
                             anchors.right: parent.right
                             text: root.stateLabel(modelData.state)
                             color: root.stateColor(modelData.state)
-                            font.family: AppConfig.Config.theme.fontFamily
                             font.pixelSize: AppConfig.Config.theme.fontSizeSmall
                             font.bold: true
                         }
-                        Text {
+                        Components.ThemedText {
                             anchors.right: parent.right
                             text: { root.nowTick; return root.ago(modelData.ts) + (modelData.hooked ? "" : " ~"); }
-                            color: Helpers.Colors.textMuted
-                            font.family: AppConfig.Config.theme.fontFamily
+                            muted: true
                             font.pixelSize: AppConfig.Config.theme.fontSizeSmall
                         }
                     }
@@ -221,12 +213,11 @@ Item {
         }
 
         // Hint
-        Text {
+        Components.ThemedText {
             visible: root.sessions.length > 0
             width: parent.width
             text: "Click a session to focus its window"
-            color: Helpers.Colors.textMuted
-            font.family: AppConfig.Config.theme.fontFamily
+            muted: true
             font.pixelSize: AppConfig.Config.theme.fontSizeSmall * 0.9
             horizontalAlignment: Text.AlignHCenter
         }

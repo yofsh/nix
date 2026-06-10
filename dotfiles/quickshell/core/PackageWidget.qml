@@ -1,6 +1,7 @@
 import QtQuick
 import "." as Core
 import "../helpers" as Helpers
+import "../config" as AppConfig
 
 // Wraps a bar module widget that is passed as a declared child (not loaded from
 // a URL). Provides the hover background, interactivity/cursor, context/config/
@@ -21,7 +22,7 @@ Item {
     default property alias content: holder.data
     property Item widget: null
 
-    readonly property var theme: Core.ConfigService.section("theme", {})
+    readonly property var theme: AppConfig.Config.theme
 
     readonly property var context: Core.ModuleContext {
         moduleId: root.moduleId
@@ -46,13 +47,13 @@ Item {
 
     Rectangle {
         anchors.fill: parent
-        radius: theme.interactiveHoverRadius || 4
-        color: theme.interactiveHoverColor || "#14ffffff"
+        radius: theme.interactiveHoverRadius
+        color: theme.interactiveHoverColor
         opacity: root.hoverActive ? 1 : 0
         visible: opacity > 0
         Behavior on opacity {
             NumberAnimation {
-                duration: theme.interactiveHoverDuration || 120
+                duration: theme.interactiveHoverDuration
                 easing.type: Easing.OutCubic
             }
         }

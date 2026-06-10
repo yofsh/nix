@@ -1,7 +1,7 @@
 import QtQuick
 import Quickshell.Io
+import "../../components" as Components
 import "../../helpers" as Helpers
-import "../../config" as AppConfig
 
 Item {
     id: root
@@ -11,12 +11,11 @@ Item {
 
     property string recOutput: ""
 
-    Text {
+    Components.ThemedText {
         id: recText
         anchors.verticalCenter: parent.verticalCenter
         text: " ● "
         color: Helpers.Colors.mutedRed
-        font.family: AppConfig.Config.theme.fontFamily
         font.pixelSize: 12
     }
 

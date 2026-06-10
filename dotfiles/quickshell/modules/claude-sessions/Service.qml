@@ -1,7 +1,6 @@
 import Quickshell
-import Quickshell.Io
 import QtQuick
-import "../../config" as AppConfig
+import "../../helpers" as Helpers
 
 // Single always-on source for the claude-sessions widget + popup. Consumes the
 // daemon's pushed `claude-sessions/stream` (snapshot on connect, then on every
@@ -14,21 +13,13 @@ Scope {
     property var sessions: []
     property var counts: ({ total: 0, working: 0, idle: 0, attention: 0 })
 
-    function applyLine(line) {
-        try {
-            var d = JSON.parse(line);
-            root.sessions = d.sessions || [];
-            root.counts = d.counts || ({ total: 0, working: 0, idle: 0, attention: 0 });
-        } catch (e) {}
+    function applyLine(d) {
+        root.sessions = d.sessions || [];
+        root.counts = d.counts || ({ total: 0, working: 0, idle: 0, attention: 0 });
     }
 
-    Process {
-        id: stream
-        command: ["curl", "-sN", "--unix-socket", AppConfig.Config.daemon.socket, "http://d/claude-sessions/stream"]
-        running: true
-        onRunningChanged: if (!running) running = true  // reconnect if the daemon restarts
-        stdout: SplitParser {
-            onRead: data => root.applyLine(data)
-        }
+    Helpers.DaemonStream {
+        path: "/claude-sessions/stream"
+        onLine: d => root.applyLine(d)
     }
 }

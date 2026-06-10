@@ -1,7 +1,8 @@
 import QtQuick
 import QtQuick.Controls
 import Quickshell.Io
-import "../../helpers" as Helpers
+import "../../components" as Components
+import "../../helpers/Format.js" as Format
 import "../../config" as AppConfig
 
 // One chip per running Claude Code session, in stable start-order (new sessions
@@ -41,12 +42,6 @@ Item {
         if (d < 3600) return Math.floor(d / 60) + "m";
         if (d < 86400) return Math.floor(d / 3600) + "h" + Math.floor((d % 3600) / 60) + "m";
         return Math.floor(d / 86400) + "d" + Math.floor((d % 86400) / 3600) + "h";
-    }
-    function fmtTokens(t) {
-        if (!t) return "";
-        if (t >= 1e6) return (t / 1e6).toFixed(1) + "M";
-        if (t >= 1e3) return Math.round(t / 1e3) + "k";
-        return "" + t;
     }
     function shortModel(m) {
         if (!m) return "";
@@ -97,12 +92,11 @@ Item {
                     anchors.centerIn: parent
                     spacing: 4
 
-                    Text {
+                    Components.ThemedText {
                         anchors.verticalCenter: parent.verticalCenter
                         text: root.initial(modelData.project)
                         // Dark glyph on the solid selected fill; status-colored otherwise.
                         color: chip.sel ? "#11111b" : chip.col
-                        font.family: AppConfig.Config.theme.fontFamily
                         font.pixelSize: AppConfig.Config.theme.fontSizeSmall
                         font.bold: true
                     }
@@ -145,46 +139,42 @@ Item {
                     popupType: Popup.Window
                     y: chip.height + 4
                     readonly property var s: modelData
-                    readonly property string fam: AppConfig.Config.theme.fontFamily
                     readonly property int sz: AppConfig.Config.theme.fontSizeSmall
 
                     contentItem: Column {
                         spacing: 2
 
                         // project — bold, status-colored, with a focused marker
-                        Text {
+                        Components.ThemedText {
                             text: tip.s.project + (tip.s.focused ? "   ◀ selected" : "")
                             color: chip.col
-                            font.family: tip.fam
                             font.pixelSize: tip.sz
                             font.bold: true
                         }
                         // state · workspace · uptime
-                        Text {
+                        Components.ThemedText {
                             text: root.stateLabel(tip.s.state)
                                 + (tip.s.workspace !== null && tip.s.workspace >= 0 ? "   ·   ws " + tip.s.workspace : "")
                                 + (tip.s.startedAt ? "   ·   up " + root.since(tip.s.startedAt) : "")
                             color: chip.col
-                            font.family: tip.fam
                             font.pixelSize: tip.sz
                         }
                         // tokens · model · git branch
-                        Text {
+                        Components.ThemedText {
                             readonly property string parts: {
                                 var a = [];
-                                if (tip.s.tokens) a.push(root.fmtTokens(tip.s.tokens) + " tok");
+                                if (tip.s.tokens) a.push(Format.tokens(tip.s.tokens) + " tok");
                                 if (tip.s.model) a.push(root.shortModel(tip.s.model));
                                 if (tip.s.branch) a.push(" " + tip.s.branch); // nf branch glyph
                                 return a.join("   ·   ");
                             }
                             visible: parts.length > 0
                             text: parts
-                            color: Helpers.Colors.textMuted
-                            font.family: tip.fam
+                            muted: true
                             font.pixelSize: tip.sz
                         }
                         // current task / pending message
-                        Text {
+                        Components.ThemedText {
                             readonly property string body: tip.s.task && tip.s.task.length > 0
                                 ? tip.s.task
                                 : (tip.s.state === "attention" && tip.s.message ? tip.s.message : "")
@@ -192,27 +182,23 @@ Item {
                             width: Math.min(implicitWidth, 360)
                             elide: Text.ElideRight
                             text: body
-                            color: Helpers.Colors.textDefault
-                            font.family: tip.fam
                             font.pixelSize: tip.sz
                         }
                         // working directory
-                        Text {
+                        Components.ThemedText {
                             width: Math.min(implicitWidth, 360)
                             elide: Text.ElideMiddle
                             text: tip.s.cwd
-                            color: Helpers.Colors.textMuted
-                            font.family: tip.fam
+                            muted: true
                             font.pixelSize: tip.sz
                         }
                         // zellij session name
-                        Text {
+                        Components.ThemedText {
                             visible: !!tip.s.zellij
                             width: Math.min(implicitWidth, 360)
                             elide: Text.ElideRight
                             text: tip.s.zellij
-                            color: Helpers.Colors.textMuted
-                            font.family: tip.fam
+                            muted: true
                             font.pixelSize: tip.sz
                         }
                     }

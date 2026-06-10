@@ -1,5 +1,6 @@
 import QtQuick
 import Quickshell.Io
+import "../../components" as Components
 import "../../helpers" as Helpers
 import "../../config" as AppConfig
 
@@ -24,12 +25,11 @@ Item {
         anchors.verticalCenter: parent.verticalCenter
         spacing: 3
 
-        Text {
+        Components.ThemedText {
             id: icon
             anchors.verticalCenter: parent.verticalCenter
             text: root.typing ? "" : root.transcribing ? "" : ""
             color: root.typing ? Helpers.Colors.accent : root.transcribing ? Helpers.Colors.cpu : Helpers.Colors.mutedRed
-            font.family: AppConfig.Config.theme.fontFamily
             font.pixelSize: AppConfig.Config.theme.fontSizeIcon
             Behavior on color { ColorAnimation { duration: 300 } }
 
@@ -80,12 +80,11 @@ Item {
             Behavior on width { NumberAnimation { duration: 300; easing.type: Easing.InOutQuad } }
             Behavior on opacity { NumberAnimation { duration: 300 } }
 
-            Text {
+            Components.ThemedText {
                 id: labelText
                 anchors.verticalCenter: parent.verticalCenter
                 text: "\udb81\udd1f"
                 color: root.typing ? Helpers.Colors.accent : Helpers.Colors.cpu
-                font.family: AppConfig.Config.theme.fontFamily
                 font.pixelSize: AppConfig.Config.theme.fontSizeIcon
             }
         }
@@ -117,18 +116,15 @@ Item {
         running: false
     }
 
-    Process {
-        id: spectrumProc
-        command: ["curl", "-sN", "--unix-socket", AppConfig.Config.daemon.socket, "http://d/audio/stream"]
-        running: root.recording
-        stdout: SplitParser {
-            onRead: data => {
-                var parts = data.trim().split(" ");
-                var levels = [];
-                for (var i = 0; i < 24; i++)
-                    levels.push(parseFloat(parts[i]) || 0);
-                root.spectrumLevels = levels;
-            }
+    Helpers.DaemonStream {
+        path: "/audio/stream"
+        active: root.recording
+        onRawLine: text => {
+            var parts = text.trim().split(" ");
+            var levels = [];
+            for (var i = 0; i < 24; i++)
+                levels.push(parseFloat(parts[i]) || 0);
+            root.spectrumLevels = levels;
         }
     }
 

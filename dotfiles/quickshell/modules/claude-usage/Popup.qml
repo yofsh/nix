@@ -1,9 +1,8 @@
 import Quickshell
-import Quickshell.Io
 import Quickshell.Wayland
 import QtQuick
-import QtQuick.Controls
 import "../../helpers" as Helpers
+import "../../helpers/Format.js" as Format
 import "../../components" as Components
 import "../../config" as AppConfig
 
@@ -18,8 +17,8 @@ Item {
 
     implicitWidth: 480
     implicitHeight: screen
-        ? Math.min(mainCol.implicitHeight + 36, screen.height - barHeight - AppConfig.Config.theme.popupTopGap - 20)
-        : mainCol.implicitHeight + 36
+        ? Math.min(bodyFlick.contentHeight + 36, screen.height - barHeight - AppConfig.Config.theme.popupTopGap - 20)
+        : bodyFlick.contentHeight + 36
 
     property var usageData: null
     property var today: null
@@ -72,7 +71,7 @@ Item {
         return ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][dt.getDay()] + " " + ds.slice(5);
     }
 
-    onPopupOpenChanged: if (popupOpen) loadProc.running = true
+    onPopupOpenChanged: if (popupOpen) loadFetch.reload()
 
     function parseData() {
         if (!usageData) return;
@@ -114,20 +113,6 @@ Item {
         return Helpers.Colors.accent;
     }
 
-    function fmtCost(c) {
-        if (!c || c <= 0) return "$0";
-        if (c >= 100) return "$" + Math.round(c);
-        if (c >= 10) return "$" + c.toFixed(1);
-        return "$" + c.toFixed(2);
-    }
-
-    function fmtTokens(t) {
-        if (!t) return "0";
-        if (t >= 1e6) return (t / 1e6).toFixed(1) + "M";
-        if (t >= 1e3) return Math.round(t / 1e3) + "k";
-        return "" + Math.round(t);
-    }
-
     // Active agent time, seconds -> "1h05m" / "58m" / "<1m".
     function fmtDur(s) {
         if (!s || s < 60) return s > 0 ? "<1m" : "0m";
@@ -167,25 +152,15 @@ Item {
         return "#585b70";
     }
 
-    Process {
-        id: loadProc
-        command: ["curl", "-s", "--unix-socket", AppConfig.Config.daemon.socket, "http://d/claude-usage/today"]
-        running: false
-        stdout: StdioCollector {
-            onStreamFinished: {
-                try {
-                    root.usageData = JSON.parse(this.text);
-                    root.parseData();
-                } catch (e) {}
-            }
+    Helpers.DaemonFetch {
+        id: loadFetch
+        path: "/claude-usage/today"
+        fetchOnActive: false    // first fetch comes from onPopupOpenChanged / the poll timer
+        intervalMs: root.popupOpen ? 15000 : 60000
+        onJson: data => {
+            root.usageData = data;
+            root.parseData();
         }
-    }
-
-    Timer {
-        interval: root.popupOpen ? 15000 : 60000
-        running: true
-        repeat: true
-        onTriggered: loadProc.running = true
     }
 
     Item {
@@ -202,19 +177,11 @@ Item {
                 anchors.fill: parent
             }
 
-            Flickable {
+            Components.PopupFlick {
+                id: bodyFlick
                 anchors.fill: parent
                 anchors.margins: 16
-                contentWidth: width
-                contentHeight: mainCol.implicitHeight
-                clip: true
-                boundsBehavior: Flickable.StopAtBounds
-                ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
-
-                Column {
-                    id: mainCol
-                    width: parent.width
-                    spacing: 12
+                spacing: 12
 
                     // ── Header ────────────────────────────────────────────
                     Item {
@@ -224,18 +191,16 @@ Item {
                             anchors.left: parent.left
                             anchors.verticalCenter: parent.verticalCenter
                             spacing: 8
-                            Text {
+                            Components.ThemedText {
                                 anchors.verticalCenter: parent.verticalCenter
                                 text: "󰷧"
                                 color: Helpers.Colors.accent
-                                font.family: AppConfig.Config.theme.fontFamily
                                 font.pixelSize: AppConfig.Config.theme.popupFontSizeMedium
                             }
-                            Text {
+                            Components.ThemedText {
                                 anchors.verticalCenter: parent.verticalCenter
                                 text: root.dateStr
-                                color: Helpers.Colors.textMuted
-                                font.family: AppConfig.Config.theme.fontFamily
+                                muted: true
                                 font.pixelSize: AppConfig.Config.theme.popupFontSizeSmall
                             }
                         }
@@ -244,14 +209,14 @@ Item {
                             anchors.verticalCenter: parent.verticalCenter
                             boldFirst: true
                             values: [
-                                root.fmtCost(root.today ? root.today.totalCost : 0),
-                                root.fmtTokens(root.today ? root.today.totalTokens : 0),
+                                Format.cost(root.today ? root.today.totalCost : 0),
+                                Format.tokens(root.today ? root.today.totalTokens : 0),
                                 root.fmtDur(root.today ? root.today.totalActive : 0)
                             ]
                         }
                     }
 
-                    Rectangle { width: parent.width; height: 1; color: Qt.rgba(1, 1, 1, 0.08) }
+                    Components.Divider {}
 
                     // ── Usage limits (subscription rate windows) ──────────
                     Column {
@@ -259,12 +224,8 @@ Item {
                         spacing: 8
                         visible: !!root.limits
 
-                        Text {
+                        Components.SectionLabel {
                             text: "Usage limits"
-                            color: Helpers.Colors.textMuted
-                            font.family: AppConfig.Config.theme.fontFamily
-                            font.pixelSize: AppConfig.Config.theme.popupFontSizeSmall
-                            font.bold: true
                         }
 
                         Repeater {
@@ -274,7 +235,7 @@ Item {
                                 width: parent.width
                                 height: 18
 
-                                Text {
+                                Components.ThemedText {
                                     id: limLabel
                                     anchors.left: parent.left
                                     anchors.verticalCenter: parent.verticalCenter
@@ -282,13 +243,11 @@ Item {
                                     width: 88
                                     text: (modelData.sub ? "· " : "") + modelData.label
                                     color: modelData.sub ? Qt.rgba(1, 1, 1, 0.5) : Helpers.Colors.textDefault
-                                    font.family: AppConfig.Config.theme.fontFamily
-                                    font.pixelSize: AppConfig.Config.theme.popupFontSizeBody
                                     font.bold: !modelData.sub
                                     elide: Text.ElideRight
                                 }
 
-                                Text {
+                                Components.ThemedText {
                                     id: limReset
                                     anchors.right: parent.right
                                     anchors.verticalCenter: parent.verticalCenter
@@ -296,11 +255,10 @@ Item {
                                     horizontalAlignment: Text.AlignRight
                                     text: root.fmtReset(modelData.w.resetsAt)
                                     color: Qt.rgba(1, 1, 1, 0.4)
-                                    font.family: AppConfig.Config.theme.fontFamily
                                     font.pixelSize: AppConfig.Config.theme.popupFontSizeSmall
                                 }
 
-                                Text {
+                                Components.ThemedText {
                                     id: limPct
                                     anchors.right: limReset.left
                                     anchors.rightMargin: 10
@@ -309,7 +267,6 @@ Item {
                                     horizontalAlignment: Text.AlignRight
                                     text: Math.round(modelData.w.utilization) + "%"
                                     color: root.limitColor(modelData.w.utilization)
-                                    font.family: AppConfig.Config.theme.fontFamily
                                     font.pixelSize: AppConfig.Config.theme.popupFontSizeSmall
                                     font.bold: true
                                 }
@@ -338,8 +295,7 @@ Item {
                         }
                     }
 
-                    Rectangle {
-                        width: parent.width; height: 1; color: Qt.rgba(1, 1, 1, 0.08)
+                    Components.Divider {
                         visible: !!root.limits
                     }
 
@@ -348,19 +304,14 @@ Item {
                         width: parent.width
                         spacing: 8
 
-                        Text {
+                        Components.SectionLabel {
                             text: "Today by project"
-                            color: Helpers.Colors.textMuted
-                            font.family: AppConfig.Config.theme.fontFamily
-                            font.pixelSize: AppConfig.Config.theme.popupFontSizeSmall
-                            font.bold: true
                         }
 
-                        Text {
+                        Components.ThemedText {
                             visible: !root.today || root.today.projects.length === 0
                             text: "No usage yet today"
-                            color: Helpers.Colors.textMuted
-                            font.family: AppConfig.Config.theme.fontFamily
+                            muted: true
                             font.pixelSize: AppConfig.Config.theme.popupFontSizeSmall
                         }
 
@@ -388,41 +339,34 @@ Item {
                                             anchors.verticalCenter: parent.verticalCenter
                                             color: proj.barColor
                                         }
-                                        Text {
+                                        Components.ThemedText {
                                             text: modelData.name || ""
-                                            color: Helpers.Colors.textDefault
-                                            font.family: AppConfig.Config.theme.fontFamily
-                                            font.pixelSize: AppConfig.Config.theme.popupFontSizeBody
                                             font.bold: true
                                             anchors.verticalCenter: parent.verticalCenter
                                         }
                                     }
-                                    Text {
+                                    Components.ThemedText {
                                         id: tokText
                                         anchors.right: costText.left
                                         anchors.rightMargin: 10
                                         anchors.verticalCenter: parent.verticalCenter
-                                        text: root.fmtTokens(modelData.tokens)
+                                        text: Format.tokens(modelData.tokens)
                                         color: Qt.rgba(1, 1, 1, 0.5)
-                                        font.family: AppConfig.Config.theme.fontFamily
                                         font.pixelSize: AppConfig.Config.theme.popupFontSizeSmall
                                     }
-                                    Text {
+                                    Components.ThemedText {
                                         anchors.right: tokText.left
                                         anchors.rightMargin: 10
                                         anchors.verticalCenter: parent.verticalCenter
                                         text: " " + root.fmtDur(modelData.active || 0)
                                         color: Qt.rgba(1, 1, 1, 0.4)
-                                        font.family: AppConfig.Config.theme.fontFamily
                                         font.pixelSize: AppConfig.Config.theme.popupFontSizeSmall
                                     }
-                                    Text {
+                                    Components.ThemedText {
                                         id: costText
                                         anchors.right: parent.right
                                         anchors.verticalCenter: parent.verticalCenter
-                                        text: root.fmtCost(modelData.cost)
-                                        color: Helpers.Colors.textDefault
-                                        font.family: AppConfig.Config.theme.fontFamily
+                                        text: Format.cost(modelData.cost)
                                         font.pixelSize: AppConfig.Config.theme.popupFontSizeSmall
                                         width: 56
                                         horizontalAlignment: Text.AlignRight
@@ -447,8 +391,7 @@ Item {
                         }
                     }
 
-                    Rectangle {
-                        width: parent.width; height: 1; color: Qt.rgba(1, 1, 1, 0.08)
+                    Components.Divider {
                         visible: root.today && root.today.models && root.today.models.length > 0
                     }
 
@@ -458,12 +401,8 @@ Item {
                         spacing: 8
                         visible: root.today && root.today.models && root.today.models.length > 0
 
-                        Text {
+                        Components.SectionLabel {
                             text: "Today by model"
-                            color: Helpers.Colors.textMuted
-                            font.family: AppConfig.Config.theme.fontFamily
-                            font.pixelSize: AppConfig.Config.theme.popupFontSizeSmall
-                            font.bold: true
                         }
 
                         Repeater {
@@ -489,32 +428,26 @@ Item {
                                             anchors.verticalCenter: parent.verticalCenter
                                             color: mdl.barColor
                                         }
-                                        Text {
+                                        Components.ThemedText {
                                             text: root.prettyModel(modelData.name)
-                                            color: Helpers.Colors.textDefault
-                                            font.family: AppConfig.Config.theme.fontFamily
-                                            font.pixelSize: AppConfig.Config.theme.popupFontSizeBody
                                             font.bold: true
                                             anchors.verticalCenter: parent.verticalCenter
                                         }
                                     }
-                                    Text {
+                                    Components.ThemedText {
                                         id: mdlTok
                                         anchors.right: mdlCost.left
                                         anchors.rightMargin: 10
                                         anchors.verticalCenter: parent.verticalCenter
-                                        text: root.fmtTokens(modelData.tokens)
+                                        text: Format.tokens(modelData.tokens)
                                         color: Qt.rgba(1, 1, 1, 0.5)
-                                        font.family: AppConfig.Config.theme.fontFamily
                                         font.pixelSize: AppConfig.Config.theme.popupFontSizeSmall
                                     }
-                                    Text {
+                                    Components.ThemedText {
                                         id: mdlCost
                                         anchors.right: parent.right
                                         anchors.verticalCenter: parent.verticalCenter
-                                        text: root.fmtCost(modelData.cost)
-                                        color: Helpers.Colors.textDefault
-                                        font.family: AppConfig.Config.theme.fontFamily
+                                        text: Format.cost(modelData.cost)
                                         font.pixelSize: AppConfig.Config.theme.popupFontSizeSmall
                                         width: 56
                                         horizontalAlignment: Text.AlignRight
@@ -539,7 +472,7 @@ Item {
                         }
                     }
 
-                    Rectangle { width: parent.width; height: 1; color: Qt.rgba(1, 1, 1, 0.08) }
+                    Components.Divider {}
 
                     // ── 7-day trend ───────────────────────────────────────
                     Column {
@@ -549,20 +482,16 @@ Item {
                         Item {
                             width: parent.width
                             height: 16
-                            Text {
+                            Components.SectionLabel {
                                 anchors.left: parent.left
                                 text: "Last 7 days"
-                                color: Helpers.Colors.textMuted
-                                font.family: AppConfig.Config.theme.fontFamily
-                                font.pixelSize: AppConfig.Config.theme.popupFontSizeSmall
-                                font.bold: true
                             }
                             Components.StatDots {
                                 anchors.right: parent.right
                                 anchors.verticalCenter: parent.verticalCenter
                                 values: [
-                                    root.fmtCost(root.week ? root.week.totalCost : 0),
-                                    root.fmtTokens(root.week ? root.week.totalTokens : 0),
+                                    Format.cost(root.week ? root.week.totalCost : 0),
+                                    Format.tokens(root.week ? root.week.totalTokens : 0),
                                     root.fmtDur(root.week ? root.week.totalActive : 0)
                                 ]
                             }
@@ -652,7 +581,7 @@ Item {
                                         // cost label above bar
                                         if (d.cost > 0) {
                                             ctx.fillStyle = Qt.rgba(1, 1, 1, (isToday || hovered) ? 0.9 : 0.5);
-                                            ctx.fillText(root.fmtCost(d.cost), x + bw / 2, (chartH - totalH) - 5);
+                                            ctx.fillText(Format.cost(d.cost), x + bw / 2, (chartH - totalH) - 5);
                                         }
 
                                         // weekday label
@@ -712,7 +641,7 @@ Item {
                         }
                     }
 
-                    Rectangle { width: parent.width; height: 1; color: Qt.rgba(1, 1, 1, 0.08) }
+                    Components.Divider {}
 
                     // ── By-project breakdown (7-day total, or hovered day) ─
                     Column {
@@ -737,14 +666,11 @@ Item {
                         Item {
                             width: parent.width
                             height: 16
-                            Text {
+                            Components.SectionLabel {
                                 anchors.left: parent.left
                                 text: root.hoveredDay ? (root.dayLabel(root.hoveredDay.date) + " by project")
                                                       : "7-day by project"
                                 color: root.hoveredDay ? Helpers.Colors.accent : Helpers.Colors.textMuted
-                                font.family: AppConfig.Config.theme.fontFamily
-                                font.pixelSize: AppConfig.Config.theme.popupFontSizeSmall
-                                font.bold: true
                             }
                             Components.StatDots {
                                 anchors.right: parent.right
@@ -752,7 +678,7 @@ Item {
                                 visible: !!root.hoveredDay
                                 fontSize: AppConfig.Config.theme.popupFontSizeXSmall
                                 values: root.hoveredDay
-                                    ? [root.fmtCost(root.hoveredDay.cost), root.fmtTokens(root.hoveredDay.tokens), root.fmtDur(root.hoveredDay.active || 0)]
+                                    ? [Format.cost(root.hoveredDay.cost), Format.tokens(root.hoveredDay.tokens), root.fmtDur(root.hoveredDay.active || 0)]
                                     : []
                             }
                         }
@@ -771,37 +697,34 @@ Item {
                                         required property var modelData
                                         width: parent.width
                                         height: 18
-                                        Text {
+                                        Components.ThemedText {
                                             id: wkCost
                                     anchors.right: parent.right
                                     anchors.verticalCenter: parent.verticalCenter
-                                    text: root.fmtCost(modelData.cost)
+                                    text: Format.cost(modelData.cost)
                                     color: Qt.rgba(1, 1, 1, 0.6)
-                                    font.family: AppConfig.Config.theme.fontFamily
                                     font.pixelSize: AppConfig.Config.theme.popupFontSizeSmall
                                     width: 70
                                     horizontalAlignment: Text.AlignRight
                                 }
-                                Text {
+                                Components.ThemedText {
                                     id: wkTokens
                                     anchors.right: wkCost.left
                                     anchors.rightMargin: 8
                                     anchors.verticalCenter: parent.verticalCenter
-                                    text: root.fmtTokens(modelData.tokens)
+                                    text: Format.tokens(modelData.tokens)
                                     color: Qt.rgba(1, 1, 1, 0.45)
-                                    font.family: AppConfig.Config.theme.fontFamily
                                     font.pixelSize: AppConfig.Config.theme.popupFontSizeXSmall
                                     width: 60
                                     horizontalAlignment: Text.AlignRight
                                 }
-                                Text {
+                                Components.ThemedText {
                                     id: wkTime
                                     anchors.right: wkTokens.left
                                     anchors.rightMargin: 8
                                     anchors.verticalCenter: parent.verticalCenter
                                     text: " " + root.fmtDur(modelData.active || 0)
                                     color: Qt.rgba(1, 1, 1, 0.4)
-                                    font.family: AppConfig.Config.theme.fontFamily
                                     font.pixelSize: AppConfig.Config.theme.popupFontSizeXSmall
                                     width: 56
                                     horizontalAlignment: Text.AlignRight
@@ -813,15 +736,13 @@ Item {
                                     anchors.verticalCenter: parent.verticalCenter
                                     color: root.colorFor(modelData.name)
                                 }
-                                Text {
+                                Components.ThemedText {
                                     anchors.left: wkDot.right
                                     anchors.leftMargin: 8
                                     anchors.right: wkTime.left
                                     anchors.rightMargin: 8
                                     anchors.verticalCenter: parent.verticalCenter
                                             text: modelData.name || ""
-                                            color: Helpers.Colors.textDefault
-                                            font.family: AppConfig.Config.theme.fontFamily
                                             font.pixelSize: AppConfig.Config.theme.popupFontSizeSmall
                                             elide: Text.ElideRight
                                         }
@@ -835,15 +756,12 @@ Item {
                             width: parent.width
                             height: 16
                             visible: byProjCol.listModels.length > 0
-                            Text {
+                            Components.SectionLabel {
                                 anchors.left: parent.left
                                 anchors.verticalCenter: parent.verticalCenter
                                 text: root.hoveredDay ? (root.dayLabel(root.hoveredDay.date) + " by model")
                                                       : "7-day by model"
                                 color: root.hoveredDay ? Helpers.Colors.accent : Helpers.Colors.textMuted
-                                font.family: AppConfig.Config.theme.fontFamily
-                                font.pixelSize: AppConfig.Config.theme.popupFontSizeSmall
-                                font.bold: true
                             }
                         }
 
@@ -862,25 +780,23 @@ Item {
                                         required property var modelData
                                         width: parent.width
                                         height: 18
-                                        Text {
+                                        Components.ThemedText {
                                             id: mCost
                                             anchors.right: parent.right
                                             anchors.verticalCenter: parent.verticalCenter
-                                            text: root.fmtCost(modelData.cost)
+                                            text: Format.cost(modelData.cost)
                                             color: Qt.rgba(1, 1, 1, 0.6)
-                                            font.family: AppConfig.Config.theme.fontFamily
                                             font.pixelSize: AppConfig.Config.theme.popupFontSizeSmall
                                             width: 70
                                             horizontalAlignment: Text.AlignRight
                                         }
-                                        Text {
+                                        Components.ThemedText {
                                             id: mToks
                                             anchors.right: mCost.left
                                             anchors.rightMargin: 8
                                             anchors.verticalCenter: parent.verticalCenter
-                                            text: root.fmtTokens(modelData.tokens)
+                                            text: Format.tokens(modelData.tokens)
                                             color: Qt.rgba(1, 1, 1, 0.45)
-                                            font.family: AppConfig.Config.theme.fontFamily
                                             font.pixelSize: AppConfig.Config.theme.popupFontSizeXSmall
                                             width: 60
                                             horizontalAlignment: Text.AlignRight
@@ -892,15 +808,13 @@ Item {
                                             anchors.verticalCenter: parent.verticalCenter
                                             color: root.modelColor(modelData.name)
                                         }
-                                        Text {
+                                        Components.ThemedText {
                                             anchors.left: mDot.right
                                             anchors.leftMargin: 8
                                             anchors.right: mToks.left
                                             anchors.rightMargin: 8
                                             anchors.verticalCenter: parent.verticalCenter
                                             text: root.prettyModel(modelData.name)
-                                            color: Helpers.Colors.textDefault
-                                            font.family: AppConfig.Config.theme.fontFamily
                                             font.pixelSize: AppConfig.Config.theme.popupFontSizeSmall
                                             elide: Text.ElideRight
                                         }
@@ -909,7 +823,6 @@ Item {
                             }
                         }
                     }
-                }
             }
         }
     }

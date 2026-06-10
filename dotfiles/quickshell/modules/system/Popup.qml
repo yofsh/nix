@@ -3,6 +3,7 @@ import Quickshell.Io
 import Quickshell.Wayland
 import QtQuick
 import "../../helpers" as Helpers
+import "../../helpers/Format.js" as Format
 import "../../components" as Components
 import "../../config" as AppConfig
 
@@ -168,17 +169,6 @@ Item {
         return lo;
     }
 
-    function formatKB(kb) {
-        if (kb >= 1048576) return (kb / 1048576).toFixed(1) + " GB";
-        if (kb >= 1024) return (kb / 1024).toFixed(1) + " MB";
-        return Math.round(kb) + " KB";
-    }
-
-    function formatRate(kbps) {
-        if (kbps >= 1024) return (kbps / 1024).toFixed(1) + " MB/s";
-        return kbps.toFixed(1) + " KB/s";
-    }
-
     function formatUptime(secs) {
         var days = Math.floor(secs / 86400);
         var hrs = Math.floor((secs % 86400) / 3600);
@@ -311,10 +301,10 @@ Item {
         lines.push("Mem " + p.mem.p.toFixed(1) + "%  Swap " + p.mem.sp.toFixed(1) + "%");
         colors.push("" + Helpers.Colors.memory);
 
-        lines.push("Disk \u2193" + root.formatRate(p.io.r) + "  \u2191" + root.formatRate(p.io.w));
+        lines.push("Disk \u2193" + Format.rate(p.io.r * 1024) + "  \u2191" + Format.rate(p.io.w * 1024));
         colors.push("#b39ddb");
 
-        lines.push("Net \u2193" + root.formatRate(p.net.r) + "  \u2191" + root.formatRate(p.net.t));
+        lines.push("Net \u2193" + Format.rate(p.net.r * 1024) + "  \u2191" + Format.rate(p.net.t * 1024));
         colors.push("#42a5f5");
 
         lines.push("Load " + p.load.l1.toFixed(2) + " / " + p.load.l5.toFixed(2) + " / " + p.load.l15.toFixed(2));
@@ -407,48 +397,40 @@ Item {
                 height: root.headerHeight
                 spacing: 20
 
-                Text {
+                Components.ThemedText {
                     text: {
                         if (!root.dataLoaded) return "System Stats";
                         var last = root.statsData[root.statsData.length - 1];
                         return "CPU " + last.cpu.u.toFixed(1) + "% usr  " + last.cpu.s.toFixed(1) + "% sys";
                     }
                     color: Helpers.Colors.cpu
-                    font.family: AppConfig.Config.theme.fontFamily
-                    font.pixelSize: AppConfig.Config.theme.popupFontSizeBody
                     anchors.verticalCenter: parent.verticalCenter
                 }
 
-                Text {
+                Components.ThemedText {
                     text: root.loadAvg ? "Load " + root.loadAvg : ""
-                    color: Helpers.Colors.textMuted
-                    font.family: AppConfig.Config.theme.fontFamily
-                    font.pixelSize: AppConfig.Config.theme.popupFontSizeBody
+                    muted: true
                     anchors.verticalCenter: parent.verticalCenter
                 }
 
-                Text {
+                Components.ThemedText {
                     text: {
                         if (!root.dataLoaded) return "";
                         var last = root.statsData[root.statsData.length - 1];
-                        return "Mem " + last.mem.p.toFixed(0) + "%  (" + root.formatKB(last.mem.u) + " / " + root.formatKB(root.totalMemKB) + ")";
+                        return "Mem " + last.mem.p.toFixed(0) + "%  (" + Format.bytes(last.mem.u * 1024) + " / " + Format.bytes(root.totalMemKB * 1024) + ")";
                     }
                     color: Helpers.Colors.memory
-                    font.family: AppConfig.Config.theme.fontFamily
-                    font.pixelSize: AppConfig.Config.theme.popupFontSizeBody
                     anchors.verticalCenter: parent.verticalCenter
                 }
 
-                Text {
+                Components.ThemedText {
                     text: {
                         var parts = [];
                         if (root.ifaceName) parts.push(root.ifaceName);
                         if (root.uptimeSecs > 0) parts.push("up " + root.formatUptime(root.uptimeSecs));
                         return parts.join("  ");
                     }
-                    color: Helpers.Colors.textMuted
-                    font.family: AppConfig.Config.theme.fontFamily
-                    font.pixelSize: AppConfig.Config.theme.popupFontSizeBody
+                    muted: true
                     anchors.verticalCenter: parent.verticalCenter
                 }
             }
@@ -473,12 +455,11 @@ Item {
                         radius: 3
                         color: root.timeframeSecs === modelData.secs ? Qt.rgba(1, 1, 1, 0.15) : "transparent"
 
-                        Text {
+                        Components.ThemedText {
                             id: tfText
                             anchors.centerIn: parent
                             text: modelData.label
                             color: root.timeframeSecs === modelData.secs ? Helpers.Colors.textDefault : Helpers.Colors.textMuted
-                            font.family: AppConfig.Config.theme.fontFamily
                             font.pixelSize: AppConfig.Config.theme.fontSizeXSmall
                             font.bold: root.timeframeSecs === modelData.secs
                         }
@@ -493,12 +474,11 @@ Item {
             }
 
             // ──── CPU ────
-            Text {
+            Components.ThemedText {
                 id: cpuLabel
                 anchors.top: headerRow.bottom
                 anchors.left: parent.left; anchors.leftMargin: 6
                 text: "CPU"; color: Helpers.Colors.cpu
-                font.family: AppConfig.Config.theme.fontFamily
                 font.pixelSize: AppConfig.Config.theme.popupFontSizeTiny
             }
 
@@ -534,19 +514,18 @@ Item {
                 }
             }
 
-            Text {
+            Components.ThemedText {
                 x: 6; y: cpuCanvas.y + cpuCanvas.height * 0.5 - 5
-                text: "50%"; color: Helpers.Colors.textMuted
-                font.family: AppConfig.Config.theme.fontFamily; font.pixelSize: AppConfig.Config.theme.popupFontSizeTiny
+                text: "50%"; muted: true
+                font.pixelSize: AppConfig.Config.theme.popupFontSizeTiny
             }
 
             // ──── Memory + Swap ────
-            Text {
+            Components.ThemedText {
                 id: memLabel
                 anchors.top: cpuCanvas.bottom; anchors.topMargin: root.graphSpacing
                 anchors.left: parent.left; anchors.leftMargin: 6
                 text: "Mem"; color: Helpers.Colors.memory
-                font.family: AppConfig.Config.theme.fontFamily
                 font.pixelSize: AppConfig.Config.theme.popupFontSizeTiny
             }
 
@@ -577,19 +556,18 @@ Item {
                 }
             }
 
-            Text {
+            Components.ThemedText {
                 x: 6; y: memCanvas.y + memCanvas.height * 0.5 - 5
-                text: "50%"; color: Helpers.Colors.textMuted
-                font.family: AppConfig.Config.theme.fontFamily; font.pixelSize: AppConfig.Config.theme.popupFontSizeTiny
+                text: "50%"; muted: true
+                font.pixelSize: AppConfig.Config.theme.popupFontSizeTiny
             }
 
             // ──── Disk I/O ────
-            Text {
+            Components.ThemedText {
                 id: ioLabel
                 anchors.top: memCanvas.bottom; anchors.topMargin: root.graphSpacing
                 anchors.left: parent.left; anchors.leftMargin: 6
                 text: "Disk"; color: "#b39ddb"
-                font.family: AppConfig.Config.theme.fontFamily
                 font.pixelSize: AppConfig.Config.theme.popupFontSizeTiny
             }
 
@@ -627,19 +605,18 @@ Item {
                 }
             }
 
-            Text {
+            Components.ThemedText {
                 x: 6; y: ioCanvas.y + ioCanvas.height * 0.5 - 5
-                text: root.formatRate(root.ioMax * 0.5); color: Helpers.Colors.textMuted
-                font.family: AppConfig.Config.theme.fontFamily; font.pixelSize: AppConfig.Config.theme.popupFontSizeTiny
+                text: Format.rate(root.ioMax * 0.5 * 1024); muted: true
+                font.pixelSize: AppConfig.Config.theme.popupFontSizeTiny
             }
 
             // ──── Network ────
-            Text {
+            Components.ThemedText {
                 id: netLabel
                 anchors.top: ioCanvas.bottom; anchors.topMargin: root.graphSpacing
                 anchors.left: parent.left; anchors.leftMargin: 6
                 text: "Net"; color: "#42a5f5"
-                font.family: AppConfig.Config.theme.fontFamily
                 font.pixelSize: AppConfig.Config.theme.popupFontSizeTiny
             }
 
@@ -677,19 +654,18 @@ Item {
                 }
             }
 
-            Text {
+            Components.ThemedText {
                 x: 6; y: netCanvas.y + netCanvas.height * 0.5 - 5
-                text: root.formatRate(root.netMax * 0.5); color: Helpers.Colors.textMuted
-                font.family: AppConfig.Config.theme.fontFamily; font.pixelSize: AppConfig.Config.theme.popupFontSizeTiny
+                text: Format.rate(root.netMax * 0.5 * 1024); muted: true
+                font.pixelSize: AppConfig.Config.theme.popupFontSizeTiny
             }
 
             // ──── Load + PSI ────
-            Text {
+            Components.ThemedText {
                 id: loadLabel
                 anchors.top: netCanvas.bottom; anchors.topMargin: root.graphSpacing
                 anchors.left: parent.left; anchors.leftMargin: 6
                 text: "Load"; color: "#ffb74d"
-                font.family: AppConfig.Config.theme.fontFamily
                 font.pixelSize: AppConfig.Config.theme.popupFontSizeTiny
             }
 
@@ -760,21 +736,21 @@ Item {
                 }
             }
 
-            Text {
+            Components.ThemedText {
                 x: 6; y: loadCanvas.y + loadCanvas.height * 0.5 - 5
-                text: (root.loadMax * 0.5).toFixed(1); color: Helpers.Colors.textMuted
-                font.family: AppConfig.Config.theme.fontFamily; font.pixelSize: AppConfig.Config.theme.popupFontSizeTiny
+                text: (root.loadMax * 0.5).toFixed(1); muted: true
+                font.pixelSize: AppConfig.Config.theme.popupFontSizeTiny
             }
 
             // X-axis time labels (shared)
             Repeater {
                 model: root.timeLabels
-                Text {
+                Components.ThemedText {
                     required property var modelData
                     x: cpuCanvas.x + modelData.x - implicitWidth / 2
                     y: loadCanvas.y + loadCanvas.height + 3
-                    text: modelData.label; color: Helpers.Colors.textMuted
-                    font.family: AppConfig.Config.theme.fontFamily; font.pixelSize: AppConfig.Config.theme.popupFontSizeTiny
+                    text: modelData.label; muted: true
+                    font.pixelSize: AppConfig.Config.theme.popupFontSizeTiny
                 }
             }
         }

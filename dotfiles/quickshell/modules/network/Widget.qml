@@ -1,5 +1,5 @@
 import QtQuick
-import Quickshell.Io
+import "../../components" as Components
 import "../../helpers" as Helpers
 import "../../config" as AppConfig
 import "../../core" as Core
@@ -16,7 +16,7 @@ Item {
 
     Rectangle {
         anchors.fill: parent
-        radius: AppConfig.Config.theme.interactiveHoverRadius || 4
+        radius: AppConfig.Config.theme.interactiveHoverRadius
         color: Qt.rgba(0.2, 0.5, 0.9, 0.12)
     }
 
@@ -59,8 +59,6 @@ Item {
         return Math.round((dbm + 80) * 2.5);
     }
 
-    readonly property string _sock: AppConfig.Config.daemon.socket
-
     function applyTrafficTick(rxBytes, txBytes) {
         root.rxRateNum = rxBytes / 1024;
         root.txRateNum = txBytes / 1024;
@@ -82,40 +80,37 @@ Item {
         netGraph.requestPaint();
     }
 
-    function applyDaemonLine(raw) {
-        if (!raw) return;
-        try {
-            var d = JSON.parse(raw.trim());
+    function applyDaemonLine(d) {
+        if (!d) return;
 
-            // Connection state (signal, coarse status, ethernet up/down)
-            if (d.wifi !== undefined) root.wifi = d.wifi;
-            if (d.ethernet !== undefined) root.ethernet = d.ethernet;
+        // Connection state (signal, coarse status, ethernet up/down)
+        if (d.wifi !== undefined) root.wifi = d.wifi;
+        if (d.ethernet !== undefined) root.ethernet = d.ethernet;
 
-            // Seed history from daemon backlog on first message
-            if (d.traffic_history && d.traffic_history.length > 0 && root.netHistory.length === 0) {
-                var h = [];
-                for (var i = 0; i < d.traffic_history.length; i++) {
-                    h.push({rx: d.traffic_history[i].rx / 1024, tx: d.traffic_history[i].tx / 1024});
-                }
-                if (h.length > root.maxHistory)
-                    h = h.slice(h.length - root.maxHistory);
-                root.netHistory = h;
-                var mTx = 0, mRx = 0;
-                for (var j = 0; j < h.length; j++) {
-                    if (h[j].tx > mTx) mTx = h[j].tx;
-                    if (h[j].rx > mRx) mRx = h[j].rx;
-                }
-                root.maxTxKb = mTx;
-                root.maxRxKb = mRx;
-                netGraph.requestPaint();
+        // Seed history from daemon backlog on first message
+        if (d.traffic_history && d.traffic_history.length > 0 && root.netHistory.length === 0) {
+            var h = [];
+            for (var i = 0; i < d.traffic_history.length; i++) {
+                h.push({rx: d.traffic_history[i].rx / 1024, tx: d.traffic_history[i].tx / 1024});
             }
-            // Compute combined rate from all interfaces
-            var rxR = 0, txR = 0;
-            if (d.wifi && d.wifi.rx_rate) { rxR += d.wifi.rx_rate; txR += (d.wifi.tx_rate || 0); }
-            if (d.ethernet && d.ethernet.rx_rate) { rxR += d.ethernet.rx_rate; txR += (d.ethernet.tx_rate || 0); }
-            if (rxR > 0 || txR > 0 || root.netHistory.length > 0)
-                applyTrafficTick(rxR, txR);
-        } catch (e) { /* ignore parse errors */ }
+            if (h.length > root.maxHistory)
+                h = h.slice(h.length - root.maxHistory);
+            root.netHistory = h;
+            var mTx = 0, mRx = 0;
+            for (var j = 0; j < h.length; j++) {
+                if (h[j].tx > mTx) mTx = h[j].tx;
+                if (h[j].rx > mRx) mRx = h[j].rx;
+            }
+            root.maxTxKb = mTx;
+            root.maxRxKb = mRx;
+            netGraph.requestPaint();
+        }
+        // Compute combined rate from all interfaces
+        var rxR = 0, txR = 0;
+        if (d.wifi && d.wifi.rx_rate) { rxR += d.wifi.rx_rate; txR += (d.wifi.tx_rate || 0); }
+        if (d.ethernet && d.ethernet.rx_rate) { rxR += d.ethernet.rx_rate; txR += (d.ethernet.tx_rate || 0); }
+        if (rxR > 0 || txR > 0 || root.netHistory.length > 0)
+            applyTrafficTick(rxR, txR);
     }
 
     property bool isWifi: wifi !== null && wifi.connected === true
@@ -218,20 +213,18 @@ Item {
                     width: 34
                     spacing: -2
 
-                    Text {
+                    Components.ThemedText {
                         width: parent.width
                         text: root.txRate
-                        color: Helpers.Colors.textMuted
-                        font.family: AppConfig.Config.theme.fontFamily
+                        muted: true
                         font.pixelSize: AppConfig.Config.theme.fontSizeSmall
                         horizontalAlignment: Text.AlignRight
                     }
 
-                    Text {
+                    Components.ThemedText {
                         width: parent.width
                         text: root.rxRate
-                        color: Helpers.Colors.textMuted
-                        font.family: AppConfig.Config.theme.fontFamily
+                        muted: true
                         font.pixelSize: AppConfig.Config.theme.fontSizeSmall
                         horizontalAlignment: Text.AlignRight
                     }
@@ -257,37 +250,33 @@ Item {
         }
 
         // Ethernet icon (shown whenever an ethernet link is up)
-        Text {
+        Components.ThemedText {
             id: ethIcon
             anchors.verticalCenter: parent.verticalCenter
             visible: root.isEthernet
             text: String.fromCodePoint(0xF0200)   // nf-md-ethernet
-            color: Helpers.Colors.textDefault
             opacity: 0.9
-            font.family: AppConfig.Config.theme.fontFamily
             font.pixelSize: AppConfig.Config.theme.fontSizeIcon
         }
 
         // Wi-Fi signal icon (or wifi-off when down). Hidden while a connecting
         // indicator is showing and no ethernet is up.
-        Text {
+        Components.ThemedText {
             id: wifiIcon
             anchors.verticalCenter: parent.verticalCenter
             visible: root.isWifi || (!root.isEthernet && !root.showStatus)
             text: root.wifiIconText()
             color: root.isWifi ? root.signalColor : root.iconColor
             opacity: root.isConnected ? 0.9 : 0.6
-            font.family: AppConfig.Config.theme.fontFamily
             font.pixelSize: AppConfig.Config.theme.fontSizeIcon
         }
 
         // Connecting indicator (coarse sysfs state — no SSID/name)
-        Text {
+        Components.ThemedText {
             anchors.verticalCenter: parent.verticalCenter
             visible: root.showStatus
             text: String.fromCodePoint(0xF04E6)   // nf-md-swap_horizontal
             color: "#ffa726"
-            font.family: AppConfig.Config.theme.fontFamily
             font.pixelSize: AppConfig.Config.theme.fontSizeIcon
         }
     }
@@ -309,13 +298,8 @@ Item {
     }
 
     // Single always-on source: the daemon net stream (persists across QS restarts)
-    Process {
-        id: daemonStream
-        command: ["curl", "-sN", "--unix-socket", root._sock, "http://d/net/stream"]
-        running: true
-        onRunningChanged: if (!running) running = true
-        stdout: SplitParser {
-            onRead: data => root.applyDaemonLine(data)
-        }
+    Helpers.DaemonStream {
+        path: "/net/stream"
+        onLine: data => root.applyDaemonLine(data)
     }
 }

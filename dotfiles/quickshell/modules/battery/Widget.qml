@@ -1,6 +1,8 @@
 import QtQuick
 import Quickshell.Services.UPower
+import "../../components" as Components
 import "../../helpers" as Helpers
+import "../../helpers/Format.js" as Format
 import "../../config" as AppConfig
 
 Item {
@@ -34,9 +36,7 @@ Item {
         if (!device || !device.ready) return "";
         var secs = root.isCharging ? device.timeToFull : device.timeToEmpty;
         if (secs <= 0) return "";
-        var h = Math.floor(secs / 3600);
-        var m = Math.floor((secs % 3600) / 60);
-        return h + ":" + (m < 10 ? "0" : "") + m;
+        return Format.hourClock(secs);
     }
 
     property color textColor: {
@@ -77,11 +77,10 @@ Item {
         anchors.centerIn: parent
         spacing: 0
 
-        Text {
+        Components.ThemedText {
             anchors.horizontalCenter: parent.horizontalCenter
             text: root.consumptionText
             color: root.textColor
-            font.family: AppConfig.Config.theme.fontFamily
             font.pixelSize: AppConfig.Config.theme.fontSizeSmall
         }
 
@@ -89,17 +88,15 @@ Item {
             anchors.horizontalCenter: parent.horizontalCenter
             spacing: 0
 
-            Text {
+            Components.ThemedText {
                 text: root.batteryText
                 color: root.textColor
-                font.family: AppConfig.Config.theme.fontFamily
                 font.pixelSize: AppConfig.Config.theme.fontSizeSmall
             }
 
-            Text {
+            Components.ThemedText {
                 text: root.timeText !== "" ? " " + root.timeText : ""
-                color: Helpers.Colors.textMuted
-                font.family: AppConfig.Config.theme.fontFamily
+                muted: true
                 font.pixelSize: AppConfig.Config.theme.fontSizeSmall
                 visible: root.timeText !== ""
             }

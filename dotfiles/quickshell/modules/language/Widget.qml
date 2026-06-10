@@ -1,6 +1,7 @@
 import QtQuick
 import Quickshell.Hyprland
 import Quickshell.Io
+import "../../components" as Components
 import "../../helpers" as Helpers
 import "../../config" as AppConfig
 
@@ -58,12 +59,11 @@ Item {
         initSocket.flush();
     }
 
-    Text {
+    Components.ThemedText {
         id: langText
         anchors.centerIn: parent
         text: root.layout.charAt(0).toUpperCase()
         color: root.langColor
-        font.family: AppConfig.Config.theme.fontFamily
         font.pixelSize: AppConfig.Config.theme.fontSizeDefault
         font.bold: true
     }

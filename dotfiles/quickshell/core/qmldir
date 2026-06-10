@@ -10,3 +10,4 @@ PackageService 1.0 PackageService.qml
 PopupController 1.0 PopupController.qml
 ServiceHost 1.0 ServiceHost.qml
 ShellRoot 1.0 ShellRoot.qml
+SubmapOverlay 1.0 SubmapOverlay.qml

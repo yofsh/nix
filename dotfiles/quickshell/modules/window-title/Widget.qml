@@ -2,6 +2,7 @@ import QtQuick
 import Quickshell
 import Quickshell.Hyprland
 import Quickshell.Io
+import "../../components" as Components
 import "../../helpers" as Helpers
 import "../../config" as AppConfig
 
@@ -83,13 +84,12 @@ Item {
             width: 200 - (appIcon.visible ? 22 : 0)
             height: parent.height
 
-            Text {
+            Components.ThemedText {
                 id: titleText
                 anchors.verticalCenter: parent.verticalCenter
                 width: root.expanded ? implicitWidth : parent.width
                 text: root.displayTitle
                 color: Helpers.Colors.windowTitle
-                font.family: AppConfig.Config.theme.fontFamily
                 font.pixelSize: AppConfig.Config.theme.fontSizeDefault
                 elide: Text.ElideNone
                 clip: true

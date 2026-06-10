@@ -156,11 +156,10 @@ PanelWindow {
                 anchors.centerIn: parent
                 spacing: AppConfig.Config.theme.spacingDefault
 
-                Text {
+                Components.ThemedText {
                     anchors.verticalCenter: parent.verticalCenter
                     text: root.osdIcon
                     color: root.osdColor
-                    font.family: AppConfig.Config.theme.fontFamily
                     font.pixelSize: AppConfig.Config.theme.fontSizeIcon
                 }
 
@@ -187,11 +186,10 @@ PanelWindow {
                     }
                 }
 
-                Text {
+                Components.ThemedText {
                     anchors.verticalCenter: parent.verticalCenter
                     text: Math.round(root.osdValue * 100)
                     color: root.osdColor
-                    font.family: AppConfig.Config.theme.fontFamily
                     font.pixelSize: AppConfig.Config.theme.fontSizeDefault
                 }
             }

@@ -7,6 +7,7 @@ QtObject {
     readonly property var theme: Core.ConfigService.section("theme", {
         fontFamily: "DejaVuSansM Nerd Font",
         barHeight: 22,
+        barRadius: 5,
         surfaceRadius: 14,
         cardRadiusSmall: 8,
         surfaceOpacity: 0.8,

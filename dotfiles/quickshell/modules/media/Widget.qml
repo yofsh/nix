@@ -1,5 +1,6 @@
 import QtQuick
 import Quickshell.Io
+import "../../components" as Components
 import "../../helpers" as Helpers
 import "../../config" as AppConfig
 
@@ -93,10 +94,9 @@ Item {
         }
     }
 
-    Text {
+    Components.ThemedText {
         id: infoMeasure
         text: root.trackInfo
-        font.family: AppConfig.Config.theme.fontFamily
         font.pixelSize: AppConfig.Config.theme.fontSizeDefault
         visible: false
     }
@@ -106,12 +106,11 @@ Item {
         anchors.verticalCenter: parent.verticalCenter
         spacing: 0
 
-        Text {
+        Components.ThemedText {
             id: iconText
             anchors.verticalCenter: parent.verticalCenter
             text: root.displayText
             color: Helpers.Colors.media
-            font.family: AppConfig.Config.theme.fontFamily
             font.pixelSize: 15
         }
 
@@ -146,14 +145,13 @@ Item {
                 NumberAnimation { duration: 200; easing.type: Easing.OutCubic }
             }
 
-            Text {
+            Components.ThemedText {
                 id: infoText
                 anchors.verticalCenter: parent.verticalCenter
                 anchors.left: parent.left
                 anchors.leftMargin: 4
                 text: root.trackInfo
                 color: Helpers.Colors.media
-                font.family: AppConfig.Config.theme.fontFamily
                 font.pixelSize: AppConfig.Config.theme.fontSizeDefault
             }
         }

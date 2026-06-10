@@ -180,12 +180,11 @@ PanelWindow {
                 anchors.centerIn: parent
                 spacing: AppConfig.Config.theme.spacingSmall
 
-                Text {
+                Components.ThemedText {
                     id: iconText
                     anchors.horizontalCenter: parent.horizontalCenter
                     text: root.displayIcon
                     color: root.displayColor
-                    font.family: AppConfig.Config.theme.fontFamily
                     font.pixelSize: AppConfig.Config.theme.fontSizeDisplayLarge
 
                     Behavior on color {
@@ -193,11 +192,10 @@ PanelWindow {
                     }
                 }
 
-                Text {
+                Components.ThemedText {
                     anchors.horizontalCenter: parent.horizontalCenter
                     text: root.displayText
                     color: root.displayColor
-                    font.family: AppConfig.Config.theme.fontFamily
                     font.pixelSize: AppConfig.Config.theme.fontSizeTitleLarge
                     font.bold: true
 

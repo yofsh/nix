@@ -1,5 +1,6 @@
 import QtQuick
 import Quickshell.Io
+import "../../components" as Components
 import "../../helpers" as Helpers
 import "../../config" as AppConfig
 
@@ -39,19 +40,17 @@ Item {
         spacing: -2
         width: Math.max(memText.implicitWidth, swapText.implicitWidth)
 
-        Text {
+        Components.ThemedText {
             id: memText
             text: root.memPct
             color: Helpers.Colors.memory
-            font.family: AppConfig.Config.theme.fontFamily
             font.pixelSize: AppConfig.Config.theme.fontSizeSmall
         }
 
-        Text {
+        Components.ThemedText {
             id: swapText
             text: root.swapPct
-            color: Helpers.Colors.textMuted
-            font.family: AppConfig.Config.theme.fontFamily
+            muted: true
             font.pixelSize: AppConfig.Config.theme.fontSizeSmall
         }
     }

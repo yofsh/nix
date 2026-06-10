@@ -1,3 +1,5 @@
 singleton Colors 1.0 Colors.qml
 singleton ModuleConfig 1.0 ModuleConfig.qml
 ShellCommand 1.0 ShellCommand.qml
+DaemonFetch 1.0 DaemonFetch.qml
+DaemonStream 1.0 DaemonStream.qml

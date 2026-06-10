@@ -1,5 +1,5 @@
 import QtQuick
-import Quickshell.Io
+import "../../components" as Components
 import "../../helpers" as Helpers
 import "../../config" as AppConfig
 
@@ -46,23 +46,11 @@ Item {
         root.remaining = d.remaining || 0;
     }
 
-    Process {
-        id: stateProc
-        command: ["curl", "-s", "--unix-socket", AppConfig.Config.daemon.socket, "http://d/focus/state"]
-        running: true
-        stdout: StdioCollector {
-            onStreamFinished: {
-                try { root.applyState(JSON.parse(this.text)); } catch (e) {}
-            }
-        }
-    }
-
     // Poll the daemon so changes from elsewhere (popup, overlay) are reflected.
-    Timer {
-        interval: 2000
-        running: true
-        repeat: true
-        onTriggered: stateProc.running = true
+    Helpers.DaemonFetch {
+        path: "/focus/state"
+        intervalMs: 2000
+        onJson: d => root.applyState(d)
     }
 
     // Local 1s tick keeps the countdown smooth between polls.
@@ -81,11 +69,10 @@ Item {
         anchors.centerIn: parent
         spacing: 4
 
-        Text {
+        Components.ThemedText {
             anchors.verticalCenter: parent.verticalCenter
             text: root.paused ? "" : ""   // pause / clock glyphs
             color: root.active ? root.runColor : root.idleColor
-            font.family: AppConfig.Config.theme.fontFamily
             font.pixelSize: AppConfig.Config.theme.fontSizeDefault
         }
 

@@ -1,7 +1,9 @@
 import QtQuick
 import Quickshell
 import Quickshell.Io
+import "../../components" as Components
 import "../../helpers" as Helpers
+import "../../helpers/Format.js" as Format
 
 Item {
     id: root
@@ -79,12 +81,6 @@ Item {
         }
     }
 
-    function formatTime(secs) {
-        var m = Math.floor(secs / 60);
-        var s = secs % 60;
-        return m + ":" + (s < 10 ? "0" : "") + s;
-    }
-
     FileView {
         id: statusFile
         path: root.processingPath
@@ -133,26 +129,24 @@ Item {
         anchors.verticalCenter: parent.verticalCenter
         spacing: 3
 
-        Text {
+        Components.ThemedText {
             anchors.verticalCenter: parent.verticalCenter
             text: root.showCompleted && root.jobCount === 0 ? "\uf00c" : "\uf16a"
             color: root.showCompleted && root.jobCount === 0 ? "#50fa7b" : "#ff0000"
-            font.family: "DejaVuSansM Nerd Font"
             font.pixelSize: 12
         }
 
-        Text {
+        Components.ThemedText {
             anchors.verticalCenter: parent.verticalCenter
             text: {
                 if (root.showCompleted && root.jobCount === 0)
                     return root.recentCompletedCount.toString();
-                var t = root.formatTime(root.elapsed);
+                var t = Format.clock(root.elapsed);
                 if (root.jobCount > 1)
                     return root.jobCount + " " + t;
                 return t;
             }
             color: root.showCompleted && root.jobCount === 0 ? "#50fa7b" : Helpers.Colors.textDefault
-            font.family: "DejaVuSansM Nerd Font"
             font.pixelSize: 10
         }
 
@@ -168,14 +162,13 @@ Item {
                 NumberAnimation { duration: 200; easing.type: Easing.OutCubic }
             }
 
-            Text {
+            Components.ThemedText {
                 id: titleText
                 anchors.verticalCenter: parent.verticalCenter
                 anchors.left: parent.left
                 anchors.leftMargin: 4
                 text: root.activeTitle
-                color: Helpers.Colors.textMuted
-                font.family: "DejaVuSansM Nerd Font"
+                muted: true
                 font.pixelSize: 10
             }
         }

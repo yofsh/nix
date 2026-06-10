@@ -1,7 +1,7 @@
 import QtQuick
 import Quickshell
-import Quickshell.Io
 import "../../helpers" as Helpers
+import "../../helpers/Format.js" as Format
 import "../../components" as Components
 import "../../config" as AppConfig
 
@@ -21,7 +21,6 @@ Item {
     implicitWidth: 720
     implicitHeight: 582  // fits 10 process rows per column (8 → 10)
 
-    readonly property string sock: AppConfig.Config.daemon.socket
     readonly property int maxHistory: 150
 
     // Aggregate state
@@ -51,19 +50,7 @@ Item {
         if (!name) return "?";
         return ("" + name).replace(/^\./, "").replace(/-wrappe?d?$/, "");
     }
-    function fmtBytes(b) {
-        var mb = b / 1048576;
-        if (mb >= 1024) return (mb / 1024).toFixed(1) + " GB";
-        return Math.round(mb) + " MB";
-    }
     function gb(kb) { return (kb / 1048576).toFixed(1); }
-
-    // Adaptive percent: keep small values distinguishable instead of rounding to 0.
-    function fmtPct(v) {
-        if (v >= 10) return Math.round(v).toString();
-        if (v > 0) return v.toFixed(1);
-        return "0";
-    }
 
     // Resolve an app icon from the executable name (cached per name).
     property var iconCache: ({})
@@ -115,8 +102,8 @@ Item {
             // used, and a green/purple split bar proportional to rss vs swap.
             var pctText = "", swapText = "", swap2 = swapOf(e2);
             if (!isCpu) {
-                if (memTotalBytes > 0) pctText = fmtPct(disp / memTotalBytes * 100) + "%";
-                if (swap2 > 0) swapText = "⇅ " + fmtBytes(swap2);
+                if (memTotalBytes > 0) pctText = Format.pct(disp / memTotalBytes * 100) + "%";
+                if (swap2 > 0) swapText = "⇅ " + Format.bytes(swap2);
             }
             out.push({
                 name: prettyName(e2.name),
@@ -126,7 +113,7 @@ Item {
                 splitBar: !isCpu,
                 memFrac: base2 / maxTotal,
                 swapFrac: swap2 / maxTotal,
-                valueText: isCpu ? fmtPct(disp) + "%" : fmtBytes(disp),
+                valueText: isCpu ? Format.pct(disp) + "%" : Format.bytes(disp),
                 pctText: pctText,
                 swapText: swapText
             });
@@ -134,62 +121,48 @@ Item {
         return out;
     }
 
-    function applyLine(line) {
-        if (!line) return;
-        try {
-            var d = JSON.parse(line.trim());
-            if (d.seed) {
-                root.ncpu = d.ncpu || 1;
-                root.memTotalKB = d.memTotalKB || 0;
-                root.swapTotalKB = d.swapTotalKB || 0;
-                var h = [];
-                var arr = d.hist || [];
-                for (var i = 0; i < arr.length; i++)
-                    h.push({ u: arr[i][0], s: arr[i][1], mem: arr[i][2], swap: arr[i][3] });
-                root.history = h;
-            } else if (d.agg) {
-                root.cur = {
-                    u: d.u, s: d.s, mem: d.mem, swap: d.swap, load: d.load,
-                    memUsedKB: d.memUsedKB, swapUsedKB: d.swapUsedKB
-                };
-                var hh = root.history.slice();
-                hh.push({ u: d.u, s: d.s, mem: d.mem, swap: d.swap });
-                if (hh.length > root.maxHistory) hh.shift();
-                root.history = hh;
-            } else if (d.proc) {
-                root.cpuList = d.cpu || [];
-                root.memList = d.mem || [];
-            }
-        } catch (e) { /* ignore partial/parse errors */ }
+    function applyLine(d) {
+        if (!d) return;
+        if (d.seed) {
+            root.ncpu = d.ncpu || 1;
+            root.memTotalKB = d.memTotalKB || 0;
+            root.swapTotalKB = d.swapTotalKB || 0;
+            var h = [];
+            var arr = d.hist || [];
+            for (var i = 0; i < arr.length; i++)
+                h.push({ u: arr[i][0], s: arr[i][1], mem: arr[i][2], swap: arr[i][3] });
+            root.history = h;
+        } else if (d.agg) {
+            root.cur = {
+                u: d.u, s: d.s, mem: d.mem, swap: d.swap, load: d.load,
+                memUsedKB: d.memUsedKB, swapUsedKB: d.swapUsedKB
+            };
+            var hh = root.history.slice();
+            hh.push({ u: d.u, s: d.s, mem: d.mem, swap: d.swap });
+            if (hh.length > root.maxHistory) hh.shift();
+            root.history = hh;
+        } else if (d.proc) {
+            root.cpuList = d.cpu || [];
+            root.memList = d.mem || [];
+        }
     }
 
     // GraphCards repaint themselves via their `series: root.history` binding
     // (onSeriesChanged → requestPaint), so no root-level repaint is needed.
 
     onPopupOpenChanged: {
-        if (popupOpen) {
-            sysStream.running = true;
-        } else {
-            sysStream.running = false;
+        if (!popupOpen) {
             root.cpuList = [];
             root.memList = [];
             root.history = [];
         }
     }
 
-    Process {
-        id: sysStream
-        command: ["curl", "-sN", "--unix-socket", root.sock, "http://d/procmon/sysprocs"]
-        running: false
-        onRunningChanged: if (!running && root.popupOpen) restartTimer.restart()
-        stdout: SplitParser {
-            onRead: data => root.applyLine(data)
-        }
-    }
-    Timer {
-        id: restartTimer
-        interval: 500
-        onTriggered: if (root.popupOpen) sysStream.running = true
+    Helpers.DaemonStream {
+        path: "/procmon/sysprocs"
+        active: root.popupOpen
+        reconnectMs: 500
+        onLine: d => root.applyLine(d)
     }
 
     // ── one summary tile ──
@@ -210,23 +183,20 @@ Item {
             anchors.rightMargin: 12
             spacing: 0
 
-            Text {
+            Components.ThemedText {
                 text: tile.label
-                color: Helpers.Colors.textMuted
-                font.family: AppConfig.Config.theme.fontFamily
+                muted: true
                 font.pixelSize: AppConfig.Config.theme.popupFontSizeTiny
             }
-            Text {
+            Components.ThemedText {
                 text: tile.value
                 color: tile.accent
-                font.family: AppConfig.Config.theme.fontFamily
                 font.pixelSize: AppConfig.Config.theme.popupFontSizeMedium
                 font.bold: true
             }
-            Text {
+            Components.ThemedText {
                 text: tile.sub
-                color: Helpers.Colors.textMuted
-                font.family: AppConfig.Config.theme.fontFamily
+                muted: true
                 font.pixelSize: AppConfig.Config.theme.popupFontSizeTiny
                 opacity: 0.85
             }
@@ -252,18 +222,16 @@ Item {
             anchors.right: parent.right
             anchors.margins: 8
             spacing: 6
-            Text {
+            Components.ThemedText {
                 text: gcard.title
                 color: gcard.accent
-                font.family: AppConfig.Config.theme.fontFamily
                 font.pixelSize: AppConfig.Config.theme.popupFontSizeSmall
                 font.bold: true
             }
-            Text {
+            Components.ThemedText {
                 anchors.verticalCenter: parent.verticalCenter
                 text: gcard.valueText
-                color: Helpers.Colors.textMuted
-                font.family: AppConfig.Config.theme.fontFamily
+                muted: true
                 font.pixelSize: AppConfig.Config.theme.popupFontSizeTiny
             }
         }
@@ -402,57 +370,51 @@ Item {
             anchors.rightMargin: 8
             anchors.verticalCenter: parent.verticalCenter
             spacing: 0
-            Text {
+            Components.ThemedText {
                 anchors.right: parent.right
                 text: pr.valueText
                 color: pr.barColor
-                font.family: AppConfig.Config.theme.fontFamily
                 font.pixelSize: AppConfig.Config.theme.popupFontSizeSmall
                 font.bold: true
             }
-            Text {
+            Components.ThemedText {
                 anchors.right: parent.right
                 visible: pr.swapText !== ""
                 text: pr.swapText
                 color: root.swapColor
-                font.family: AppConfig.Config.theme.fontFamily
                 font.pixelSize: AppConfig.Config.theme.popupFontSizeTiny
             }
         }
-        Text {
+        Components.ThemedText {
             id: cntT
             visible: pr.count > 1
             anchors.right: valueCol.left
             anchors.rightMargin: 8
             anchors.verticalCenter: parent.verticalCenter
             text: "×" + pr.count
-            color: Helpers.Colors.textMuted
+            muted: true
             opacity: 0.7
-            font.family: AppConfig.Config.theme.fontFamily
             font.pixelSize: AppConfig.Config.theme.popupFontSizeTiny
         }
         // % of RAM — vertically centered, mirroring the ×count placement
-        Text {
+        Components.ThemedText {
             id: pctT
             visible: pr.pctText !== ""
             anchors.right: cntT.visible ? cntT.left : valueCol.left
             anchors.rightMargin: 8
             anchors.verticalCenter: parent.verticalCenter
             text: pr.pctText
-            color: Helpers.Colors.textMuted
-            font.family: AppConfig.Config.theme.fontFamily
+            muted: true
             font.pixelSize: AppConfig.Config.theme.popupFontSizeTiny
         }
-        Text {
+        Components.ThemedText {
             anchors.left: pIcon.visible ? pIcon.right : parent.left
             anchors.leftMargin: pIcon.visible ? 7 : 10
             anchors.right: pctT.visible ? pctT.left : (cntT.visible ? cntT.left : valueCol.left)
             anchors.rightMargin: 8
             anchors.verticalCenter: parent.verticalCenter
             text: pr.pname
-            color: Helpers.Colors.textDefault
             elide: Text.ElideRight
-            font.family: AppConfig.Config.theme.fontFamily
             font.pixelSize: AppConfig.Config.theme.popupFontSizeSmall
         }
     }
@@ -474,19 +436,16 @@ Item {
             Row {
                 id: titleRow
                 spacing: 8
-                Text {
+                Components.ThemedText {
                     anchors.verticalCenter: parent.verticalCenter
                     text: pcol.title
                     color: pcol.accentColor
-                    font.family: AppConfig.Config.theme.fontFamily
-                    font.pixelSize: AppConfig.Config.theme.popupFontSizeBody
                     font.bold: true
                 }
-                Text {
+                Components.ThemedText {
                     anchors.verticalCenter: parent.verticalCenter
                     text: pcol.hint
-                    color: Helpers.Colors.textMuted
-                    font.family: AppConfig.Config.theme.fontFamily
+                    muted: true
                     font.pixelSize: AppConfig.Config.theme.popupFontSizeTiny
                 }
             }
@@ -498,11 +457,10 @@ Item {
             }
         }
         Rectangle { width: pcol.width; height: 1; color: Qt.rgba(1, 1, 1, 0.07) }
-        Text {
+        Components.ThemedText {
             visible: pcol.rows.length === 0
             text: "Sampling…"
-            color: Helpers.Colors.textMuted
-            font.family: AppConfig.Config.theme.fontFamily
+            muted: true
             font.pixelSize: AppConfig.Config.theme.popupFontSizeSmall
         }
         Repeater {
@@ -540,45 +498,27 @@ Item {
                 anchors.left: parent.left
                 anchors.verticalCenter: parent.verticalCenter
                 spacing: 8
-                Text {
+                Components.ThemedText {
                     anchors.verticalCenter: parent.verticalCenter
                     text: String.fromCodePoint(0xF04C5)   // nf-md-speedometer
                     color: Helpers.Colors.accent
-                    font.family: AppConfig.Config.theme.fontFamily
                     font.pixelSize: 18
                 }
-                Text {
+                Components.ThemedText {
                     anchors.verticalCenter: parent.verticalCenter
                     text: "System"
-                    color: Helpers.Colors.textDefault
-                    font.family: AppConfig.Config.theme.fontFamily
                     font.pixelSize: AppConfig.Config.theme.popupFontSizeMedium
                     font.bold: true
                 }
             }
             // Window toggle (applies to the Top CPU / Top Memory lists)
-            Rectangle {
+            Components.ToggleChip {
                 anchors.right: parent.right
                 anchors.verticalCenter: parent.verticalCenter
-                width: winChipText.implicitWidth + 16
                 height: 18
-                radius: 4
-                color: winChipMa.containsMouse ? Qt.rgba(1, 1, 1, 0.12) : Qt.rgba(1, 1, 1, 0.06)
-                Text {
-                    id: winChipText
-                    anchors.centerIn: parent
-                    text: (root.procNow ? "now" : "1 min avg") + "  ⇄"
-                    color: Helpers.Colors.textMuted
-                    font.family: AppConfig.Config.theme.fontFamily
-                    font.pixelSize: AppConfig.Config.theme.popupFontSizeTiny
-                }
-                MouseArea {
-                    id: winChipMa
-                    anchors.fill: parent
-                    hoverEnabled: true
-                    cursorShape: Qt.PointingHandCursor
-                    onClicked: root.procNow = !root.procNow
-                }
+                label: (root.procNow ? "now" : "1 min avg") + "  ⇄"
+                fontSize: AppConfig.Config.theme.popupFontSizeTiny
+                onToggled: root.procNow = !root.procNow
             }
         }
 

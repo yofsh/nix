@@ -1,6 +1,7 @@
 import QtQuick
 import Quickshell.Io
 import Quickshell.Services.Pipewire
+import "../../components" as Components
 import "../../helpers" as Helpers
 import "../../config" as AppConfig
 
@@ -38,28 +39,24 @@ Item {
         anchors.verticalCenter: parent.verticalCenter
         spacing: 2
 
-        Text {
+        Components.ThemedText {
             anchors.verticalCenter: parent.verticalCenter
             visible: !root.isMuted
             text: root.vol + ""
-            color: Helpers.Colors.textDefault
-            font.family: AppConfig.Config.theme.fontFamily
             font.pixelSize: AppConfig.Config.theme.fontSizeDefault
         }
 
-        Text {
+        Components.ThemedText {
             anchors.verticalCenter: parent.verticalCenter
             text: root.volumeIcon()
             color: root.isMuted ? Helpers.Colors.mutedRed : Helpers.Colors.textDefault
-            font.family: AppConfig.Config.theme.fontFamily
             font.pixelSize: AppConfig.Config.theme.fontSizeIcon
         }
 
-        Text {
+        Components.ThemedText {
             anchors.verticalCenter: parent.verticalCenter
             text: root.micIcon()
             color: root.sourceMuted ? Helpers.Colors.mutedRed : Helpers.Colors.textDefault
-            font.family: AppConfig.Config.theme.fontFamily
             font.pixelSize: AppConfig.Config.theme.fontSizeIcon
         }
     }
@@ -101,7 +98,7 @@ Item {
 
     Process {
         id: btProc
-        command: ["bash", "-c", "bt-audio-status toggle &> /dev/null"]
+        command: ["bash", "-c", "bt-audio toggle &> /dev/null"]
         running: false
     }
 }

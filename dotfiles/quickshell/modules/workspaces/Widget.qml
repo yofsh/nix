@@ -1,6 +1,7 @@
 import QtQuick
 import Quickshell
 import Quickshell.Hyprland
+import "../../components" as Components
 import "../../helpers" as Helpers
 import "../../config" as AppConfig
 
@@ -11,7 +12,7 @@ Item {
 
     Rectangle {
         anchors.fill: parent
-        radius: AppConfig.Config.theme.interactiveHoverRadius || 4
+        radius: AppConfig.Config.theme.interactiveHoverRadius
         color: Qt.rgba(Helpers.Colors.accent.r, Helpers.Colors.accent.g, Helpers.Colors.accent.b, 0.14)
     }
 
@@ -138,13 +139,12 @@ Item {
                     }
                 }
 
-                Text {
+                Components.ThemedText {
                     id: wsLabel
                     anchors.horizontalCenter: parent.horizontalCenter
                     anchors.verticalCenter: parent.verticalCenter
                     anchors.verticalCenterOffset: modelData.isSpecial ? 1 : 0
                     text: modelData.label
-                    font.family: AppConfig.Config.theme.fontFamily
                     font.pixelSize: modelData.isSpecial ? AppConfig.Config.theme.fontSizeIcon : AppConfig.Config.theme.fontSizeDefault
                     font.bold: true
                     horizontalAlignment: Text.AlignHCenter

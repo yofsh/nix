@@ -1,6 +1,7 @@
 import QtQuick
-import Quickshell.Io
+import "../../components" as Components
 import "../../helpers" as Helpers
+import "../../helpers/Format.js" as Format
 import "../../config" as AppConfig
 
 Item {
@@ -26,42 +27,22 @@ Item {
         return Helpers.Colors.accent;
     }
 
-    function formatTime(seconds) {
-        var h = Math.floor(seconds / 3600);
-        var m = Math.floor((seconds % 3600) / 60);
-        if (h > 0) return h + "h" + (m > 0 ? m + "m" : "");
-        return m + "m";
-    }
-
-    Process {
-        id: loadProc
-        command: ["curl", "-s", "--unix-socket", AppConfig.Config.daemon.socket, "http://d/usage/today"]
-        running: true
-        stdout: StdioCollector {
-            onStreamFinished: {
-                try {
-                    var d = JSON.parse(this.text);
-                    if (d) {
-                        if (d.totalSeconds > 0) root.totalText = root.formatTime(d.totalSeconds);
-                        root.streakSeconds = d.streakSeconds || 0;
-                        root.onBreak = !!d.onBreak;
-                    }
-                } catch (e) {}
+    Helpers.DaemonFetch {
+        path: "/usage/today"
+        intervalMs: 30000
+        onJson: d => {
+            if (d) {
+                if (d.totalSeconds > 0) root.totalText = Format.hoursMinutes(d.totalSeconds);
+                root.streakSeconds = d.streakSeconds || 0;
+                root.onBreak = !!d.onBreak;
             }
         }
-    }
-
-    Timer {
-        interval: 30000
-        running: true
-        repeat: true
-        onTriggered: loadProc.running = true
     }
 
     // Grouped translucent background, matching the other bar widgets (gold tint).
     Rectangle {
         anchors.fill: parent
-        radius: AppConfig.Config.theme.interactiveHoverRadius || 4
+        radius: AppConfig.Config.theme.interactiveHoverRadius
         color: Qt.rgba(0.95, 0.7, 0.2, 0.12)
     }
 
@@ -70,23 +51,20 @@ Item {
         spacing: -2
 
         // Top line — total time on PC today
-        Text {
+        Components.ThemedText {
             id: topLine
             anchors.horizontalCenter: parent.horizontalCenter
             text: root.totalText
-            color: Helpers.Colors.textDefault
-            font.family: AppConfig.Config.theme.fontFamily
             font.pixelSize: AppConfig.Config.theme.fontSizeSmall
             font.bold: true
         }
 
         // Bottom line — current streak since last break (or "break" when idle)
-        Text {
+        Components.ThemedText {
             id: botLine
             anchors.horizontalCenter: parent.horizontalCenter
-            text: root.onBreak ? "break" : root.formatTime(root.streakSeconds)
+            text: root.onBreak ? "break" : Format.hoursMinutes(root.streakSeconds)
             color: root.streakColor
-            font.family: AppConfig.Config.theme.fontFamily
             font.pixelSize: AppConfig.Config.theme.fontSizeSmall
             font.bold: true
         }

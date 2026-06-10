@@ -1,5 +1,6 @@
 import QtQuick
 import Quickshell.Io
+import "../../components" as Components
 import "../../helpers" as Helpers
 
 Item {
@@ -131,19 +132,17 @@ Item {
         spacing: -2
         width: Math.max(pingLabel.implicitWidth, pingValue.implicitWidth)
 
-        Text {
+        Components.ThemedText {
             id: pingLabel
             text: root.maxPing > 0 ? root.maxPing : "..."
-            color: Helpers.Colors.textMuted
-            font.family: "DejaVuSansM Nerd Font"
+            muted: true
             font.pixelSize: 10
         }
 
-        Text {
+        Components.ThemedText {
             id: pingValue
             text: root.currentPing === -1 ? "..." : (root.currentPing === -2 ? "×" : root.currentPing)
             color: root.pingColor
-            font.family: "DejaVuSansM Nerd Font"
             font.pixelSize: 10
         }
     }

@@ -1,5 +1,4 @@
 import Quickshell
-import Quickshell.Io
 import Quickshell.Wayland
 import QtQuick
 import "../../helpers" as Helpers
@@ -13,7 +12,6 @@ Item {
     id: root
 
     property var context: null
-    readonly property string sock: AppConfig.Config.daemon.socket
 
     property bool active: false
     property bool paused: false
@@ -63,33 +61,21 @@ Item {
 
     // Popup open/close/toggle IPC is provided by Core.PackagePopup.
 
-    Process {
-        id: stateProc
-        command: ["curl", "-s", "--unix-socket", root.sock, "http://d/focus/state"]
-        running: true
-        stdout: StdioCollector {
-            onStreamFinished: { try { root.applyState(JSON.parse(this.text)); } catch (e) {} }
-        }
+    Helpers.DaemonFetch {
+        id: stateFetch
+        path: "/focus/state"
+        intervalMs: 2000
+        onJson: data => root.applyState(data)
     }
 
-    Process {
-        id: actionProc
-        running: false
-        stdout: StdioCollector {
-            onStreamFinished: { try { root.applyState(JSON.parse(this.text)); } catch (e) {} }
-        }
+    Helpers.DaemonFetch {
+        id: actionFetch
+        onJson: data => root.applyState(data)
     }
 
     function action(path) {
-        actionProc.command = ["curl", "-s", "--unix-socket", root.sock, "http://d/focus/" + path];
-        actionProc.running = true;
-    }
-
-    Timer {
-        interval: 2000
-        running: true
-        repeat: true
-        onTriggered: stateProc.running = true
+        actionFetch.path = "/focus/" + path;
+        actionFetch.reload();
     }
 
     Timer {
@@ -100,7 +86,7 @@ Item {
             if (root.endAt > 0) {
                 var r = Math.max(0, Math.round(root.endAt - Date.now() / 1000));
                 root.remaining = r;
-                if (r === 0) stateProc.running = true; // let the daemon clear it
+                if (r === 0) stateFetch.reload(); // let the daemon clear it
             }
         }
     }

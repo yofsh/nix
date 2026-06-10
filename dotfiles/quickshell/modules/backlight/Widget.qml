@@ -1,5 +1,6 @@
 import QtQuick
 import Quickshell.Io
+import "../../components" as Components
 import "../../helpers" as Helpers
 import "../../config" as AppConfig
 
@@ -63,12 +64,11 @@ Item {
         }
     }
 
-    Text {
+    Components.ThemedText {
         id: blText
         anchors.verticalCenter: parent.verticalCenter
         text: root.displayText
         color: Helpers.Colors.backlight
-        font.family: AppConfig.Config.theme.fontFamily
         font.pixelSize: AppConfig.Config.theme.fontSizeDefault
     }
 

@@ -1,5 +1,6 @@
 import QtQuick
 import Quickshell.Io
+import "../../components" as Components
 import "../../helpers" as Helpers
 import "../../config" as AppConfig
 
@@ -34,7 +35,7 @@ Item {
 
     Rectangle {
         anchors.fill: parent
-        radius: AppConfig.Config.theme.interactiveHoverRadius || 4
+        radius: AppConfig.Config.theme.interactiveHoverRadius
         color: Qt.rgba(0.55, 0.3, 0.85, 0.12)
     }
 
@@ -189,19 +190,13 @@ Item {
         }
     }
 
-    Process {
-        id: khalProc
-        command: ["curl", "-s", "--unix-socket", AppConfig.Config.daemon.socket, "http://d/calendar/agenda?span=2d"]
-        running: true
-        stdout: StdioCollector {
-            onStreamFinished: {
-                try {
-                    var data = JSON.parse(this.text);
-                    if (Array.isArray(data)) {
-                        root.events = data;
-                        root.pickCurrent();
-                    }
-                } catch (e) {}
+    Helpers.DaemonFetch {
+        id: khalFetch
+        path: "/calendar/agenda?span=2d"
+        onJson: data => {
+            if (Array.isArray(data)) {
+                root.events = data;
+                root.pickCurrent();
             }
         }
     }
@@ -213,7 +208,7 @@ Item {
         onTriggered: {
             root.now = Date.now();
             root.pickCurrent();
-            khalProc.running = true;
+            khalFetch.reload();
         }
     }
 
@@ -226,19 +221,16 @@ Item {
             anchors.verticalCenter: parent.verticalCenter
             spacing: -2
 
-            Text {
+            Components.ThemedText {
                 anchors.horizontalCenter: parent.horizontalCenter
-                color: Helpers.Colors.textDefault
-                font.family: AppConfig.Config.theme.fontFamily
                 font.pixelSize: AppConfig.Config.theme.fontSizeDefault
                 font.bold: true
                 text: root.timeStr
             }
 
-            Text {
+            Components.ThemedText {
                 anchors.horizontalCenter: parent.horizontalCenter
-                color: Helpers.Colors.textMuted
-                font.family: AppConfig.Config.theme.fontFamily
+                muted: true
                 font.pixelSize: AppConfig.Config.theme.fontSizeSmall
                 text: root.dateStr
             }
@@ -249,30 +241,26 @@ Item {
             spacing: 4
             visible: root.current !== null
 
-            Text {
+            Components.ThemedText {
                 anchors.verticalCenter: parent.verticalCenter
                 text: root.current ? root.calendarInfo(root.current.calendar).icon : ""
                 color: root.current ? root.calendarInfo(root.current.calendar).color : Helpers.Colors.textMuted
-                font.family: AppConfig.Config.theme.fontFamily
                 font.pixelSize: AppConfig.Config.theme.fontSizeDefault
             }
 
-            Text {
+            Components.ThemedText {
                 visible: root.eventMode() !== "later"
                 anchors.verticalCenter: parent.verticalCenter
                 text: root.current ? (root.current.title || "").trim() : ""
-                color: Helpers.Colors.textDefault
-                font.family: AppConfig.Config.theme.fontFamily
                 font.pixelSize: AppConfig.Config.theme.fontSizeSmall
                 elide: Text.ElideRight
                 maximumLineCount: 1
             }
 
-            Text {
+            Components.ThemedText {
                 anchors.verticalCenter: parent.verticalCenter
                 text: root.statusText()
                 color: root.statusColor()
-                font.family: AppConfig.Config.theme.fontFamily
                 font.pixelSize: AppConfig.Config.theme.fontSizeSmall
                 font.bold: true
             }

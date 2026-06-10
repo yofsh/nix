@@ -1,5 +1,4 @@
 import Quickshell
-import Quickshell.Io
 import Quickshell.Wayland
 import QtQuick
 import QtQuick.Controls
@@ -22,8 +21,6 @@ Item {
         : mainCol.implicitHeight + 32
 
     // Keyboard input for the label field is enabled via PackagePopup { keyboardFocus: true }.
-
-    readonly property string sock: AppConfig.Config.daemon.socket
 
     // -- active focus state --
     property bool active: false
@@ -77,11 +74,8 @@ Item {
     }
 
     onPopupOpenChanged: {
-        if (popupOpen) {
-            stateProc.running = true;
-            historyProc.running = true;
+        if (popupOpen)
             autofocusTimer.restart();
-        }
     }
 
     // Autofocus the goal field once the surface has grabbed keyboard focus.
@@ -97,51 +91,41 @@ Item {
 
     // -- daemon I/O ----------------------------------------------------------
 
-    Process {
-        id: stateProc
-        command: ["curl", "-s", "--unix-socket", root.sock, "http://d/focus/state"]
-        running: false
-        stdout: StdioCollector {
-            onStreamFinished: { try { root.applyState(JSON.parse(this.text)); } catch (e) {} }
-        }
+    Helpers.DaemonFetch { // state, refreshed every 2s while open
+        path: "/focus/state"
+        active: root.popupOpen
+        intervalMs: 2000
+        onJson: data => root.applyState(data)
     }
 
-    Process {
-        id: historyProc
-        command: ["curl", "-s", "--unix-socket", root.sock, "http://d/focus/history?limit=12"]
-        running: false
-        stdout: StdioCollector {
-            onStreamFinished: {
-                try {
-                    var d = JSON.parse(this.text);
-                    root.sessions = d.sessions || [];
-                } catch (e) {}
-            }
-        }
+    Helpers.DaemonFetch {
+        id: historyFetch
+        path: "/focus/history?limit=12"
+        active: root.popupOpen
+        onJson: data => { root.sessions = data.sessions || []; }
     }
 
-    Process {
-        id: actionProc
-        running: false
-        stdout: StdioCollector {
-            onStreamFinished: {
-                try { root.applyState(JSON.parse(this.text)); } catch (e) {}
-                historyProc.running = true;
-            }
+    Helpers.DaemonFetch {
+        id: actionFetch
+        fetchOnActive: false
+        onJson: data => {
+            root.applyState(data);
+            historyFetch.reload();
         }
+        onFailed: historyFetch.reload()
     }
 
     function action(path) {
-        actionProc.command = ["curl", "-s", "--unix-socket", root.sock, "http://d/focus/" + path];
-        actionProc.running = true;
+        actionFetch.path = "/focus/" + path;
+        actionFetch.reload();
     }
 
     function startFocus(secs) {
-        var url = "http://d/focus/start?duration=" + secs;
+        var url = "/focus/start?duration=" + secs;
         var lbl = labelField.text.trim();
         if (lbl.length > 0) url += "&label=" + encodeURIComponent(lbl);
-        actionProc.command = ["curl", "-s", "--unix-socket", root.sock, url];
-        actionProc.running = true;
+        actionFetch.path = url;
+        actionFetch.reload();
         labelField.text = "";
         minutesField.text = "";
         root.popupOpen = false;
@@ -150,13 +134,6 @@ Item {
     function startCustom() {
         var m = parseInt(minutesField.text, 10);
         if (m > 0) root.startFocus(m * 60);
-    }
-
-    Timer { // refresh while open
-        interval: 2000
-        running: root.popupOpen
-        repeat: true
-        onTriggered: stateProc.running = true
     }
 
     Timer { // local countdown tick
@@ -188,40 +165,24 @@ Item {
                 spacing: 12
 
                 // Header
-                Item {
-                    width: parent.width
-                    height: 22
-                    Text {
-                        anchors.left: parent.left
-                        anchors.verticalCenter: parent.verticalCenter
-                        text: " Focus"
-                        color: Helpers.Colors.accent
-                        font.family: AppConfig.Config.theme.fontFamily
-                        font.pixelSize: AppConfig.Config.theme.popupFontSizeMedium
-                        font.bold: true
-                    }
-                    Text {
+                Components.PopupHeader {
+                    title: " Focus"
+                    Components.ThemedText {
                         visible: !root.active
-                        anchors.right: parent.right
-                        anchors.verticalCenter: parent.verticalCenter
                         text: "ready"
-                        color: Helpers.Colors.textMuted
-                        font.family: AppConfig.Config.theme.fontFamily
+                        muted: true
                         font.pixelSize: AppConfig.Config.theme.popupFontSizeSmall
                     }
                     Rectangle {
                         visible: root.active
-                        anchors.right: parent.right
-                        anchors.verticalCenter: parent.verticalCenter
                         width: 30
                         height: 22
                         radius: 5
                         color: hdrPause.containsMouse ? Qt.rgba(1, 1, 1, 0.14) : Qt.rgba(1, 1, 1, 0.06)
-                        Text {
+                        Components.ThemedText {
                             anchors.centerIn: parent
                             text: root.paused ? "\uf04b" : "\uf04c"   // play / pause
                             color: root.paused ? Helpers.Colors.accent : Helpers.Colors.textDefault
-                            font.family: AppConfig.Config.theme.fontFamily
                             font.pixelSize: AppConfig.Config.theme.popupFontSizeSmall
                         }
                         MouseArea {
@@ -234,7 +195,7 @@ Item {
                     }
                 }
 
-                Rectangle { width: parent.width; height: 1; color: Qt.rgba(1, 1, 1, 0.08) }
+                Components.Divider {}
 
                 // ── Active session view ──────────────────────────────────
                 Column {
@@ -242,20 +203,16 @@ Item {
                     spacing: 10
                     visible: root.active
 
-                    Text {
+                    Components.ThemedText {
                         width: parent.width
                         text: root.label.length > 0 ? root.label : "Focus session"
-                        color: Helpers.Colors.textDefault
-                        font.family: AppConfig.Config.theme.fontFamily
-                        font.pixelSize: AppConfig.Config.theme.popupFontSizeBody
                         elide: Text.ElideRight
                     }
 
-                    Text {
+                    Components.ThemedText {
                         anchors.horizontalCenter: parent.horizontalCenter
                         text: root.fmt(root.remaining)
                         color: root.paused ? Helpers.Colors.textMuted : Helpers.Colors.accent
-                        font.family: AppConfig.Config.theme.fontFamily
                         font.pixelSize: AppConfig.Config.theme.fontSizeDisplay
                         font.bold: true
                     }
@@ -280,11 +237,10 @@ Item {
                         height: 30
                         radius: 6
                         color: hovC.containsMouse ? Qt.rgba(0.96, 0.24, 0.24, 0.25) : Qt.rgba(1, 1, 1, 0.06)
-                        Text {
+                        Components.ThemedText {
                             anchors.centerIn: parent
                             text: "\uf00d Cancel"
                             color: hovC.containsMouse ? Helpers.Colors.mutedRed : Helpers.Colors.textDefault
-                            font.family: AppConfig.Config.theme.fontFamily
                             font.pixelSize: AppConfig.Config.theme.popupFontSizeSmall
                         }
                         MouseArea {
@@ -333,29 +289,12 @@ Item {
 
                         Repeater {
                             model: root.presets
-                            Rectangle {
+                            Components.ActionButton {
                                 required property var modelData
                                 width: (root.width - 32 - 8 * 2) / 3
                                 height: 34
-                                radius: 6
-                                color: presetHov.containsMouse ? Qt.rgba(0.05, 0.69, 0.29, 0.30) : Qt.rgba(1, 1, 1, 0.06)
-                                border.color: presetHov.containsMouse ? Helpers.Colors.accent : "transparent"
-                                border.width: 1
-                                Text {
-                                    anchors.centerIn: parent
-                                    text: modelData.label
-                                    color: presetHov.containsMouse ? Helpers.Colors.accent : Helpers.Colors.textDefault
-                                    font.family: AppConfig.Config.theme.fontFamily
-                                    font.pixelSize: AppConfig.Config.theme.popupFontSizeBody
-                                    font.bold: true
-                                }
-                                MouseArea {
-                                    id: presetHov
-                                    anchors.fill: parent
-                                    hoverEnabled: true
-                                    cursorShape: Qt.PointingHandCursor
-                                    onClicked: root.startFocus(modelData.secs)
-                                }
+                                label: modelData.label
+                                onClicked: root.startFocus(modelData.secs)
                             }
                         }
                     }
@@ -390,53 +329,30 @@ Item {
                             }
                         }
                     
-                        Rectangle {
+                        Components.ActionButton {
                             width: 72
                             height: 32
-                            radius: 6
+                            label: "Start"
+                            fontSize: AppConfig.Config.theme.popupFontSizeSmall
                             opacity: (parseInt(minutesField.text, 10) > 0) ? 1 : 0.4
-                            color: startHov.containsMouse ? Qt.rgba(0.05, 0.69, 0.29, 0.30) : Qt.rgba(1, 1, 1, 0.06)
-                            border.color: startHov.containsMouse ? Helpers.Colors.accent : "transparent"
-                            border.width: 1
-                            Text {
-                                anchors.centerIn: parent
-                                text: "Start"
-                                color: startHov.containsMouse ? Helpers.Colors.accent : Helpers.Colors.textDefault
-                                font.family: AppConfig.Config.theme.fontFamily
-                                font.pixelSize: AppConfig.Config.theme.popupFontSizeSmall
-                                font.bold: true
-                            }
-                            MouseArea {
-                                id: startHov
-                                anchors.fill: parent
-                                hoverEnabled: true
-                                cursorShape: Qt.PointingHandCursor
-                                onClicked: root.startCustom()
-                            }
+                            onClicked: root.startCustom()
                         }
                     }
                 }
 
-                Rectangle { width: parent.width; height: 1; color: Qt.rgba(1, 1, 1, 0.08) }
+                Components.Divider {}
 
                 // ── Recent sessions ──────────────────────────────────────
                 Column {
                     width: parent.width
                     spacing: 5
 
-                    Text {
-                        text: "Recent"
-                        color: Helpers.Colors.textMuted
-                        font.family: AppConfig.Config.theme.fontFamily
-                        font.pixelSize: AppConfig.Config.theme.popupFontSizeSmall
-                        font.bold: true
-                    }
+                    Components.SectionLabel { text: "Recent" }
 
-                    Text {
+                    Components.ThemedText {
                         visible: root.sessions.length === 0
                         text: "No sessions yet"
-                        color: Helpers.Colors.textMuted
-                        font.family: AppConfig.Config.theme.fontFamily
+                        muted: true
                         font.pixelSize: AppConfig.Config.theme.popupFontSizeSmall
                     }
 
@@ -447,7 +363,7 @@ Item {
                             width: parent.width
                             spacing: 8
 
-                            Text {
+                            Components.ThemedText {
                                 width: 16
                                 horizontalAlignment: Text.AlignHCenter
                                 text: {
@@ -465,31 +381,26 @@ Item {
                                     default: return Helpers.Colors.textMuted;
                                     }
                                 }
-                                font.family: AppConfig.Config.theme.fontFamily
                                 font.pixelSize: AppConfig.Config.theme.popupFontSizeSmall
                                 anchors.verticalCenter: parent.verticalCenter
                             }
-                            Text {
+                            Components.ThemedText {
                                 text: root.clock(modelData.start)
-                                color: Helpers.Colors.textMuted
-                                font.family: AppConfig.Config.theme.fontFamily
+                                muted: true
                                 font.pixelSize: AppConfig.Config.theme.popupFontSizeSmall
                                 width: 40
                                 anchors.verticalCenter: parent.verticalCenter
                             }
-                            Text {
+                            Components.ThemedText {
                                 text: modelData.label && modelData.label.length > 0 ? modelData.label : "Focus"
-                                color: Helpers.Colors.textDefault
-                                font.family: AppConfig.Config.theme.fontFamily
                                 font.pixelSize: AppConfig.Config.theme.popupFontSizeSmall
                                 width: parent.width - 16 - 40 - 8 * 3 - 56
                                 elide: Text.ElideRight
                                 anchors.verticalCenter: parent.verticalCenter
                             }
-                            Text {
+                            Components.ThemedText {
                                 text: root.fmt(modelData.status === "completed" ? modelData.plannedSeconds : modelData.activeSeconds)
                                 color: Qt.rgba(1, 1, 1, 0.6)
-                                font.family: AppConfig.Config.theme.fontFamily
                                 font.pixelSize: AppConfig.Config.theme.popupFontSizeSmall
                                 width: 56
                                 horizontalAlignment: Text.AlignRight

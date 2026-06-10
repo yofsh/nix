@@ -1,5 +1,6 @@
 import QtQuick
 import Quickshell.Services.UPower
+import "../../components" as Components
 import "../../helpers" as Helpers
 
 Item {
@@ -25,20 +26,18 @@ Item {
         anchors.verticalCenter: parent.verticalCenter
         spacing: 1
 
-        Text {
+        Components.ThemedText {
             anchors.verticalCenter: parent.verticalCenter
             text: root.hbOutput
             color: Helpers.Colors.headsetBattery
-            font.family: "DejaVuSansM Nerd Font"
             font.pixelSize: 12
         }
 
-        Text {
+        Components.ThemedText {
             id: hbText
             anchors.verticalCenter: parent.verticalCenter
             text: "󰥰"
             color: Helpers.Colors.headsetBattery
-            font.family: "DejaVuSansM Nerd Font"
             font.pixelSize: 12
         }
     }

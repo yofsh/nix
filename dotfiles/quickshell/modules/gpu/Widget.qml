@@ -1,5 +1,6 @@
 import QtQuick
 import Quickshell.Io
+import "../../components" as Components
 import "../../helpers" as Helpers
 import "../../config" as AppConfig
 
@@ -63,17 +64,15 @@ Item {
         spacing: 3
         z: 1
 
-        Text {
+        Components.ThemedText {
             text: root.usagePercent
             color: AppConfig.Config.gpu.usageColor
-            font.family: AppConfig.Config.theme.fontFamily
             font.pixelSize: AppConfig.Config.theme.fontSizeSmall
         }
 
-        Text {
+        Components.ThemedText {
             text: root.memPercent
             color: AppConfig.Config.gpu.memColor
-            font.family: AppConfig.Config.theme.fontFamily
             font.pixelSize: AppConfig.Config.theme.fontSizeSmall
         }
     }

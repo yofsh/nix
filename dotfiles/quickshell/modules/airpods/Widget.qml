@@ -1,5 +1,6 @@
 import QtQuick
 import Quickshell.Io
+import "../../components" as Components
 import "../../helpers" as Helpers
 
 Item {
@@ -84,45 +85,41 @@ Item {
         spacing: 3
         height: parent.height
 
-        Text {
+        Components.ThemedText {
             height: parent.height
             verticalAlignment: Text.AlignVCenter
             text: root.battLeft + ""
             visible: root.battLeft > 0
             color: root.battColor(root.battLeft)
             opacity: root.leftInEar ? 1.0 : 0.4
-            font.family: "DejaVuSansM Nerd Font"
             font.pixelSize: 12
         }
 
-        Text {
+        Components.ThemedText {
             height: parent.height
             verticalAlignment: Text.AlignVCenter
             text: root.battRight + ""
             visible: root.battRight > 0
             color: root.battColor(root.battRight)
             opacity: root.rightInEar ? 1.0 : 0.4
-            font.family: "DejaVuSansM Nerd Font"
             font.pixelSize: 12
         }
 
-        Text {
+        Components.ThemedText {
             height: parent.height
             verticalAlignment: Text.AlignVCenter
             text: root.battCase + ""
             visible: root.battCase > 0
             color: root.battColor(root.battCase)
-            font.family: "DejaVuSansM Nerd Font"
             font.pixelSize: 12
         }
 
         // Active mode icon (always visible)
-        Text {
+        Components.ThemedText {
             height: parent.height
             verticalAlignment: Text.AlignVCenter
             text: root.noiseModeIcon(root.noiseMode)
             color: root.noiseModeColor(root.noiseMode)
-            font.family: "DejaVuSansM Nerd Font"
             font.pixelSize: 14
         }
 
@@ -165,17 +162,15 @@ Item {
                             anchors.verticalCenter: parent.verticalCenter
                             spacing: 1
 
-                            Text {
+                            Components.ThemedText {
                                 text: modeItem.modelData.icon
                                 color: root.noiseModeColor(modeItem.modelData.value)
-                                font.family: "DejaVuSansM Nerd Font"
                                 font.pixelSize: 14
                             }
 
-                            Text {
+                            Components.ThemedText {
                                 text: modeItem.modelData.short
                                 color: root.noiseModeColor(modeItem.modelData.value)
-                                font.family: "DejaVuSansM Nerd Font"
                                 font.pixelSize: 10
                             }
                         }
@@ -195,14 +190,12 @@ Item {
             Row {
                 required property var modelData
                 spacing: 1
-                Text {
+                Components.ThemedText {
                     text: modelData.icon
-                    font.family: "DejaVuSansM Nerd Font"
                     font.pixelSize: 14
                 }
-                Text {
+                Components.ThemedText {
                     text: modelData.short
-                    font.family: "DejaVuSansM Nerd Font"
                     font.pixelSize: 10
                 }
             }

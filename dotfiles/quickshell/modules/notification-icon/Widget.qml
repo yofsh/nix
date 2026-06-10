@@ -1,4 +1,5 @@
 import QtQuick
+import "../../components" as Components
 import "../../helpers" as Helpers
 import "../../config" as AppConfig
 import "../../core" as Core
@@ -25,12 +26,11 @@ Item {
         return "󰂚";
     }
 
-    Text {
+    Components.ThemedText {
         id: notifText
         anchors.verticalCenter: parent.verticalCenter
         text: root.displayText
         color: root.dnd ? "#ff9800" : root.count > 0 ? Helpers.Colors.textDefault : Helpers.Colors.textMuted
-        font.family: AppConfig.Config.theme.fontFamily
         font.pixelSize: AppConfig.Config.theme.fontSizeIcon
     }
 

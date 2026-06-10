@@ -165,23 +165,18 @@ Item {
                         // Group header
                         Row {
                             spacing: 6
-                            Text {
+                            Components.ThemedText {
                                 text: modelData.icon
-                                color: Helpers.Colors.textDefault
-                                font.family: AppConfig.Config.theme.fontFamily
                                 font.pixelSize: 14
                             }
-                            Text {
+                            Components.ThemedText {
                                 text: modelData.label
-                                color: Helpers.Colors.textDefault
-                                font.family: AppConfig.Config.theme.fontFamily
                                 font.pixelSize: 14
                                 font.bold: true
                             }
-                            Text {
+                            Components.ThemedText {
                                 text: modelData.chipId
-                                color: Helpers.Colors.textMuted
-                                font.family: AppConfig.Config.theme.fontFamily
+                                muted: true
                                 font.pixelSize: 14
                                 visible: modelData.chipId !== ""
                                 anchors.baseline: parent.children[1].baseline
@@ -194,19 +189,17 @@ Item {
 
                             Row {
                                 spacing: 8
-                                Text {
+                                Components.ThemedText {
                                     width: 100
                                     text: modelData.label
-                                    color: Helpers.Colors.textMuted
-                                    font.family: AppConfig.Config.theme.fontFamily
+                                    muted: true
                                     font.pixelSize: 14
                                     elide: Text.ElideRight
                                 }
-                                Text {
+                                Components.ThemedText {
                                     width: 70
                                     text: modelData.value
                                     color: root.readingColor(modelData.type, modelData.raw)
-                                    font.family: AppConfig.Config.theme.fontFamily
                                     font.pixelSize: 14
                                     horizontalAlignment: Text.AlignRight
                                 }
