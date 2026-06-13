@@ -62,6 +62,10 @@ export async function startDaemon() {
       const handler = routeTable.get(path);
       if (handler) return handler(req);
 
+      if (path === "routes") {
+        return Response.json([...routeTable.keys()].sort());
+      }
+
       if (path === "" || path === "health") {
         return Response.json({
           ok: true,

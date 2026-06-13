@@ -1,5 +1,6 @@
 //@ pragma IconTheme Papirus
 import Quickshell
+import Quickshell.Io
 import QtQuick
 import "../helpers" as Helpers
 import "../popups" as Popups
@@ -67,6 +68,20 @@ PanelWindow {
     component BarPopup: Core.PackagePopup {
         screen: bar.screen
         barWindow: bar
+    }
+
+    // Dev tooling: the bar surface spans the monitor but the visible content is
+    // this centered block — expose its window-relative geometry over IPC so
+    // .claude/skills/qs/scripts/qs-popup can screenshot exactly the visible bar.
+    // First screen only (duplicate IpcHandler targets would collide).
+    Loader {
+        active: bar.screen === Quickshell.screens[0]
+        sourceComponent: IpcHandler {
+            target: "bar"
+            function geometry(): string {
+                return JSON.stringify({ x: barContent.x, y: barContent.y, w: barContent.width, h: barContent.height, screen: bar.screenName });
+            }
+        }
     }
 
     Item {

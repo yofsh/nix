@@ -1,0 +1,119 @@
+#!/usr/bin/env bash
+# qs-popup — open a quickshell popup, auto-detect its window geometry, screenshot it.
+#
+# Detection: popup windows are layershell surfaces (namespace "quickshell") that
+# only exist while open. Snapshot `hyprctl layers -j` with the popup closed,
+# open it via `qs ipc call <module> open`, and the one new surface is the popup —
+# its x/y/w/h feed grim directly.
+#
+#   qs-popup <module> [-o out.png] [-d delay] [-k]   open, screenshot, close
+#   qs-popup <module> -r                             re-shoot last region (no toggle)
+#   qs-popup bar [left|center|right]                 screenshot the bar (or a third of it)
+#   qs-popup list                                    list popup-capable modules
+set -euo pipefail
+
+usage() {
+    cat <<'EOF'
+usage: qs-popup <module> [options]
+       qs-popup bar [left|center|right] [options]
+       qs-popup list
+
+options:
+  -o, --out FILE     output png (default /tmp/qs-popup-<module>.png)
+  -d, --delay SEC    extra wait after the window appears, for data to load (default 0.5)
+  -k, --keep         leave the popup open after the screenshot
+  -r, --reshoot      screenshot the cached region from the last run without
+                     toggling the popup (use after -k + manual interaction)
+  -z, --zoom N       upscale the png N× (magick) — small captures like the bar
+                     are unreadable otherwise
+EOF
+    exit "${1:-0}"
+}
+
+[[ $# -ge 1 ]] || usage 1
+[[ $1 == -h || $1 == --help ]] && usage 0
+
+if [[ $1 == list ]]; then
+    # popup-capable = IPC target exposing open(): void
+    qs ipc show | awk '/^target /{t=$2} /function open\(\): void/{print t}' | sort
+    exit 0
+fi
+
+module=$1; shift
+section=""
+if [[ $module == bar && $# -gt 0 && $1 =~ ^(left|center|right)$ ]]; then
+    section=$1; shift
+fi
+
+out="/tmp/qs-popup-$module${section:+-$section}.png"
+delay=0.5
+keep=0
+reshoot=0
+zoom=1
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        -o|--out) out=$2; shift 2 ;;
+        -d|--delay) delay=$2; shift 2 ;;
+        -k|--keep) keep=1; shift ;;
+        -r|--reshoot) reshoot=1; shift ;;
+        -z|--zoom) zoom=$2; shift 2 ;;
+        -h|--help) usage 0 ;;
+        *) echo "unknown option: $1" >&2; usage 1 ;;
+    esac
+done
+
+geom_cache="${XDG_RUNTIME_DIR:-/tmp}/qs-popup-$module.geom"
+
+qs_layers() { hyprctl layers -j | jq -c '[.. | objects | select(.namespace? == "quickshell")]'; }
+
+if [[ $module == bar ]]; then
+    # the bar is the full-monitor-width quickshell surface; popups/overlays are narrower
+    monw=$(hyprctl monitors -j | jq '.[0].width')
+    read -r gx gy gw gh < <(qs_layers | jq -r --argjson mw "$monw" \
+        '[.[] | select(.w == $mw)] | first // empty | "\(.x) \(.y) \(.w) \(.h)"')
+    [[ -n ${gx:-} ]] || { echo "bar surface not found" >&2; exit 1; }
+    # the surface spans the monitor but the visible content is a centered block;
+    # BarHost exposes its window-relative rect via `qs ipc call bar geometry`
+    if geo=$(qs ipc call bar geometry 2>/dev/null) && [[ $geo == \{* ]]; then
+        read -r cx cy cw ch < <(jq -r '"\(.x|floor) \(.y|floor) \(.w|ceil) \(.h|ceil)"' <<<"$geo")
+        gx=$((gx + cx)); gy=$((gy + cy)); gw=$cw; gh=$ch
+    fi
+    case $section in
+        left)   gw=$((gw / 3)) ;;
+        center) gx=$((gx + gw / 3)); gw=$((gw / 3)) ;;
+        right)  gx=$((gx + 2 * gw / 3)); gw=$((gw / 3)) ;;
+    esac
+elif (( reshoot )); then
+    [[ -f $geom_cache ]] || { echo "no cached geometry for '$module' — run without -r first" >&2; exit 1; }
+    read -r gx gy gw gh < "$geom_cache"
+else
+    # start from closed so the open transition creates a fresh surface to diff
+    qs ipc call "$module" close >/dev/null 2>&1 || { echo "no popup IPC target '$module' (see: qs-popup list)" >&2; exit 1; }
+    sleep 0.2
+    before=$(qs_layers | jq -c '[.[].address]')
+
+    qs ipc call "$module" open >/dev/null
+
+    gx=""
+    for _ in $(seq 1 40); do
+        sleep 0.05
+        new=$(qs_layers | jq -r --argjson seen "$before" \
+            '[.[] | select(.address as $a | $seen | index($a) | not)] | first // empty | "\(.x) \(.y) \(.w) \(.h)"')
+        if [[ -n $new ]]; then read -r gx gy gw gh <<<"$new"; break; fi
+    done
+    [[ -n $gx ]] || { echo "popup window for '$module' never appeared" >&2; exit 1; }
+
+    printf '%s %s %s %s\n' "$gx" "$gy" "$gw" "$gh" > "$geom_cache"
+    sleep "$delay"   # let DaemonFetch/content populate
+fi
+
+grim -g "$gx,$gy ${gw}x${gh}" "$out"
+if [[ $zoom != 1 ]]; then
+    magick "$out" -scale "$((zoom * 100))%" "$out"
+fi
+
+if [[ $module != bar ]] && (( !keep && !reshoot )); then
+    qs ipc call "$module" close >/dev/null
+fi
+
+echo "$out"

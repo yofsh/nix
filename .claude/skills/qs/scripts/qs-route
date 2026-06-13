@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+# qs-route — query the qs-daemon unix socket without remembering curl flags.
+#
+#   qs-route                     daemon health (modules, uptime)
+#   qs-route list                all registered routes
+#   qs-route <mod/sub>           GET a route, jq-pretty-printed
+#   qs-route -s <mod/sub> [N]    consume a line stream; print N lines then exit (default 5)
+#   qs-route -p <mod/sub> [body] POST to a route
+set -euo pipefail
+
+SOCK="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/qs-daemon.sock"
+CURL=(curl -s --max-time 5 --unix-socket "$SOCK")
+
+case ${1:-health} in
+    -h|--help) sed -n '2,9p' "$0"; exit 0 ;;
+    list)
+        "${CURL[@]}" http://d/routes | jq -r '.[]'
+        ;;
+    -s|--stream)
+        path=${2:?usage: qs-route -s <mod/sub> [lines]}
+        lines=${3:-5}
+        curl -sN --max-time 30 --unix-socket "$SOCK" "http://d/$path" | head -n "$lines"
+        ;;
+    -p|--post)
+        path=${2:?usage: qs-route -p <mod/sub> [body]}
+        body=${3:-}
+        if [[ -n $body ]]; then
+            "${CURL[@]}" -X POST -H 'content-type: application/json' -d "$body" "http://d/$path"
+        else
+            "${CURL[@]}" -X POST "http://d/$path"
+        fi
+        echo
+        ;;
+    health|"")
+        "${CURL[@]}" http://d/health | jq .
+        ;;
+    *)
+        out=$("${CURL[@]}" "http://d/$1")
+        jq . <<<"$out" 2>/dev/null || printf '%s\n' "$out"
+        ;;
+esac
