@@ -69,16 +69,16 @@ hl.config({
     dim_strength = 0.25,
     blur         = {
       enabled           = true,
-      size              = 4,
-      passes            = 5,
-      brightness        = 0.7,
+      size              = 9,
+      passes            = 3,
+      brightness        = 0.8,
       vibrancy_darkness = 1,
     },
     shadow       = { enabled = false },
   },
 
   animations = {
-    enabled = true,
+    enabled = false,
   },
 
   input      = {
