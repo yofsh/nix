@@ -47,9 +47,17 @@ Item {
         restartTimer.restart();          // start fresh next tick
     }
 
-    on_TargetChanged: reload()
+    // _target's binding settles during construction ("" -> path), which would
+    // fire reload() once per tree build — every hot reload — even with
+    // fetchOnActive: false. Fatal for POST/toggle fetchers, so gate on completion.
+    property bool _completed: false
+    on_TargetChanged: if (_completed) reload()
     onActiveChanged: if (active && fetchOnActive) reload()
-    Component.onCompleted: if (active && fetchOnActive) reload()
+    Component.onCompleted: {
+        _completed = true;
+        if (active && fetchOnActive)
+            reload();
+    }
 
     Timer {
         id: restartTimer
