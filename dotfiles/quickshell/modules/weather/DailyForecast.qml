@@ -15,6 +15,7 @@ Row {
         Item {
             width: root.width / Math.max(popup.dailyData.length, 1)
             height: parent.height
+            clip: true
 
             Column {
                 anchors.centerIn: parent
@@ -22,30 +23,30 @@ Row {
 
                 // Line 1: icon, day, high/low
                 Row {
-                    spacing: 4
+                    spacing: 3
                     anchors.horizontalCenter: parent.horizontalCenter
 
                     Components.ThemedText {
                         text: popup.weatherIcon(modelData.code, true)
-                        font.pixelSize: 16
+                        font.pixelSize: 15
                     }
                     Components.ThemedText {
                         property string dn: popup.dayName(modelData.date)
-                        text: dn
+                        text: dn === "Tomorrow" ? "Tmrw" : dn
                         color: dn === "Today" ? Helpers.Colors.textDefault : Helpers.Colors.textMuted
-                        font.pixelSize: 14
+                        font.pixelSize: 13
                         font.bold: dn === "Today"
                     }
                     Components.ThemedText {
                         text: modelData.high + "°"
                         color: popup.tempColor(modelData.high)
-                        font.pixelSize: 14
+                        font.pixelSize: 13
                         font.bold: true
                     }
                     Components.ThemedText {
                         text: modelData.low + "°"
                         muted: true
-                        font.pixelSize: 14
+                        font.pixelSize: 13
                     }
                 }
 
@@ -54,15 +55,15 @@ Row {
                     anchors.horizontalCenter: parent.horizontalCenter
                     text: "󰖗 " + modelData.precip.toFixed(1) + " mm"
                     color: modelData.precip > 0 ? "#64b5f6" : Helpers.Colors.textMuted
-                    font.pixelSize: 12
+                    font.pixelSize: 11
                 }
 
                 // Line 3: wind
                 Components.ThemedText {
                     anchors.horizontalCenter: parent.horizontalCenter
                     text: "󰖝 " + modelData.windMax + " km/h " + popup.windArrow(modelData.windDir)
-                    color: modelData.windMax > 50 ? "#ff9800" : Helpers.Colors.textMuted
-                    font.pixelSize: 12
+                    color: modelData.windMax >= 30 ? popup.windColor(modelData.windMax) : Helpers.Colors.textMuted
+                    font.pixelSize: 11
                 }
             }
         }

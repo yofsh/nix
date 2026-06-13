@@ -275,8 +275,8 @@ Item {
             }
 
             // ── "Now" marker ──
-            var now = new Date();
-            var nowIso = now.toISOString().substring(0, 13);
+            // hourlyTime is local ISO (timezone=auto) — compare with a local key, not UTC
+            var nowIso = popup.localHourStr(new Date());
             var nowIdx = -1;
             for (var in2 = 0; in2 < times.length; in2++) {
                 if (times[in2].substring(0, 13) === nowIso) { nowIdx = in2; break; }
