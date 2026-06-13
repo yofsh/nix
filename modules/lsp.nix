@@ -1,5 +1,6 @@
 { pkgs, ... }: {
   environment.systemPackages = with pkgs; [
+    tree-sitter # nvim-treesitter (main branch) compiles parsers via `tree-sitter build`
     stylua
     nixfmt
     shfmt
