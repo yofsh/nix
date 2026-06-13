@@ -82,7 +82,6 @@
             nixpkgs.overlays = [
               inputs.quickshell.overlays.default
               (_: prev: { monique = prev.callPackage ./pkgs/monique.nix { }; })
-              (_: prev: { openldap = prev.openldap.overrideAttrs (_: { doCheck = false; }); })
             ];
           }
         ];
@@ -97,8 +96,6 @@
           {
             nixpkgs.overlays = [
               inputs.quickshell.overlays.default
-              # openldap's syncrepl test is flaky and breaks bottles' dep chain (same fix as ares)
-              (_: prev: { openldap = prev.openldap.overrideAttrs (_: { doCheck = false; }); })
             ];
           }
         ];
