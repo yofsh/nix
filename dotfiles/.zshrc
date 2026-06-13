@@ -15,86 +15,18 @@ ec() {
   nvim nixos/configuration.nix
 }
 
-# Exclusive Claude/foot background colors for important project roots.
-# Deepest matching root wins. Keep colors as 6-char hex without '#'.
-typeset -gA FOOT_BG_DIR_COLORS=(
-  "$HOME/nix"     "211734"
-  "$HOME/servant" "342117"
-)
-
-# Colour saturation when emitting a background colour: 100 = unchanged, lower =
-# greyer/softer, higher = more vivid (deeper). Applied to table + hashed colours.
-typeset -g FOOT_BG_SATURATION=130
-
-_foot_bg_reserved_color() {
-  local color="${1:l}"
-  local reserved
-  for reserved in ${(v)FOOT_BG_DIR_COLORS}; do
-    [[ "$color" == "${reserved:l}" ]] && return 0
-  done
-  return 1
+# Per-directory project colour + emoji live in `dir-badge` (bin/utils) — the
+# single source of truth shared with the Claude Code statusline block and the
+# zellij tab name. Edit roots/saturation/emoji there, not here.
+#
+# Foot background tinting disabled for now — the statusline bar carries the
+# per-dir colour. Re-enable by uncommenting the printf bodies below.
+_foot_bg_from_dir() {
+  :  # printf '\e]11;#%s\e\\' "$(dir-badge color "${1:-$PWD}")"
 }
-
-_foot_bg_predefined_for_dir() {
-  local dir="${${1:-$PWD}:A}" root best="" best_color=""
-  for root in ${(k)FOOT_BG_DIR_COLORS}; do
-    root="${root:A}"
-    if [[ "$dir" == "$root" || "$dir" == "$root"/* ]]; then
-      if (( ${#root} > ${#best} )); then
-        best="$root"
-        best_color="${FOOT_BG_DIR_COLORS[$root]}"
-      fi
-    fi
-  done
-  [[ -n "$best_color" ]] && print -r -- "$best_color"
+_foot_bg_reset() {
+  :  # printf '\e]11;#050505\e\\'
 }
-
-_foot_bg_hashed_color_for_dir() {
-  local seed="${${1:-$PWD}:A}"
-  local dec=$((16#$(printf '%s' "$seed" | md5sum | cut -c1-8)))
-  local hue=$((dec % 360))
-  local v=50 frac r g b color tries=0
-
-  while (( tries < 360 )); do
-    frac=$(( (hue % 60) * v / 60 ))
-    case $((hue / 60)) in
-      0) r=$v;          g=$frac;       b=0 ;;
-      1) r=$((v-frac)); g=$v;          b=0 ;;
-      2) r=0;           g=$v;          b=$frac ;;
-      3) r=0;           g=$((v-frac)); b=$v ;;
-      4) r=$frac;       g=0;           b=$v ;;
-      5) r=$v;          g=0;           b=$((v-frac)) ;;
-    esac
-    color=$(printf '%02x%02x%02x' $((r+3)) $((g+3)) $((b+3)))
-    _foot_bg_reserved_color "$color" || { print -r -- "$color"; return; }
-    hue=$(((hue + 1) % 360))
-    tries=$((tries + 1))
-  done
-
-  print -r -- "$color"
-}
-
-_foot_bg_color_for_dir() {
-  _foot_bg_predefined_for_dir "$1" || _foot_bg_hashed_color_for_dir "$1"
-}
-
-# Scale each channel's distance from the brightest one (HSV "value"): pulling
-# toward it greys the colour out (<100), pushing away deepens it (>100). The
-# brightest channel is the anchor, so hue and overall brightness stay put.
-_foot_bg_desaturate() {
-  local hex="${1:l}"
-  local r=$((16#${hex:0:2})) g=$((16#${hex:2:2})) b=$((16#${hex:4:2}))
-  local mx=$r d=$((100 - FOOT_BG_SATURATION))
-  (( g > mx )) && mx=$g
-  (( b > mx )) && mx=$b
-  r=$(( r + (mx - r) * d / 100 )); (( r < 0 )) && r=0; (( r > 255 )) && r=255
-  g=$(( g + (mx - g) * d / 100 )); (( g < 0 )) && g=0; (( g > 255 )) && g=255
-  b=$(( b + (mx - b) * d / 100 )); (( b < 0 )) && b=0; (( b > 255 )) && b=255
-  printf '%02x%02x%02x' $r $g $b
-}
-
-_foot_bg_from_dir() { printf '\e]11;#%s\e\\' "$(_foot_bg_desaturate "$(_foot_bg_color_for_dir "${1:-$PWD}")")" }
-_foot_bg_reset() { printf '\e]11;#050505\e\\' }
 
 _cc_run_claude_direct() {
   _foot_bg_from_dir "$PWD"
@@ -180,7 +112,7 @@ cc() {
 
   local dir="${PWD:A}"
   local session="$(_cc_new_zellij_session_name "$dir")"
-  local tab_name="$(_cc_git_aware_name "$dir")"
+  local tab_name="$(dir-badge emoji "$dir") $(_cc_git_aware_name "$dir")"
 
   zellij attach --create-background "$session" || return $?
   zellij -s "$session" action new-tab --cwd "$dir" --name "$tab_name" --close-on-exit -- zsh -ic '_cc_run_claude_direct "$@"' cc-claude "$@" >/dev/null || return $?

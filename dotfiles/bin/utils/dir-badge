@@ -1,0 +1,142 @@
+#!/usr/bin/env bash
+# Deterministic per-directory "badge" — a colour and an emoji derived from the
+# directory path. Single source of truth for the project identity shown in the
+# foot OSC-11 background (.zshrc _foot_bg_from_dir), the zellij tab name, and the
+# Claude Code statusline block.
+#
+#   dir-badge color [dir]   -> 6-char hex, no '#'  (desaturated; == foot bg)
+#   dir-badge emoji [dir]   -> one emoji glyph
+#   dir-badge both  [dir]   -> "<emoji>\t<hex>"     (default)
+#
+# The colour algorithm is a faithful port of the old zsh _foot_bg_* helpers so
+# the statusline swatch matches the actual window background pixel-for-pixel.
+set -u
+
+# Important project roots get a fixed colour + emoji (deepest match wins).
+# colour = 6-char hex without '#'. Keep emoji to a single VS16-free codepoint so
+# it stays one cell wide in the zellij tab bar.
+declare -A ROOT_COLOR=(
+  ["$HOME/nix"]="211734"
+  ["$HOME/servant"]="342117"
+)
+declare -A ROOT_EMOJI=(
+  ["$HOME/nix"]="🧊"
+  ["$HOME/servant"]="🔩"
+)
+
+# Colour saturation: 100 = unchanged, lower = greyer, higher = more vivid.
+SATURATION=130
+
+# Emoji pool for everything else. Single-codepoint, no variation selectors, so
+# every glyph is a predictable double-width cell.
+EMOJI=(🦊 🐢 🐙 🦉 🦋 🐝 🐳 🦓 🦒 🦔 🐧 🦜 🦅 🐡 🦈 🦞 🦀 🐌 🐞 🦗 \
+       🌵 🌲 🌴 🍁 🍄 🌻 🌷 🍀 🍉 🍇 🍒 🍑 🥝 🥑 🌽 🥕 🌰 🍕 🍩 🧀 \
+       🚀 🛸 🪐 🔮 🎲 🧭 🧩 🎯 🗿 🎈 🎁 🪁 ⚓ 🧨 💡 🔔 🎸 🥁 🛹 🪀)
+
+resolve() { realpath -m -- "$1" 2>/dev/null || printf '%s' "$1"; }
+
+# Longest-matching configured root → "color emoji" (empty if no match).
+_root_match() {
+  local dir root rroot best="" bc="" be=""
+  dir=$(resolve "$1")
+  for root in "${!ROOT_COLOR[@]}"; do
+    rroot=$(resolve "$root")
+    if [[ "$dir" == "$rroot" || "$dir" == "$rroot"/* ]] && (( ${#rroot} > ${#best} )); then
+      best="$rroot"; bc="${ROOT_COLOR[$root]}"; be="${ROOT_EMOJI[$root]}"
+    fi
+  done
+  [[ -n "$best" ]] && printf '%s %s' "$bc" "$be"
+}
+
+_is_root_color() {
+  local c="${1,,}" v
+  for v in "${ROOT_COLOR[@]}"; do [[ "$c" == "${v,,}" ]] && return 0; done
+  return 1
+}
+
+_hash8() { printf '%s' "$1" | md5sum | cut -c1-8; }
+
+# Hashed colour for an (already resolved) path: hue from the path hash, HSV with
+# a fixed low value, nudged off any reserved root colour.
+_hashed_color() {
+  local seed="$1" dec hue v=50 frac r g b color tries=0
+  dec=$((16#$(_hash8 "$seed")))
+  hue=$((dec % 360))
+  while (( tries < 360 )); do
+    frac=$(( (hue % 60) * v / 60 ))
+    case $((hue / 60)) in
+      0) r=$v;          g=$frac;       b=0 ;;
+      1) r=$((v-frac)); g=$v;          b=0 ;;
+      2) r=0;           g=$v;          b=$frac ;;
+      3) r=0;           g=$((v-frac)); b=$v ;;
+      4) r=$frac;       g=0;           b=$v ;;
+      5) r=$v;          g=0;           b=$((v-frac)) ;;
+    esac
+    color=$(printf '%02x%02x%02x' $((r+3)) $((g+3)) $((b+3)))
+    _is_root_color "$color" || { printf '%s' "$color"; return; }
+    hue=$(( (hue + 1) % 360 )); tries=$((tries + 1))
+  done
+  printf '%s' "$color"
+}
+
+# Scale each channel's distance from the brightest one; pulling toward it greys
+# the colour out (<100), pushing away deepens it (>100). Hue/brightness stay put.
+_desaturate() {
+  local hex="${1,,}"
+  local r=$((16#${hex:0:2})) g=$((16#${hex:2:2})) b=$((16#${hex:4:2}))
+  local mx=$r d=$((100 - SATURATION))
+  (( g > mx )) && mx=$g
+  (( b > mx )) && mx=$b
+  r=$(( r + (mx - r) * d / 100 )); (( r < 0 )) && r=0; (( r > 255 )) && r=255
+  g=$(( g + (mx - g) * d / 100 )); (( g < 0 )) && g=0; (( g > 255 )) && g=255
+  b=$(( b + (mx - b) * d / 100 )); (( b < 0 )) && b=0; (( b > 255 )) && b=255
+  printf '%02x%02x%02x' "$r" "$g" "$b"
+}
+
+# Push the colour to full brightness while preserving hue: scale every channel
+# so the brightest one hits 255. Vivid, readable on a dark bar.
+_brighten() {
+  local hex="${1,,}"
+  local r=$((16#${hex:0:2})) g=$((16#${hex:2:2})) b=$((16#${hex:4:2}))
+  local mx=$r
+  (( g > mx )) && mx=$g
+  (( b > mx )) && mx=$b
+  (( mx == 0 )) && mx=1
+  r=$(( r * 255 / mx )); g=$(( g * 255 / mx )); b=$(( b * 255 / mx ))
+  printf '%02x%02x%02x' "$r" "$g" "$b"
+}
+
+dir_color() {
+  local c e
+  read -r c e <<<"$(_root_match "$1")"
+  [[ -n "$c" ]] || c=$(_hashed_color "$(resolve "$1")")
+  _desaturate "$c"
+}
+
+dir_bright() {
+  local c e
+  read -r c e <<<"$(_root_match "$1")"
+  [[ -n "$c" ]] || c=$(_hashed_color "$(resolve "$1")")
+  _brighten "$c"
+}
+
+dir_emoji() {
+  local c e
+  read -r c e <<<"$(_root_match "$1")"
+  if [[ -n "$e" ]]; then printf '%s' "$e"; return; fi
+  local dec=$((16#$(_hash8 "$(resolve "$1")")))
+  printf '%s' "${EMOJI[$(( dec % ${#EMOJI[@]} ))]}"
+}
+
+mode="both"
+case "${1:-}" in
+  color|bright|emoji|both) mode="$1"; shift ;;
+esac
+dir="${1:-$PWD}"
+
+case "$mode" in
+  color)  dir_color "$dir" ;;
+  bright) dir_bright "$dir" ;;
+  emoji)  dir_emoji "$dir" ;;
+  both)   printf '%s\t%s' "$(dir_emoji "$dir")" "$(dir_color "$dir")" ;;
+esac
