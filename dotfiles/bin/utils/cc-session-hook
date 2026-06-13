@@ -32,21 +32,28 @@ fi
 # timing rule below.
 prevState=""
 prevStart=""
+prevStopped="false"
 if [[ -f $file ]]; then
   prevState="$(jq -r '.state // empty' "$file" 2>/dev/null)"
   prevStart="$(jq -r '.startTs // empty' "$file" 2>/dev/null)"
+  prevStopped="$(jq -r '.stopped // false' "$file" 2>/dev/null)"
+  [[ $prevStopped == true ]] || prevStopped=false
 fi
 
+# stopped: the last turn ended via Stop and no new prompt since — i.e. the
+# session has genuinely *completed* work (vs idle-since-start or interrupted).
+# The daemon uses it to green-border the window.
+stopped=false
 case $event in
   UserPromptSubmit) state=working ;;
-  Stop)             state=idle ;;
+  Stop)             state=idle; stopped=true ;;
   Notification)
     # Claude fires a Notification both for a real mid-turn block (e.g. a
     # permission request, while it was working) and as a plain 60s idle nudge
     # ("waiting for your input", after it already Stopped). Use timing, not the
     # message text: only treat it as needs-input if Claude was working.
     if [[ $prevState == working ]]; then state=attention
-    elif [[ -n $prevState ]]; then state=$prevState   # idle stays stopped
+    elif [[ -n $prevState ]]; then state=$prevState; stopped=$prevStopped   # idle stays stopped
     else state=idle; fi
     ;;
   *) state=idle ;;            # SessionStart and anything else
@@ -68,9 +75,10 @@ jq -n \
   --arg pane "${ZELLIJ_PANE_ID:-}" \
   --arg state "$state" \
   --arg message "$message" \
+  --argjson stopped "$stopped" \
   --argjson ts "$now" \
   --argjson startTs "$start" \
-  '{sessionId:$sid, cwd:$cwd, transcript:$transcript, zellij:$zellij, pane:$pane, state:$state, message:$message, ts:$ts, startTs:$startTs}' \
+  '{sessionId:$sid, cwd:$cwd, transcript:$transcript, zellij:$zellij, pane:$pane, state:$state, message:$message, stopped:$stopped, ts:$ts, startTs:$startTs}' \
   >"$file.tmp" 2>/dev/null && mv -f "$file.tmp" "$file" 2>/dev/null
 
 exit 0

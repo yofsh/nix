@@ -1,4 +1,4 @@
-import { readdirSync, readFileSync, statSync, unlinkSync, watch, readlinkSync, openSync, readSync, closeSync } from "fs";
+import { readdirSync, readFileSync, statSync, unlinkSync, watch, readlinkSync, openSync, readSync, closeSync, writeFileSync, mkdirSync } from "fs";
 import { join, basename } from "path";
 import type { DaemonModule, DaemonContext } from "../types.ts";
 import { run, nowSec, closeControllers } from "../util.ts";
@@ -54,6 +54,7 @@ interface SessionFile {
   pane: string;
   state: string;
   message: string;
+  stopped: boolean; // last turn ended via Stop, no new prompt since
   ts: number;
   startTs: number;
   mtime: number;
@@ -97,6 +98,7 @@ interface Session {
   tokens: number; // cumulative tokens for the session (from its transcript)
   model: string; // last model used in the session
   hooked: boolean;
+  done: boolean; // completed a turn and is waiting — drives the green window border
 }
 
 // Title glyph → coarse state. The spinner cycles through braille frames
@@ -165,6 +167,7 @@ export function create(): DaemonModule {
           pane: String(d.pane ?? ""),
           state: d.state || "idle",
           message: d.message || "",
+          stopped: !!d.stopped,
           ts: d.ts || mtime,
           startTs: d.startTs || d.ts || mtime,
           mtime,
@@ -325,6 +328,10 @@ export function create(): DaemonModule {
         tokens: file ? tokenCache.get(file.transcript)?.tokens ?? 0 : 0,
         model: file ? tokenCache.get(file.transcript)?.model ?? "" : "",
         hooked: !!file,
+        // "done" requires a real Stop (file.stopped), not just idle — so a fresh
+        // session or an ESC-interrupted one never shows the green border. The
+        // glyph overrides above already cleared state if Claude resumed.
+        done: state === "idle" && !!file?.stopped,
       });
     }
 
@@ -351,7 +358,82 @@ export function create(): DaemonModule {
     }
 
     snapshot = { sessions, counts };
+    syncBorders();
     broadcast();
+  }
+
+  // ── per-state window border ─────────────────────────────────────────────────
+  // Paint a coloured border on each Claude Code window reflecting its session
+  // state: blue = working, orange = waiting for input, green = done (completed a
+  // turn, idle). border_size is 0 globally and is a *static* window rule (only
+  // applied at window open), so a tag+rule can't add a border to an already-open
+  // window. The set_prop dispatcher CAN mutate a live window, so we drive it
+  // directly. hyprctl clients doesn't report per-window set_prop overrides, so
+  // state isn't diffable from the outside — we track the colour we last pushed per
+  // address and only dispatch on a change. An unknown address (fresh, or
+  // post-restart) counts as changed, so a restart re-asserts borders next tick.
+  // Catppuccin Latte (darker) palette, so the three read as a consistent set.
+  const BORDER = {
+    working: "rgba(1e66f5ff)", // blue
+    attention: "rgba(fe640bff)", // orange — waiting for feedback
+    done: "rgba(40a02bff)", // green — completed a turn
+  } as const;
+  const borderState = new Map<string, string>(); // address → colour currently shown ("" = none)
+
+  // Feature toggle, persisted across daemon restarts/reboots so the user's choice
+  // sticks. Stored under XDG_STATE_HOME (not runtimeDir, which is wiped on boot).
+  let bordersEnabled = true;
+  const stateHome = process.env.XDG_STATE_HOME || `${process.env.HOME}/.local/state`;
+  const borderCfgPath = `${stateHome}/qs-daemon/claude-border.json`;
+  function loadBorderCfg(): void {
+    try {
+      bordersEnabled = JSON.parse(readFileSync(borderCfgPath, "utf-8")).enabled !== false;
+    } catch {} // missing/garbled → default on
+  }
+  function saveBorderCfg(): void {
+    try {
+      mkdirSync(`${stateHome}/qs-daemon`, { recursive: true });
+      writeFileSync(borderCfgPath, JSON.stringify({ enabled: bordersEnabled }));
+    } catch {}
+  }
+  function setBorder(addr: string, color: string): void {
+    const sp = (prop: string, value: string) =>
+      run(["hyprctl", "dispatch", `hl.dsp.window.set_prop({ window = "address:${addr}", prop = "${prop}", value = ${value} })`], 1500);
+    if (color) {
+      sp("active_border_color", `"${color}"`);
+      sp("inactive_border_color", `"${color}"`);
+      sp("border_size", "2");
+    } else {
+      sp("border_size", "0"); // back to the global 0; colors are then moot
+    }
+    borderState.set(addr, color);
+  }
+  // Window-level border colour from its session(s). A window can host >1 pane;
+  // pick by priority working > attention > done so an active pane always wins.
+  function borderColor(list: Session[]): string {
+    if (list.some((s) => s.state === "working")) return BORDER.working;
+    if (list.some((s) => s.state === "attention")) return BORDER.attention;
+    if (list.some((s) => s.done)) return BORDER.done;
+    return ""; // idle-but-not-done (fresh/interrupted) → no border
+  }
+  function syncBorders(): void {
+    const byAddr = new Map<string, Session[]>();
+    for (const s of snapshot.sessions) {
+      if (!s.address) continue;
+      if (!byAddr.has(s.address)) byAddr.set(s.address, []);
+      byAddr.get(s.address)!.push(s);
+    }
+    // Drop tracked addresses whose window is gone (closed) so the map can't grow
+    // unbounded; the border died with the window, no dispatch needed.
+    for (const addr of borderState.keys()) {
+      if (!byAddr.has(addr)) borderState.delete(addr);
+    }
+    for (const [addr, list] of byAddr) {
+      // When the feature is disabled, force no border (clears any shown).
+      const want = bordersEnabled ? borderColor(list) : "";
+      if ((borderState.get(addr) ?? "") === want) continue;
+      setBorder(addr, want);
+    }
   }
 
   // ── debounced window refresh on Hyprland events ─────────────────────────────
@@ -453,6 +535,7 @@ export function create(): DaemonModule {
 
     init(ctx: DaemonContext) {
       stateDir = `${ctx.runtimeDir}/claude-sessions`;
+      loadBorderCfg();
 
       // Seed the currently-focused window so the "selected" chip is right on start.
       try {
@@ -555,6 +638,21 @@ export function create(): DaemonModule {
         const i = cur < 0 ? (dir > 0 ? 0 : list.length - 1) : (cur + dir + list.length) % list.length;
         focusWindow(list[i].address!);
         return Response.json({ ok: true, focused: list[i].id });
+      },
+
+      // Toggle/set the green "done" window border. ?set=on|off|toggle (default
+      // toggle). Persists the choice and re-syncs immediately (clears live
+      // borders when turning off). GET with no param just reports current state.
+      border: (req: Request) => {
+        const set = new URL(req.url).searchParams.get("set");
+        if (set === "on") bordersEnabled = true;
+        else if (set === "off") bordersEnabled = false;
+        else if (set === "toggle") bordersEnabled = !bordersEnabled;
+        if (set) {
+          saveBorderCfg();
+          syncBorders();
+        }
+        return Response.json({ ok: true, enabled: bordersEnabled });
       },
     },
   };

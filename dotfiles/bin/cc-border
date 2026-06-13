@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+# cc-border [on|off|toggle|status]
+#
+# Turn the green "done" window border (drawn on a Claude Code window that has
+# finished a turn) on or off. Thin client for the qs-daemon `claude-sessions/
+# border` route, which persists the choice across daemon restarts/reboots.
+# No arg = toggle. Prints the resulting state.
+set="${1:-toggle}"
+case $set in
+  on | off | toggle) q="?set=$set" ;;
+  status | "")       q="" ;;
+  *) echo "usage: cc-border [on|off|toggle|status]" >&2; exit 1 ;;
+esac
+
+sock="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/qs-daemon.sock"
+resp="$(curl -s --unix-socket "$sock" "http://d/claude-sessions/border$q" 2>/dev/null)"
+enabled="$(jq -r '.enabled' <<<"$resp" 2>/dev/null)"
+case $enabled in
+  true)  echo "cc done-border: on" ;;
+  false) echo "cc done-border: off" ;;
+  *)     echo "cc-border: daemon not reachable" >&2; exit 1 ;;
+esac
