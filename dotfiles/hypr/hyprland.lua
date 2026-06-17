@@ -261,10 +261,11 @@ end
 hl.workspace_rule({ workspace = "5", layout = "scrolling", layout_opts = { direction = "right" } })
 hl.workspace_rule({ workspace = "6", layout = "lua:columns" })
 
-for i = 7, 10 do
+for i = 8, 10 do
   hl.workspace_rule({ workspace = tostring(i), monitor = laptop, layout_opts = { orientation = "left" } })
 end
-hl.workspace_rule({ workspace = "7", layout = "lua:grid" })
+-- ws7: gaming workspace — default dwindle layout, pinned to the main monitor
+hl.workspace_rule({ workspace = "7", monitor = screen })
 hl.workspace_rule({ workspace = "8", layout = "lua:deck" })
 
 ------------------------------------------------------------------------
@@ -969,7 +970,8 @@ for _, r in ipairs({
   hl.window_rule(r)
 end
 
-hl.window_rule({ match = { class = "^(steam)$" }, workspace = "3" })
+hl.window_rule({ match = { class = "^(steam)$" }, workspace = "7" })
+hl.window_rule({ match = { class = "^(steam_app_\\d+|gamescope)$" }, workspace = "7" })
 hl.window_rule({ match = { class = "^(com\\.gabm\\.satty)$" }, float = true, max_size = { 2592, 1296 } })
 hl.window_rule({ match = { class = "^(imv)$" }, float = true, size = { "monitor_w*0.5", "monitor_h*0.95" } })
 
