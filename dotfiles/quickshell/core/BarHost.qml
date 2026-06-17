@@ -39,6 +39,7 @@ import "../modules/cpu" as M_cpu
 import "../modules/system" as M_system
 import "../modules/temperature" as M_temperature
 import "../modules/wallpaper" as M_wallpaper
+import "../modules/printjobs" as M_printjobs
 
 PanelWindow {
     id: bar
@@ -153,6 +154,7 @@ PanelWindow {
                 width: implicitWidth
                 height: parent.height
 
+                BarWidget { moduleId: "printjobs"; M_printjobs.Widget {} }
                 BarWidget { moduleId: "khal"; M_khal.Widget {} }
                 BarWidget { moduleId: "headset-battery"; M_headset_battery.Widget {} }
                 BarWidget { moduleId: "volume"; M_volume.Widget {} }
@@ -173,6 +175,7 @@ PanelWindow {
     BarPopup { moduleId: "focus";           keyboardFocus: true; M_focus.Popup {} }
     BarPopup { moduleId: "khal";            M_khal.Popup {} }
     BarPopup { moduleId: "network";         ipc: false; M_network.Popup {} }
+    BarPopup { moduleId: "printjobs";       M_printjobs.Popup {} }
     BarPopup { moduleId: "system";          M_system.Popup {} }
     BarPopup { moduleId: "temperature";     M_temperature.Popup {} }
     BarPopup { moduleId: "weather";         M_weather.Popup {} }

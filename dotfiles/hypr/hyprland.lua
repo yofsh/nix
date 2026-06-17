@@ -667,12 +667,13 @@ hl.define_submap("Monitor", function()
     { key = "U",         qs = "app-usage",       desc = "Wellbeing / usage" },
     { key = "C",         qs = "claude-usage",    desc = "Claude usage" },
     { key = "A",         qs = "claude-sessions", desc = "Claude sessions" },
+    { key = "J",         qs = "printjobs",       desc = "Print queue" },
   }) do
     hl.bind(m.key, hl.dsp.exec_cmd("qs ipc call " .. m.qs .. " toggle"), { description = m.desc })
   end
   hl.bind("N", hl.dsp.exec_cmd("qs ipc call network togglePopup"), { description = "Network" })
   hl.bind("escape", function()
-    for _, w in ipairs({ "temperature", "battery", "weather", "system", "cpu", "khal", "network", "focus", "app-usage", "claude-usage", "claude-sessions" }) do
+    for _, w in ipairs({ "temperature", "battery", "weather", "system", "cpu", "khal", "network", "focus", "app-usage", "claude-usage", "claude-sessions", "printjobs" }) do
       hl.dispatch(hl.dsp.exec_cmd("qs ipc call " .. w .. " close"))
     end
     hl.dispatch(hl.dsp.submap("reset"))

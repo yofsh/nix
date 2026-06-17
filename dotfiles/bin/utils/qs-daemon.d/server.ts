@@ -15,6 +15,7 @@ import { create as createAudio } from "./modules/audio.ts";
 import { create as createKeybinds } from "./modules/keybinds.ts";
 import { create as createBluetooth } from "./modules/bluetooth.ts";
 import { create as createProcmon } from "./modules/procmon.ts";
+import { create as createCups } from "./modules/cups.ts";
 
 const SOCKET_NAME = "qs-daemon.sock";
 
@@ -42,6 +43,7 @@ export async function startDaemon() {
     createKeybinds(),
     createBluetooth(),
     createProcmon(),
+    createCups(),
   ];
 
   const routeTable = new Map<string, (req: Request) => Response | Promise<Response>>();
