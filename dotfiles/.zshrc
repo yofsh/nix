@@ -5,7 +5,14 @@ export PATH="$HOME/nix/dotfiles/bin:$HOME/nix/dotfiles/bin/utils:$HOME/nix/dotfi
 nvimman() {
   nvim -c "set ft=man ts=8 nomod nolist nonu noma" -c "Man $*" -c "silent! only"
 }
-alias man='nvimman'
+
+man() {
+  if [[ -t 1 && -o interactive ]]; then
+    nvimman "$@"
+  else
+    command man "$@"
+  fi
+}
 
 alias reboot_windows="systemctl reboot --boot-loader-entry=auto-windows"
 alias next_boot_windows="sudo bootctl set-oneshot auto-windows"
@@ -153,8 +160,7 @@ cca() {
   }
 }
 
-ccs() { cd ~/servant/ && cc "$@" }
-ccn() { cd ~/nix/ && cc "$@" }
+ccs() { cd ~/servant/ && cc "$@" }   # single entry point — nix work via the `nix` skill
 alias ccc="nix run github:numtide/llm-agents.nix#claude-code -- --dangerously-skip-permissions"
 
 

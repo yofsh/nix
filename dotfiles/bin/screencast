@@ -15,8 +15,8 @@ TYPE=${1:-region}
 # Stop the recording, then fire a notification with Open / Upload actions.
 stop_and_offer() {
 	pkill --signal SIGINT wf-recorder
-	qs ipc call recordborder hide >/dev/null 2>&1 || true
-	rm -f /tmp/recordborder.geom
+	# qs ipc call recordborder hide >/dev/null 2>&1 || true
+	# rm -f /tmp/recordborder.geom
 
 	# wf-recorder finalises (muxes) the mp4 on SIGINT — wait for it to exit
 	# before we hand the file to open/upload, else it may be truncated.
@@ -77,10 +77,10 @@ start() {
 	printf '%s' "$file" > "$STATE"
 
 	# Thin red border just outside the recorded region (not for full-output).
-	if [ "$TYPE" != "full" ]; then
-		printf '%s' "$geometry" > /tmp/recordborder.geom
-		qs ipc call recordborder start >/dev/null 2>&1 || true
-	fi
+	# if [ "$TYPE" != "full" ]; then
+	# 	printf '%s' "$geometry" > /tmp/recordborder.geom
+	# 	qs ipc call recordborder start >/dev/null 2>&1 || true
+	# fi
 
 	wf-recorder -f "$file" -g "$geometry" -a >/dev/null 2>&1 &
 	notify-send -u low -i media-record "Recording started" "$TYPE"

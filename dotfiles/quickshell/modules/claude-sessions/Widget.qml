@@ -35,6 +35,10 @@ Item {
     function initial(project) {
         return (project || "?").charAt(0).toUpperCase();
     }
+    function chipLabel(s) {
+        var ini = initial(s.project);
+        return (s.workspace !== null && s.workspace >= 0) ? s.workspace + ini : ini;
+    }
     function since(epoch) {
         if (!epoch) return "";
         var d = Math.max(0, Math.floor(Date.now() / 1000 - epoch));
@@ -94,7 +98,7 @@ Item {
 
                     Components.ThemedText {
                         anchors.verticalCenter: parent.verticalCenter
-                        text: root.initial(modelData.project)
+                        text: root.chipLabel(modelData)
                         // Dark glyph on the solid selected fill; status-colored otherwise.
                         color: chip.sel ? "#11111b" : chip.col
                         font.pixelSize: AppConfig.Config.theme.fontSizeSmall

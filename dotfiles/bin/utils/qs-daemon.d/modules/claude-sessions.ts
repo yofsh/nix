@@ -345,10 +345,14 @@ export function create(): DaemonModule {
       }
     }
 
-    // Strict, stable order by process start time: existing sessions never
-    // reshuffle when one changes state, and a newly-started session always
-    // appends to the end. (Tie-break by pid for procs started in the same tick.)
-    sessions.sort((a, b) => (a.started - b.started) || ((a.pid ?? 0) - (b.pid ?? 0)));
+    // Group by Hyprland workspace (ascending), then stable start-order within a
+    // workspace: a state change never reshuffles (state isn't a key), sessions on
+    // the same workspace keep start-order, and ones with no window (workspace null
+    // /-1) sink to the end. (Tie-break by pid for procs started in the same tick.)
+    const wsKey = (s: Session) => (s.workspace === null || s.workspace < 0 ? Number.MAX_SAFE_INTEGER : s.workspace);
+    sessions.sort(
+      (a, b) => wsKey(a) - wsKey(b) || a.started - b.started || (a.pid ?? 0) - (b.pid ?? 0),
+    );
 
     const counts = { total: sessions.length, working: 0, idle: 0, attention: 0 };
     for (const s of sessions) {

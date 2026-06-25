@@ -22,8 +22,11 @@ if ! read -r WIDTH _ < <(hyprctl monitors -j | jq -r 'max_by(.width * .height) |
 	WIDTH=1920
 fi
 
-# Ensure awww daemon is running
-pgrep -x awww-daemon >/dev/null || awww-daemon 2>/dev/null &
+# Ensure awww daemon is running.
+# pgrep -f (not -x): the Nix wrapper renames the process to '.awww-daemon-wr',
+# so an exact-name match never sees the running daemon and we'd spawn a second
+# one — which panics ("instance already running on this socket") and core-dumps.
+pgrep -f awww-daemon >/dev/null || awww-daemon 2>/dev/null &
 
 # Notification helper: notify <urgency> <icon> <title> [body]
 notify() {
@@ -79,10 +82,15 @@ download_one() {
 	local query="$1"
 	local dest="$2"
 
+	# DL_FATAL=1 marks a non-retryable failure (missing key, quota exhausted);
+	# everything else (transient HTTP 5xx, duplicate, bad file) is worth a retry.
+	DL_FATAL=0
+
 	local access_key
 	access_key=$(read_secret unsplash-key 2>/dev/null)
 	if [ -z "$access_key" ]; then
 		DL_ERROR="Unsplash API key not found at /run/secrets/unsplash-key"
+		DL_FATAL=1
 		return 1
 	fi
 
@@ -100,7 +108,10 @@ download_one() {
 
 	if [ "$http_status" != "200" ]; then
 		err_msg="HTTP $http_status"
-		[ -n "$rate_remaining" ] && [ "$rate_remaining" -eq 0 ] 2>/dev/null && err_msg="$err_msg (rate limit exceeded)"
+		if [ -n "$rate_remaining" ] && [ "$rate_remaining" -eq 0 ] 2>/dev/null; then
+			err_msg="$err_msg (rate limit exceeded)"
+			DL_FATAL=1
+		fi
 		api_errors=$(echo "$response" | jq -r '.errors[]? // empty' 2>/dev/null)
 		[ -n "$api_errors" ] && err_msg="$err_msg: $api_errors"
 		DL_ERROR="$err_msg"
@@ -245,7 +256,7 @@ case "$1" in
 	;;
 "auto")
 	# Auto-rotate wallpapers (daemon mode)
-	pgrep -x awww-daemon >/dev/null || awww-daemon 2>/dev/null &
+	pgrep -f awww-daemon >/dev/null || awww-daemon 2>/dev/null &
 	sleep 1
 	# Restore last wallpaper if available
 	if [ -L "$HOME/.current-wallpaper" ] && [ -f "$HOME/.current-wallpaper" ]; then
@@ -329,12 +340,13 @@ case "$1" in
 				rm -f "$dest"
 			fi
 		else
-			if [ "$DL_ERROR" = "duplicate" ]; then
-				notify low folder-download "Wallpaper" "Duplicate, retry $i/$MAX_RETRIES..."
-				continue
+			# Fatal errors (no API key, quota exhausted) stop immediately;
+			# transient ones (HTTP 5xx, duplicate, bad file) fall through to retry.
+			if [ "$DL_FATAL" = 1 ]; then
+				notify critical dialog-error "Wallpaper failed" "$DL_ERROR"
+				exit 1
 			fi
-			notify critical dialog-error "Wallpaper failed" "$DL_ERROR"
-			exit 1
+			notify low folder-download "Wallpaper" "$DL_ERROR, retry $i/$MAX_RETRIES..."
 		fi
 	done
 

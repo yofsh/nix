@@ -71,14 +71,14 @@ hl.config({
       enabled           = true,
       size              = 9,
       passes            = 3,
-      brightness        = 0.8,
+      brightness        = 0.7,
       vibrancy_darkness = 1,
     },
     shadow       = { enabled = false },
   },
 
   animations = {
-    enabled = false,
+    enabled = true,
   },
 
   input      = {
@@ -99,14 +99,13 @@ hl.config({
   misc       = {
     disable_splash_rendering = true,
     disable_hyprland_logo    = true,
-    focus_on_activate        = true,
+    focus_on_activate        = false,
   },
 
-  -- Don't warp the pointer to a window when focus jumps to it (keybind focus,
-  -- workspace switch, claude-sessions widget click). Keeps mouse + focus
-  -- decoupled, consistent with input.follow_mouse = 0.
   cursor     = {
-    no_warps = true,
+    no_warps            = true,
+    no_hardware_cursors = false,
+    use_cpu_buffer      = true,
   },
 
   debug      = {
@@ -970,8 +969,11 @@ for _, r in ipairs({
   hl.window_rule(r)
 end
 
-hl.window_rule({ match = { class = "^(steam)$" }, workspace = "7" })
-hl.window_rule({ match = { class = "^(steam_app_\\d+|gamescope)$" }, workspace = "7" })
+-- Steam + games: keep on ws 7 and stop them yanking focus via activation
+-- requests (download-done popups, friends window, games loading in the bg).
+-- "activatefocus" ignores focus steals but still lets you focus by click/keybind.
+hl.window_rule({ match = { class = "^(steam)$" }, workspace = "7", suppress_event = "activatefocus" })
+hl.window_rule({ match = { class = "^(steam_app_\\d+|gamescope)$" }, workspace = "7", suppress_event = "activatefocus" })
 hl.window_rule({ match = { class = "^(com\\.gabm\\.satty)$" }, float = true, max_size = { 2592, 1296 } })
 hl.window_rule({ match = { class = "^(imv)$" }, float = true, size = { "monitor_w*0.5", "monitor_h*0.95" } })
 

@@ -35,6 +35,16 @@ EMOJI=(🦊 🐢 🐙 🦉 🦋 🐝 🐳 🦓 🦒 🦔 🐧 🦜 🦅 🐡 �
 
 resolve() { realpath -m -- "$1" 2>/dev/null || printf '%s' "$1"; }
 
+# Canonical identity for a directory: the git worktree root when inside one,
+# else the resolved path itself. Anchoring the hash on the repo root means every
+# subdir of a project shares one badge instead of hashing to a different
+# colour/emoji per cwd — and it matches the git-aware zellij tab name.
+project_dir() {
+  local dir
+  dir=$(resolve "$1")
+  git -C "$dir" rev-parse --show-toplevel 2>/dev/null || printf '%s' "$dir"
+}
+
 # Longest-matching configured root → "color emoji" (empty if no match).
 _root_match() {
   local dir root rroot best="" bc="" be=""
@@ -107,24 +117,27 @@ _brighten() {
 }
 
 dir_color() {
-  local c e
-  read -r c e <<<"$(_root_match "$1")"
-  [[ -n "$c" ]] || c=$(_hashed_color "$(resolve "$1")")
+  local pdir c e
+  pdir="$(project_dir "$1")"
+  read -r c e <<<"$(_root_match "$pdir")"
+  [[ -n "$c" ]] || c=$(_hashed_color "$pdir")
   _desaturate "$c"
 }
 
 dir_bright() {
-  local c e
-  read -r c e <<<"$(_root_match "$1")"
-  [[ -n "$c" ]] || c=$(_hashed_color "$(resolve "$1")")
+  local pdir c e
+  pdir="$(project_dir "$1")"
+  read -r c e <<<"$(_root_match "$pdir")"
+  [[ -n "$c" ]] || c=$(_hashed_color "$pdir")
   _brighten "$c"
 }
 
 dir_emoji() {
-  local c e
-  read -r c e <<<"$(_root_match "$1")"
+  local pdir c e
+  pdir="$(project_dir "$1")"
+  read -r c e <<<"$(_root_match "$pdir")"
   if [[ -n "$e" ]]; then printf '%s' "$e"; return; fi
-  local dec=$((16#$(_hash8 "$(resolve "$1")")))
+  local dec=$((16#$(_hash8 "$pdir")))
   printf '%s' "${EMOJI[$(( dec % ${#EMOJI[@]} ))]}"
 }
 

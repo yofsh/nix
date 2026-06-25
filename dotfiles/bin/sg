@@ -1,35 +1,111 @@
 #!/usr/bin/env bash
-# Search public code on Sourcegraph (sourcegraph.com)
-# Usage: sg <query> [--limit N] [--json]
+# Search & fetch real-world public code on Sourcegraph (sourcegraph.com).
 #
-# Examples:
+# Usage:
+#   sg <query> [--limit N] [--context N] [--url] [--json] [--count]
+#                [--repo R] [--lang L]
+#   sg fetch <repo> <path> [--commit SHA] [--lines A-B] [--number]
+#
+# Search examples:
 #   sg "lang:nix mkOutOfStoreSymlink"
-#   sg "lang:go context.WithCancel" --limit 10
-#   sg "repo:NixOS/nixpkgs lang:nix mkDerivation pname" --limit 5
-#   sg "lang:nix sops.secrets" --json
+#   sg "lang:go context.WithCancel" --limit 10 --url
+#   sg "mkDerivation pname" --repo NixOS/nixpkgs --lang nix --context 3
+#   sg "asyncio.gather" --lang python --count
+#   sg "zod.infer" --lang ts --json
+# Fetch a whole real example file (or a slice), clean raw text — no HTML:
+#   sg fetch github.com/NixOS/nixpkgs pkgs/build-support/trivial-builders.nix --lines 1-40
+#
+# Sourcegraph query syntax (docs.sourcegraph.com/code_search/reference/queries):
+#   lang:go   repo:^github\.com/foo/bar$   file:_test\.go   -file:vendor/
+#   "exact phrase"   /regex/   foo AND bar   count:all   case:yes   select:repo
 
 set -euo pipefail
 
 ENDPOINT="https://sourcegraph.com/.api/search/stream"
+RAW_BASE="https://sourcegraph.com"
+
+usage() { sed -n '2,18p' "$0" | sed 's/^# \?//'; }
+
+# ---------------------------------------------------------------------------
+# fetch subcommand: pull a raw file (or line slice) from any indexed repo.
+# ---------------------------------------------------------------------------
+if [[ "${1:-}" == "fetch" ]]; then
+    shift
+    FREPO="" FPATH="" FCOMMIT="HEAD" FLINES="" FNUMBER=false
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --commit) FCOMMIT="$2"; shift 2 ;;
+            --lines)  FLINES="$2";  shift 2 ;;
+            --number|-N) FNUMBER=true; shift ;;
+            --help|-h) usage; exit 0 ;;
+            *) if [[ -z "$FREPO" ]]; then FREPO="$1"; elif [[ -z "$FPATH" ]]; then FPATH="$1"; fi; shift ;;
+        esac
+    done
+    if [[ -z "$FREPO" || -z "$FPATH" ]]; then
+        echo "Usage: sg fetch <repo> <path> [--commit SHA] [--lines A-B] [--number]" >&2
+        exit 1
+    fi
+    REF=""; [[ "$FCOMMIT" != "HEAD" ]] && REF="@${FCOMMIT}"
+    content=$(curl -sL --fail "${RAW_BASE}/${FREPO}${REF}/-/raw/${FPATH}" 2>/dev/null) || {
+        echo "fetch failed: ${FREPO}${REF}/${FPATH} (check repo/path/commit)" >&2; exit 1; }
+    if [[ -n "$FLINES" ]]; then
+        lo="${FLINES%%-*}"; hi="${FLINES##*-}"
+        content=$(awk -v lo="$lo" -v hi="$hi" 'NR>=lo && NR<=hi' <<<"$content")
+        START="$lo"
+    else
+        START=1
+    fi
+    if $FNUMBER; then
+        awk -v s="$START" '{ printf "%6d  %s\n", s+NR-1, $0 }' <<<"$content"
+    else
+        printf '%s\n' "$content"
+    fi
+    exit 0
+fi
+
+# ---------------------------------------------------------------------------
+# search (default)
+# ---------------------------------------------------------------------------
 LIMIT=20
+CONTEXT=0
 JSON=false
+COUNT=false
+SHOWURL=false
+REPO=""
+LANG=""
 QUERY=""
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
-        --limit) LIMIT="$2"; shift 2 ;;
-        --json)  JSON=true; shift ;;
-        --help|-h)
-            sed -n '2,8p' "$0" | sed 's/^# \?//'
-            exit 0
-            ;;
-        *) QUERY="$1"; shift ;;
+        --limit|-n)   LIMIT="$2";   shift 2 ;;
+        --context|-C) CONTEXT="$2"; shift 2 ;;
+        --repo)       REPO="$2";    shift 2 ;;
+        --lang)       LANG="$2";    shift 2 ;;
+        --json)       JSON=true;    shift ;;
+        --count)      COUNT=true;   shift ;;
+        --url)        SHOWURL=true; shift ;;
+        --help|-h)    usage; exit 0 ;;
+        *)            QUERY="$1";   shift ;;
     esac
 done
 
-if [[ -z "$QUERY" ]]; then
-    echo "Usage: sg <query> [--limit N] [--json]" >&2
+[[ -n "$LANG" ]] && QUERY="lang:${LANG} ${QUERY}"
+[[ -n "$REPO" ]] && QUERY="repo:${REPO} ${QUERY}"
+
+if [[ -z "${QUERY// }" ]]; then
+    echo "Usage: sg <query> [--limit N] [--context N] [--url] [--json] [--count]" >&2
     exit 1
+fi
+
+# --count: append count:all, read the final progress event's matchCount.
+if $COUNT; then
+    cq="$QUERY"; [[ "$cq" != *count:* ]] && cq="$cq count:all"
+    total=$(curl -s --header "Accept:text/event-stream" --get --url "$ENDPOINT" \
+        --data-urlencode "q=$cq" --data-urlencode "display=1" --data-urlencode "t=keyword" \
+        | grep -A1 '^event: progress' | grep '^data:' | tail -1 | sed 's/^data: //' \
+        | jq -r '.matchCount // 0' 2>/dev/null)
+    echo "${total:-0}"
+    exit 0
 fi
 
 response=$(curl -s --header "Accept:text/event-stream" --get \
@@ -38,29 +114,64 @@ response=$(curl -s --header "Accept:text/event-stream" --get \
     --data-urlencode "display=$LIMIT" \
     --data-urlencode "t=keyword")
 
-# Extract match data arrays (contain type:"content" entries)
-matches=$(echo "$response" | grep '^data: \[' | sed 's/^data: //' \
-    | jq -s '[.[][] | select(.type == "content")]' 2>/dev/null)
+# Flatten content matches -> one record per matched line, with a clickable url
+# (GitHub blob permalink for github repos, Sourcegraph blob link otherwise).
+flat=$(echo "$response" | grep '^data: \[' | sed 's/^data: //' | jq -s '
+    [ .[][] | select(.type == "content") ]
+    | [ .[] as $m | ($m.lineMatches // [])[] | {
+        repository: $m.repository,
+        path:       $m.path,
+        language:   $m.language,
+        repoStars:  ($m.repoStars // 0),
+        commit:     $m.commit,
+        lineNumber: (.lineNumber + 1),
+        line:       .line,
+        url: ( if ($m.repository | startswith("github.com/"))
+               then "https://\($m.repository)/blob/\($m.commit)/\($m.path)#L\(.lineNumber + 1)"
+               else "https://sourcegraph.com/\($m.repository)@\($m.commit)/-/blob/\($m.path)?L\(.lineNumber + 1)" end )
+      } ]
+' 2>/dev/null)
 
-if [[ -z "$matches" ]] || [[ "$(echo "$matches" | jq 'length')" == "0" ]]; then
+if [[ -z "$flat" ]] || [[ "$(jq 'length' <<<"$flat" 2>/dev/null)" == "0" ]]; then
     echo "No results found." >&2
     exit 0
 fi
 
 if $JSON; then
-    echo "$matches"
+    echo "$flat"
     exit 0
 fi
 
-# Pretty print
-echo "$matches" | jq -r '
-    .[] |
-    "\u001b[1;34m" + .repository + "\u001b[0m " +
-    "\u001b[33m" + .path + "\u001b[0m" +
-    (if .repoStars and .repoStars > 0 then " \u001b[2m(\(.repoStars)★)\u001b[0m" else "" end) +
-    (if .lineMatches then
-        "\n" + (.lineMatches[] |
-            "  \u001b[2m" + ((.lineNumber + 1) | tostring) + ":\u001b[0m " + .line)
-    else "" end) +
-    "\n"
-'
+# Raw-file cache (used by --context to show surrounding lines).
+CACHE="$(mktemp -d)"
+trap 'rm -rf "$CACHE"' EXIT
+get_file() { # repo commit path
+    local key f
+    key=$(printf '%s@%s/%s' "$1" "$2" "$3" | md5sum | cut -d' ' -f1)
+    f="$CACHE/$key"
+    [[ -f "$f" ]] || curl -sL --fail "${RAW_BASE}/${1}@${2}/-/raw/${3}" -o "$f" 2>/dev/null || : > "$f"
+    cat "$f"
+}
+
+# Pretty print, grouped by file. Fields via TSV; line content base64'd so tabs
+# inside source code don't break field splitting.
+prev=""
+jq -r '.[] | [.repository, .path, (.repoStars|tostring), .commit, (.lineNumber|tostring), (.line|@base64), .url] | @tsv' <<<"$flat" \
+| while IFS=$'\t' read -r repo path stars commit ln lineb64 url; do
+    if [[ "$repo/$path@$commit" != "$prev" ]]; then
+        prev="$repo/$path@$commit"
+        star_s=""; [[ "$stars" -gt 0 ]] 2>/dev/null && star_s=" $(printf '\033[2m(%s★)\033[0m' "$stars")"
+        printf '\033[1;34m%s\033[0m \033[33m%s\033[0m%s\n' "$repo" "$path" "$star_s"
+    fi
+    if [[ "$CONTEXT" -gt 0 ]]; then
+        lo=$((ln - CONTEXT)); ((lo < 1)) && lo=1
+        hi=$((ln + CONTEXT))
+        get_file "$repo" "$commit" "$path" \
+            | awk -v lo="$lo" -v hi="$hi" -v m="$ln" 'NR>=lo && NR<=hi {
+                printf "  \033[2m%s%5d:\033[0m %s\n", (NR==m?">":" "), NR, $0 }'
+    else
+        printf '  \033[2m%s:\033[0m %s\n' "$ln" "$(base64 -d <<<"$lineb64")"
+    fi
+    if $SHOWURL; then printf '  \033[2;36m%s\033[0m\n' "$url"; fi
+    if [[ "$CONTEXT" -gt 0 ]]; then echo ""; fi
+done

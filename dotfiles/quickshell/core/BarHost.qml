@@ -129,7 +129,8 @@ PanelWindow {
                 BarWidget { moduleId: "app-usage"; M_app_usage.Widget {} }
                 BarWidget { moduleId: "focus"; M_focus.Widget {} }
                 BarWidget { moduleId: "claude-usage"; M_claude_usage.Widget {} }
-                BarWidget { moduleId: "claude-sessions"; M_claude_sessions.Widget {} }
+                // claude-sessions: now embedded as per-workspace initials in the
+                // workspaces widget; popup still reachable via its keybind (super+A).
                 BarWidget { moduleId: "network"; M_network.Widget {} }
                 BarWidget { moduleId: "ping-gw"; M_ping_gw.Widget {} }
                 BarWidget { moduleId: "ping"; M_ping.Widget {} }
